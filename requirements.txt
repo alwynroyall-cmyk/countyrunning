@@ -1,0 +1,19 @@
+pandas>=1.5.0
+openpyxl>=3.0.10
+
+Project Structure
+wiltshire-league-scorer/
+├── requirements.txt
+├── main.py
+└── league_scorer/
+    ├── __init__.py
+    ├── exceptions.py
+    ├── models.py
+    ├── normalisation.py
+    ├── club_loader.py
+    ├── race_processor.py
+    ├── individual_scoring.py
+    ├── team_scoring.py
+    ├── season_aggregation.py
+    ├── output_writer.py
+    └── scorer.py
