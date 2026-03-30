@@ -28,7 +28,6 @@ from .models import (
     UnrecognisedClub,
 )
 from .output_writer import (
-    write_category_report,
     write_results_workbook,
     write_unrecognised_clubs,
 )
@@ -138,7 +137,6 @@ class LeagueScorer:
 
         # Write per-race exception reports immediately
         pfx = f"Race {race_num} -- "
-        write_category_report(cat_recs, self.output_dir / f"{pfx}categories.xlsx")
         unrec_out = self.output_dir / f"{pfx}unused clubs.xlsx"
         write_unrecognised_clubs(unrec, unrec_out)
         if unrec:
@@ -176,6 +174,17 @@ class LeagueScorer:
 
         all_unrec = [u for lst in self.all_unrec_clubs.values() for u in lst]
 
+        # Gather all per-race categories for summary sheet
+        all_categories = []
+        for race_num in sorted(self.all_cat_records):
+            for rec in self.all_cat_records[race_num]:
+                all_categories.append({
+                    "Race": race_num,
+                    "Raw Category": rec.raw_category,
+                    "Normalised Category": rec.normalised_category,
+                    "Count": rec.count,
+                    "Notes": rec.notes,
+                })
         write_results_workbook(
             highest_race=highest,
             male_records=male_recs,
@@ -185,6 +194,7 @@ class LeagueScorer:
             all_race_runners=self.all_race_runners,
             unrec_clubs_all=all_unrec,
             filepath=self.output_dir / f"{pfx}Results.xlsx",
+            all_categories=all_categories,
         )
 
         # Derive year from path convention: {root}/{year}/outputs

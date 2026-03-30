@@ -785,7 +785,7 @@ def write_race_report(
         convert(str(filepath), str(pdf_path))
         log.info("Race %d PDF written: %s", race_num, pdf_path.name)
     except Exception as exc:
-        log.warning("Race %d PDF conversion skipped \u2014 %s", race_num, exc)
+        log.warning("Race %d PDF conversion skipped — %s", race_num, exc)
 
 
 # ── Document header (branding) ─────────────────────────────────────────────────

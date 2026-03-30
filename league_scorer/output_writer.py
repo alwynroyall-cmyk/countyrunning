@@ -5,7 +5,6 @@ Cumulative (single workbook per run):
   Race N -- Results.xlsx   — sheets: Summary | Div 1 | Div 2 | Male | Female
 
 Per race:
-  Race # -- categories.xlsx
   Race # -- unused clubs.xlsx
 """
 
@@ -13,18 +12,31 @@ import logging
 from pathlib import Path
 from typing import Dict, List
 
+if __package__ in (None, ""):
+    import sys
+
+    sys.path.append(str(Path(__file__).resolve().parents[1]))
+    from league_scorer.models import (
+        CategoryRecord,
+        RunnerRaceEntry,
+        RunnerSeasonRecord,
+        TeamRaceResult,
+        TeamSeasonRecord,
+        UnrecognisedClub,
+    )
+else:
+    from .models import (
+        CategoryRecord,
+        RunnerRaceEntry,
+        RunnerSeasonRecord,
+        TeamRaceResult,
+        TeamSeasonRecord,
+        UnrecognisedClub,
+    )
+
 import pandas as pd
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
-
-from .models import (
-    CategoryRecord,
-    RunnerRaceEntry,
-    RunnerSeasonRecord,
-    TeamRaceResult,
-    TeamSeasonRecord,
-    UnrecognisedClub,
-)
 
 log = logging.getLogger(__name__)
 
@@ -85,33 +97,41 @@ def write_results_workbook(
     all_race_runners: Dict[int, List[RunnerRaceEntry]],
     unrec_clubs_all: List[UnrecognisedClub],
     filepath: Path,
+    all_categories: list = None,
 ) -> None:
     """Write Summary, Div 1, Div 2, Male and Female into a single workbook."""
 
     # ── Summary data ────────────────────────────────────────────────────────
     clubs_scored = {r.preferred_club for r in male_records + female_records}
-    unrec_names  = sorted({u.raw_club_name for u in unrec_clubs_all})
+    # Remove 'Unidentified Clubs' from the summary sheet
     overview_rows = [
         ("Highest Race Number",     highest_race),
         ("Race Files Processed",    len(all_race_runners)),
         ("Runners Scored (Male)",   len(male_records)),
         ("Runners Scored (Female)", len(female_records)),
         ("Clubs Scored",            len(clubs_scored)),
-        ("Unidentified Clubs",      ", ".join(unrec_names) if unrec_names else "None"),
     ]
     df_summary = pd.DataFrame(overview_rows, columns=["Item", "Value"])
+    # Append all per-race categories rows under the summary rows if provided
+    if all_categories:
+        df_cats = pd.DataFrame(all_categories)
+        # Add a blank row for separation
+        blank = pd.DataFrame([{"Item": "", "Value": ""}])
+        # Reindex category columns to match summary columns, then add extra columns
+        cat_cols = ["Race", "Raw Category", "Normalised Category", "Count", "Notes"]
+        df_cats = df_cats[cat_cols]
+        # Concatenate summary, blank, and categories
+        df_summary = pd.concat([df_summary, blank, df_cats], ignore_index=True)
 
     # ── Individual table builder ─────────────────────────────────────────────
     def _ind_df(records: List[RunnerSeasonRecord]) -> pd.DataFrame:
         rows = []
         for rec in sorted(records, key=lambda r: (r.position, r.name)):
-            last_race = max(rec.race_times) if rec.race_times else None
             row: dict = {
                 "Position": rec.position,
                 "Name":     rec.name,
                 "Club":     rec.preferred_club,
                 "Category": rec.category,
-                "Time":     rec.race_times[last_race] if last_race else "",
             }
             for n in range(1, MAX_RACES + 1):
                 row[f"Race {n} Points"] = rec.race_points.get(n, "")
@@ -153,28 +173,6 @@ def write_results_workbook(
         log.debug("Written: %s", filepath.name)
     except Exception as exc:
         log.error("Failed to write results workbook '%s': %s", filepath, exc)
-
-
-# ─────────────────────────────────────────────────────── exception reports ───
-
-def write_category_report(
-    cat_records: List[CategoryRecord],
-    filepath: Path,
-) -> None:
-    """Spec 13.1 Race # -- categories.xlsx"""
-    rows = [
-        {
-            "Raw Category":        r.raw_category,
-            "Normalised Category": r.normalised_category,
-            "Count":               r.count,
-            "Notes":               r.notes,
-        }
-        for r in sorted(cat_records, key=lambda r: r.raw_category)
-    ]
-    df = pd.DataFrame(rows) if rows else pd.DataFrame(
-        columns=["Raw Category", "Normalised Category", "Count", "Notes"]
-    )
-    _write_df(df, filepath, sheet_name="Categories")
 
 
 def write_unrecognised_clubs(
