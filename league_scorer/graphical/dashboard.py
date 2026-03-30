@@ -364,7 +364,7 @@ class LeagueScorerDashboard(tk.Tk):
 
         footer_text = tk.Label(
             footer,
-            text="© 2026 Wiltshire Road and Running League | Version 1.0",
+            text="© 2026 Wiltshire Athletics Assoc. | Wiltshire League Scorer v2.1",
             font=("Segoe UI", 9),
             bg=WRRL_NAVY,
             fg="#707080",

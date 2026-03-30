@@ -1,5 +1,8 @@
 pandas>=1.5.0
 openpyxl>=3.0.10
+Pillow>=10.0.0
+python-docx>=1.1.0
+docx2pdf>=0.1.8
 
 Project Structure
 wiltshire-league-scorer/

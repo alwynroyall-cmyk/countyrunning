@@ -14,6 +14,7 @@ Sections
 
 import logging
 import re
+from collections import Counter
 from pathlib import Path
 from typing import List, Optional
 
@@ -120,6 +121,54 @@ def _cell_text(cell, text, bold=False, italic=False,
     run.font.size = Pt(size_pt)
     if color:
         run.font.color.rgb = color
+
+
+def _cell_name_with_club(cell, name: str, club: str,
+                         bold=False, color: RGBColor = None,
+                         align="left") -> None:
+    """Write runner name with club underneath in a smaller muted line."""
+    cell.text = ""
+
+    p1 = cell.paragraphs[0]
+    p1.alignment = {
+        "left":   WD_ALIGN_PARAGRAPH.LEFT,
+        "center": WD_ALIGN_PARAGRAPH.CENTER,
+        "right":  WD_ALIGN_PARAGRAPH.RIGHT,
+    }.get(align, WD_ALIGN_PARAGRAPH.LEFT)
+    p1.paragraph_format.space_after = Pt(0)
+    r1 = p1.add_run("" if not name else str(name))
+    r1.bold = bold
+    r1.font.size = Pt(9)
+    if color:
+        r1.font.color.rgb = color
+
+    if club:
+        p2 = cell.add_paragraph()
+        p2.alignment = p1.alignment
+        p2.paragraph_format.space_before = Pt(0)
+        p2.paragraph_format.space_after = Pt(0)
+        r2 = p2.add_run(str(club))
+        r2.italic = True
+        r2.font.size = Pt(8)
+        r2.font.color.rgb = color if color == _WHITE_RGB else RGBColor(0x70, 0x80, 0x90)
+
+
+def _append_page_number(paragraph) -> None:
+    """Append a Word PAGE field to a paragraph."""
+    run = paragraph.add_run()
+    fld_begin = OxmlElement("w:fldChar")
+    fld_begin.set(qn("w:fldCharType"), "begin")
+
+    instr = OxmlElement("w:instrText")
+    instr.set(qn("xml:space"), "preserve")
+    instr.text = "PAGE"
+
+    fld_end = OxmlElement("w:fldChar")
+    fld_end.set(qn("w:fldCharType"), "end")
+
+    run._r.append(fld_begin)
+    run._r.append(instr)
+    run._r.append(fld_end)
 
 
 # ── Reusable table building blocks ─────────────────────────────────────────────
@@ -264,14 +313,23 @@ def _write_overview(doc: Document, highest: int, year: int,
                     unrec: List[UnrecognisedClub],
                     nonleague_filename: str = "") -> None:
     _section_heading(doc, "Season Overview", space_before_pt=6)
+
+    def _write_summary_table(headers: list[str], widths_cm: list[float], rows: list[tuple],
+                             name_col: int = 0) -> None:
+        table = doc.add_table(rows=1, cols=len(headers))
+        table.style = "Table Grid"
+        _remove_vertical_borders(table)
+        _make_header_row(table, headers, widths_cm)
+        _set_table_cell_margins(table, top_pt=5, bottom_pt=5)
+        for idx, row_data in enumerate(rows):
+            _add_data_row(table, list(row_data), widths_cm, alt=idx % 2 == 1, name_col=name_col)
+
     headers    = ["", "Male", "Female", "Total"]
     widths_cm  = [6.0, 3.0, 3.0, 3.0]
-    t = doc.add_table(rows=1, cols=4)
-    t.style = "Table Grid"
-    _make_header_row(t, headers, widths_cm)
-
-    clubs_m = {r.preferred_club for r in male}
+    clubs_all = clubs_m = {r.preferred_club for r in male}
     clubs_f = {r.preferred_club for r in female}
+    clubs_all = clubs_m | clubs_f
+
     unrec_count = len({u.raw_club_name for u in unrec})
     nonleague_note = (
         f"{unrec_count} club(s) — see {nonleague_filename}" if unrec_count
@@ -282,11 +340,39 @@ def _write_overview(doc: Document, highest: int, year: int,
         ("Season",             str(year),          "",               ""),
         ("Races processed",    str(highest),        "",               ""),
         ("Runners scored",     str(len(male)),       str(len(female)), str(len(male) + len(female))),
-        ("Clubs scored",       str(len(clubs_m)),    str(len(clubs_f)),str(len(clubs_m | clubs_f))),
+        ("Clubs scored",       str(len(clubs_m)),    str(len(clubs_f)),str(len(clubs_all))),
         ("Non-league clubs",   nonleague_note,       "",               ""),
     ]
-    for i, row_data in enumerate(rows):
-        _add_data_row(t, list(row_data), widths_cm, alt=i % 2 == 1, name_col=0)
+    _write_summary_table(headers, widths_cm, rows)
+
+    male_by_category = Counter(r.category for r in male)
+    female_by_category = Counter(r.category for r in female)
+    category_rows = [
+        (
+            cat,
+            str(male_by_category.get(cat, 0)),
+            str(female_by_category.get(cat, 0)),
+            str(male_by_category.get(cat, 0) + female_by_category.get(cat, 0)),
+        )
+        for cat in _CATEGORIES
+        if male_by_category.get(cat, 0) or female_by_category.get(cat, 0)
+    ]
+    if category_rows:
+        _sub_heading(doc, "Runner Categories")
+        _write_summary_table(["Category", "Male", "Female", "Total"], [4.0, 2.5, 2.5, 2.5], category_rows)
+
+    club_counter = Counter()
+    for record in male + female:
+        if record.preferred_club:
+            club_counter[record.preferred_club] += 1
+
+    club_rows = [
+        (club, str(count))
+        for club, count in sorted(club_counter.items(), key=lambda item: (-item[1], item[0]))
+    ]
+    if club_rows:
+        _sub_heading(doc, "Unique Runners By Club")
+        _write_summary_table(["Club", "Unique Runners"], [10.5, 3.0], club_rows)
 
 
 def _write_club_table(doc: Document, teams: List[TeamSeasonRecord],
@@ -305,6 +391,8 @@ def _write_club_table(doc: Document, teams: List[TeamSeasonRecord],
     widths_cm  = [1.0, 5.5] + [1.2] * len(races) + [1.5]
 
     sorted_teams = sorted(teams, key=lambda x: x.position)
+    if not is_div1:
+        sorted_teams = [team for team in sorted_teams if team.total_points > 0]
     total        = len(sorted_teams)
     RELEGATE_N   = 2   # bottom N in Div 1
     PROMOTE_N    = 2   # top N in Div 2 (pos 1 stays as leader)
@@ -368,24 +456,52 @@ def _write_individual_table(doc: Document, records: List[RunnerSeasonRecord],
     """Top-N individual table.  Positions 1/2/3 get gold/silver/bronze highlights."""
     _section_heading(doc, title)
     races     = list(range(1, race_count + 1))
-    headers   = ["Pos", "Name", "Club", "Cat"] + [f"R{n}" for n in races] + ["Total"]
+    headers   = ["Pos", "Name", "Cat", "Total"] + [f"R{n}" for n in races]
     name_col  = 1
-    widths_cm = [0.8, 4.5, 3.5, 1.0] + [1.1] * len(races) + [1.3]
+    widths_cm = [0.8, 5.8, 1.2, 1.3] + [1.0] * len(races)
 
     top = sorted(records, key=lambda r: r.position)[:top_n]
 
     t = doc.add_table(rows=1, cols=len(headers))
     t.style = "Table Grid"
+    _remove_vertical_borders(t)
     _make_header_row(t, headers, widths_cm)
+    _set_table_cell_margins(t, top_pt=5, bottom_pt=5)
 
     for i, rec in enumerate(top):
-        vals = [rec.position, rec.name, rec.preferred_club, rec.category]
+        style = _MEDAL_STYLES.get(rec.position)
+        if style:
+            bg, fg, is_bold, is_italic = _ROW_STYLES[style]
+        else:
+            bg, fg, is_bold, is_italic = (
+                (_ALT_HEX if i % 2 == 1 else _WHITE_HEX), None, False, False
+            )
+
+        vals = [rec.position, None, rec.category, rec.total_points]
         for n in races:
             vals.append(rec.race_points.get(n, ""))
-        vals.append(rec.total_points)
-        style = _MEDAL_STYLES.get(rec.position)
-        _add_data_row(t, vals, widths_cm, alt=i % 2 == 1,
-                      row_style=style, name_col=name_col)
+
+        row = t.add_row()
+        for j, val in enumerate(vals):
+            cell = row.cells[j]
+            _set_cell_bg(cell, bg)
+            if j < len(widths_cm) and widths_cm[j]:
+                cell.width = Cm(widths_cm[j])
+
+            if j == name_col:
+                _cell_name_with_club(
+                    cell,
+                    rec.name,
+                    rec.preferred_club,
+                    bold=is_bold,
+                    color=fg,
+                    align="left",
+                )
+                continue
+
+            align = "left" if j == name_col else "center"
+            _cell_text(cell, val, bold=(is_bold or j == 0),
+                       italic=is_italic, color=fg, size_pt=9, align=align)
 
 
 def _write_category_leaders(doc: Document,
@@ -396,11 +512,11 @@ def _write_category_leaders(doc: Document,
     A narrow spacer column separates the male and female halves.
     """
     _section_heading(doc, "Category Leaders")
-    # Layout: 4 male cols | 1 spacer | 4 female cols  = 9 columns
-    headers   = ["#", "Male Name", "Club", "Pts", "", "#", "Female Name", "Club", "Pts"]
-    widths_cm = [0.6, 4.0, 3.5, 1.0, 0.4, 0.6, 4.0, 3.5, 1.0]
-    name_cols = (1, 6)   # columns that left-align
-    spacer_col = 4
+    # Layout: 3 male cols | 1 spacer | 3 female cols  = 7 columns
+    headers   = ["#", "Male Runner", "Pts", "", "#", "Female Runner", "Pts"]
+    widths_cm = [0.6, 6.1, 1.0, 0.4, 0.6, 6.1, 1.0]
+    name_cols = (1, 5)
+    spacer_col = 3
 
     for cat in _CATEGORIES:
         m_top = sorted([r for r in male   if r.category == cat], key=lambda r: r.position)[:top_n]
@@ -409,22 +525,22 @@ def _write_category_leaders(doc: Document,
             continue
 
         _sub_heading(doc, cat)
-        t = doc.add_table(rows=1, cols=9)
+        t = doc.add_table(rows=1, cols=7)
         t.style = "Table Grid"
+        _remove_vertical_borders(t)
         _make_header_row(t, headers, widths_cm)
+        _set_table_cell_margins(t, top_pt=5, bottom_pt=5)
 
         for i in range(max(len(m_top), len(f_top))):
             m = m_top[i] if i < len(m_top) else None
             f = f_top[i] if i < len(f_top) else None
             vals = [
                 m.position if m else "",
-                m.name     if m else "",
-                m.preferred_club if m else "",
+                None,
                 m.total_points   if m else "",
                 "",                               # spacer
                 f.position if f else "",
-                f.name     if f else "",
-                f.preferred_club if f else "",
+                None,
                 f.total_points   if f else "",
             ]
             # Position 1 = category champion — green leader row
@@ -446,8 +562,28 @@ def _write_category_leaders(doc: Document,
                 _set_cell_bg(cell, bg)
                 if j < len(widths_cm) and widths_cm[j]:
                     cell.width = Cm(widths_cm[j])
+                if j == 1:
+                    _cell_name_with_club(
+                        cell,
+                        m.name if m else "",
+                        m.preferred_club if m else "",
+                        bold=is_bold,
+                        color=fg,
+                        align="left",
+                    )
+                    continue
+                if j == 5:
+                    _cell_name_with_club(
+                        cell,
+                        f.name if f else "",
+                        f.preferred_club if f else "",
+                        bold=is_bold,
+                        color=fg,
+                        align="left",
+                    )
+                    continue
                 align = "left" if j in name_cols else "center"
-                _cell_text(cell, val, bold=(is_bold or j in (0, 5)),
+                _cell_text(cell, val, bold=(is_bold or j in (0, 4)),
                            color=fg, size_pt=9, align=align)
 
 
@@ -790,14 +926,19 @@ def write_race_report(
 
 # ── Document header (branding) ─────────────────────────────────────────────────
 
-def _build_cover_header(doc: Document, year: int, images_dir: Optional[Path]) -> None:
+def _build_cover_header(
+    doc: Document,
+    year: int,
+    highest_race: int,
+    images_dir: Optional[Path],
+) -> None:
     """Two-cell table: shield logo left | title text right, both on navy."""
     tbl = doc.add_table(rows=1, cols=2)
     logo_cell  = tbl.rows[0].cells[0]
     title_cell = tbl.rows[0].cells[1]
 
-    logo_cell.width  = Cm(3.2)
-    title_cell.width = Cm(22.8)
+    logo_cell.width  = Cm(3.0)
+    title_cell.width = Cm(15.0)
 
     _set_cell_bg(logo_cell, _NAVY_HEX)
     _set_cell_bg(title_cell, _NAVY_HEX)
@@ -823,7 +964,12 @@ def _build_cover_header(doc: Document, year: int, images_dir: Optional[Path]) ->
 
     p2 = title_cell.add_paragraph()
     p2.paragraph_format.left_indent = Cm(0.4)
-    r2 = p2.add_run("Wiltshire Road and Running League  —  Season Summary")
+    subtitle = (
+        "Wiltshire Road Race League  —  Season Summary"
+        if highest_race == 8
+        else f"Wiltshire Road Race League  —  Update Race {highest_race}"
+    )
+    r2 = p2.add_run(subtitle)
     r2.font.size = Pt(10)
     r2.font.color.rgb = _SUBHDR_RGB
 
@@ -836,15 +982,40 @@ def _build_cover_header(doc: Document, year: int, images_dir: Optional[Path]) ->
 
 # ── Footer ─────────────────────────────────────────────────────────────────────
 
-def _build_footer(doc: Document, year: int) -> None:
+def _build_footer(doc: Document, year: int, include_page_numbers: bool = False) -> None:
     footer = doc.sections[0].footer
-    p = footer.paragraphs[0]
-    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    run = p.add_run(
-        f"© {year} Wiltshire Road and Running League  |  Generated automatically"
-    )
-    run.font.size = Pt(8)
-    run.font.color.rgb = RGBColor(0x80, 0x80, 0x90)
+    if footer.paragraphs:
+        footer.paragraphs[0].clear()
+
+    tbl = footer.add_table(rows=1, cols=3, width=Cm(18.0))
+    _no_table_borders(tbl)
+
+    left_cell = tbl.rows[0].cells[0]
+    center_cell = tbl.rows[0].cells[1]
+    right_cell = tbl.rows[0].cells[2]
+    left_cell.width = Cm(6.0)
+    center_cell.width = Cm(7.0)
+    right_cell.width = Cm(5.0)
+
+    left_p = left_cell.paragraphs[0]
+    left_p.alignment = WD_ALIGN_PARAGRAPH.LEFT
+    left_run = left_p.add_run(f"© {year} Wiltshire Athletics Assoc.")
+    left_run.font.size = Pt(8)
+    left_run.font.color.rgb = RGBColor(0x80, 0x80, 0x90)
+
+    center_p = center_cell.paragraphs[0]
+    center_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    center_run = center_p.add_run("Wiltshire League Scorer v2.1")
+    center_run.font.size = Pt(8)
+    center_run.font.color.rgb = RGBColor(0x80, 0x80, 0x90)
+
+    if include_page_numbers:
+        right_p = right_cell.paragraphs[0]
+        right_p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+        page_label = right_p.add_run("Page ")
+        page_label.font.size = Pt(8)
+        page_label.font.color.rgb = RGBColor(0x80, 0x80, 0x90)
+        _append_page_number(right_p)
 
 
 # ── Public entry point ─────────────────────────────────────────────────────────
@@ -876,11 +1047,11 @@ def write_combined_report(
 
     doc = Document()
 
-    # ── A4 Landscape ──────────────────────────────────────────────────────────
+    # ── A4 Portrait ───────────────────────────────────────────────────────────
     section = doc.sections[0]
-    section.orientation   = WD_ORIENT.LANDSCAPE
-    section.page_width    = Cm(29.7)
-    section.page_height   = Cm(21.0)
+    section.orientation   = WD_ORIENT.PORTRAIT
+    section.page_width    = Cm(21.0)
+    section.page_height   = Cm(29.7)
     section.left_margin   = Cm(1.5)
     section.right_margin  = Cm(1.5)
     section.top_margin    = Cm(1.5)
@@ -889,21 +1060,19 @@ def write_combined_report(
     nonleague_fname = ""  # non-league DOCX no longer generated
 
     # ── Content ───────────────────────────────────────────────────────────────
-    _build_cover_header(doc, year, images_dir)
-    _write_overview(doc, highest_race, year, male_records, female_records,
-                    unrec_all)
+    _build_cover_header(doc, year, highest_race, images_dir)
 
     # Club tables
     _spacer(doc, height_pt=10)  # breathing room before first club section bar
     _write_club_table(doc, div1_teams, "Division 1 — Club Table",
                       highest_race, is_div1=True)
-    _page_break(doc)
+    _spacer(doc, height_pt=6)
     _write_club_table(doc, div2_teams, "Division 2 — Club Table",
                       highest_race, is_div1=False)
 
     # Individual scorer section — new page
     _page_break(doc)
-    _section_heading(doc, "Individual Scorers", space_before_pt=4)
+    _section_heading(doc, "Individual Runners", space_before_pt=4)
     _write_individual_table(doc, male_records,   "Top 20 — Male",   highest_race, top_n=20)
     doc.add_page_break()
     _write_individual_table(doc, female_records, "Top 20 — Female", highest_race, top_n=20)
@@ -912,7 +1081,12 @@ def write_combined_report(
     doc.add_page_break()
     _write_category_leaders(doc, male_records, female_records, top_n=3)
 
-    _build_footer(doc, year)
+    # Season overview — final page
+    _page_break(doc)
+    _write_overview(doc, highest_race, year, male_records, female_records,
+                    unrec_all)
+
+    _build_footer(doc, year, include_page_numbers=True)
 
     # ── Save DOCX ─────────────────────────────────────────────────────────────
     filepath.parent.mkdir(parents=True, exist_ok=True)
