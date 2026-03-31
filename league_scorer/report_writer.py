@@ -44,7 +44,9 @@ _WHITE_HEX   = "ffffff"
 _ALT_HEX     = "eef2f7"   # alternating data row tint
 _TOTAL_HEX   = "00b050"   # highlighted total-points column in division tables
 _FONT_NAME   = "Calibri"
-_SEASON_FINAL_RACE = 8
+from .settings import settings
+
+_SEASON_FINAL_RACE = settings.get("SEASON_FINAL_RACE")
 
 _NAVY_RGB   = RGBColor(0x3a, 0x46, 0x58)
 _WHITE_RGB  = RGBColor(0xff, 0xff, 0xff)
@@ -1192,6 +1194,7 @@ def _build_cover_header(
 # ── Footer ─────────────────────────────────────────────────────────────────────
 
 def _build_footer(doc: Document, year: int, include_page_numbers: bool = False) -> None:
+        # (no change needed here, version already centralized)
     footer = doc.sections[0].footer
     if footer.paragraphs:
         footer.paragraphs[0].clear()
@@ -1214,7 +1217,8 @@ def _build_footer(doc: Document, year: int, include_page_numbers: bool = False) 
 
     center_p = center_cell.paragraphs[0]
     center_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    center_run = center_p.add_run("Wiltshire League Scorer v2.1")
+    from . import __version__
+    center_run = center_p.add_run(f"Wiltshire League Scorer v{__version__}")
     center_run.font.size = Pt(8)
     center_run.font.color.rgb = RGBColor(0x80, 0x80, 0x90)
 

@@ -163,7 +163,7 @@ class LeagueScorerDashboard(tk.Tk):
         button_frame.pack(fill="both", expand=True)
 
         buttons = [
-            ("▶ Run League Management", self._on_run_scorer, 0, 0),
+            ("▶ Create League Results", self._on_run_scorer, 0, 0),
             ("📊 View Results", self._on_view_results, 0, 1),
             ("📅 Load Events", self._on_load_events, 1, 0),
             ("📋 View Events", self._on_view_events, 1, 1),
@@ -362,9 +362,10 @@ class LeagueScorerDashboard(tk.Tk):
         footer.pack(side="bottom", fill="x")
         footer.pack_propagate(False)
 
+        from .. import __version__
         footer_text = tk.Label(
             footer,
-            text="© 2026 Wiltshire Athletics Assoc. | Wiltshire League Scorer v2.1",
+            text=f"© 2026 Wiltshire Athletics Assoc. | Wiltshire League Scorer v{__version__}",
             font=("Segoe UI", 9),
             bg=WRRL_NAVY,
             fg="#707080",
@@ -459,17 +460,32 @@ class LeagueScorerDashboard(tk.Tk):
         )
 
     def _on_view_results(self) -> None:
-        """View scoring results."""
+        """Show the results viewer panel inline within the dashboard."""
         if not self._require_configured("View Results"):
             return
-        messagebox.showinfo(
-            "View Results",
-            "Results viewer will be available after running the scorer.",
-        )
+        self._home_frame.pack_forget()
+        from .results_viewer import ResultsViewerPanel
+        panel = ResultsViewerPanel(self._page_container)
+        panel.pack(fill="both", expand=True)
+        self._results_panel = panel
+        def on_close():
+            if hasattr(self, "_results_panel"):
+                self._results_panel.destroy()
+                del self._results_panel
+            self._home_frame.pack(fill="both", expand=True)
+        # Add a close button
+        close_btn = tk.Button(panel, text="Close", command=on_close, font=("Segoe UI", 10, "bold"), bg=WRRL_GREEN, fg=WRRL_WHITE)
+        close_btn.pack(pady=8)
 
     def _on_settings(self) -> None:
-        """Open settings dialog (placeholder)."""
-        messagebox.showinfo("Settings", "Configuration options coming soon.")
+        """Show the settings panel inline within the dashboard."""
+        if not self._require_configured("Settings"):
+            return
+        self._home_frame.pack_forget()
+        from .settings_dialog import SettingsDialog
+        dialog = SettingsDialog(self)
+        dialog.wait_window()
+        self._home_frame.pack(fill="both", expand=True)
 
     def _on_help(self) -> None:
         """Show help information."""

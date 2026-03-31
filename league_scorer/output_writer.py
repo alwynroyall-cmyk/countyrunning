@@ -27,7 +27,9 @@ from openpyxl.utils import get_column_letter
 
 log = logging.getLogger(__name__)
 
-MAX_RACES = 8
+from .settings import settings
+
+MAX_RACES = settings.get("MAX_RACES")
 _HEADER_FILL = PatternFill("solid", fgColor="4472C4")
 _HEADER_FONT = Font(color="FFFFFF", bold=True)
 _AGG_FILL    = PatternFill("solid", fgColor="D9E1F2")   # light blue tint for aggregate columns

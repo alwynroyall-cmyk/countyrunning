@@ -17,8 +17,10 @@ from .models import ClubInfo, RunnerRaceEntry, TeamRaceResult
 
 log = logging.getLogger(__name__)
 
-TEAM_SIZE = 5
-MAX_DIV_PTS = 20
+from .settings import settings
+
+TEAM_SIZE = settings.get("TEAM_SIZE")
+MAX_DIV_PTS = settings.get("MAX_DIV_PTS")
 MIN_DIV_PTS = 1
 
 
