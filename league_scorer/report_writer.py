@@ -1,15 +1,16 @@
 """
 report_writer.py — Branded DOCX + PDF season report.
 
-Sections
---------
-  1. Cover header  (WRRL shield + season title)
-  2. Season overview stats
+Sections (combined league report)
+----------------------------------
+  1. Cover header      (WRRL shield + season title)
+  2. League narrative  (season summary prose, auto end-of-season at Race 8)
   3. Division 1 Club Table
-  4. Division 2 Club Table
+  4. Division 2 Club Table  (page 2)
   5. Top 20 Male Individual
   6. Top 20 Female Individual
-  7. Category Leaders – top 5 per category (M & F side-by-side)
+  7. Category Leaders – top 3 per category (M & F side-by-side)
+  8. Season overview stats
 """
 
 import logging
@@ -46,7 +47,6 @@ _FONT_NAME   = "Calibri"
 _SEASON_FINAL_RACE = 8
 
 _NAVY_RGB   = RGBColor(0x3a, 0x46, 0x58)
-_GREEN_RGB  = RGBColor(0x2d, 0x7a, 0x4a)
 _WHITE_RGB  = RGBColor(0xff, 0xff, 0xff)
 _SUBHDR_RGB = RGBColor(0xa0, 0xb0, 0xc0)
 
@@ -56,9 +56,6 @@ _SILVER_HEX    = "a8b4c4"   # 2nd place — silver
 _BRONZE_HEX    = "b87440"   # 3rd place — bronze
 _PROMOTED_HEX  = "d0ead8"   # Div 2 promotion zone (subtle green tint)
 _RELEGATED_HEX = "f5d8d8"   # Div 1 relegation zone (subtle red tint)
-_GOLD_RGB      = RGBColor(0xc9, 0xa8, 0x4c)
-_SILVER_RGB    = RGBColor(0xa8, 0xb4, 0xc4)
-_BRONZE_RGB    = RGBColor(0xb8, 0x74, 0x40)
 
 _CATEGORIES = ["Sen", "V40", "V50", "V60", "V70+"]
 
@@ -387,7 +384,7 @@ def _write_overview(doc: Document, highest: int, year: int,
 
     headers    = ["", "Male", "Female", "Total"]
     widths_cm  = [6.0, 3.0, 3.0, 3.0]
-    clubs_all = clubs_m = {r.preferred_club for r in male}
+    clubs_m = {r.preferred_club for r in male}
     clubs_f = {r.preferred_club for r in female}
     clubs_all = clubs_m | clubs_f
 

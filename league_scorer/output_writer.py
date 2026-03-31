@@ -12,27 +12,14 @@ import logging
 from pathlib import Path
 from typing import Dict, List
 
-if __package__ in (None, ""):
-    import sys
-
-    sys.path.append(str(Path(__file__).resolve().parents[1]))
-    from league_scorer.models import (
-        CategoryRecord,
-        RunnerRaceEntry,
-        RunnerSeasonRecord,
-        TeamRaceResult,
-        TeamSeasonRecord,
-        UnrecognisedClub,
-    )
-else:
-    from .models import (
-        CategoryRecord,
-        RunnerRaceEntry,
-        RunnerSeasonRecord,
-        TeamRaceResult,
-        TeamSeasonRecord,
-        UnrecognisedClub,
-    )
+from .models import (
+    CategoryRecord,
+    RunnerRaceEntry,
+    RunnerSeasonRecord,
+    TeamRaceResult,
+    TeamSeasonRecord,
+    UnrecognisedClub,
+)
 
 import pandas as pd
 from openpyxl.styles import Alignment, Font, PatternFill

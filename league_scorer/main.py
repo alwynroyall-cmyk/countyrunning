@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Dict, List
 
 from .club_loader import load_clubs
-from .exceptions import FatalError, RaceProcessingError
+from .exceptions import RaceProcessingError
 from .individual_scoring import assign_individual_points
 from .models import (
     CategoryRecord,
