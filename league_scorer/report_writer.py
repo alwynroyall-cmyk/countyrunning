@@ -20,6 +20,7 @@ from typing import List, Optional
 
 from docx import Document
 from docx.enum.section import WD_ORIENT
+from docx.enum.table import WD_ROW_HEIGHT_RULE
 from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_BREAK
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
@@ -40,6 +41,9 @@ _NAVY_HEX    = "3a4658"
 _GREEN_HEX   = "2d7a4a"
 _WHITE_HEX   = "ffffff"
 _ALT_HEX     = "eef2f7"   # alternating data row tint
+_TOTAL_HEX   = "00b050"   # highlighted total-points column in division tables
+_FONT_NAME   = "Calibri"
+_SEASON_FINAL_RACE = 8
 
 _NAVY_RGB   = RGBColor(0x3a, 0x46, 0x58)
 _GREEN_RGB  = RGBColor(0x2d, 0x7a, 0x4a)
@@ -103,6 +107,33 @@ def _set_para_bg(para, hex_color: str) -> None:
     shd.set(qn("w:color"), "auto")
     shd.set(qn("w:fill"), hex_color)
     pPr.append(shd)
+
+
+def _set_cell_borders(cell, **borders: str) -> None:
+    """Set specific cell borders using Word border values."""
+    tc = cell._tc
+    tcPr = tc.get_or_add_tcPr()
+    tc_borders = tcPr.find(qn("w:tcBorders"))
+    if tc_borders is None:
+        tc_borders = OxmlElement("w:tcBorders")
+        tcPr.append(tc_borders)
+
+    for side, value in borders.items():
+        existing = tc_borders.find(qn(f"w:{side}"))
+        if existing is not None:
+            tc_borders.remove(existing)
+        border = OxmlElement(f"w:{side}")
+        if value == "none":
+            border.set(qn("w:val"), "none")
+            border.set(qn("w:sz"), "0")
+            border.set(qn("w:space"), "0")
+            border.set(qn("w:color"), "auto")
+        else:
+            border.set(qn("w:val"), "single")
+            border.set(qn("w:sz"), "6")
+            border.set(qn("w:space"), "0")
+            border.set(qn("w:color"), value)
+        tc_borders.append(border)
 
 
 def _cell_text(cell, text, bold=False, italic=False,
@@ -182,6 +213,36 @@ def _make_header_row(table, headers: list, widths_cm: list) -> None:
         if i < len(widths_cm) and widths_cm[i]:
             cell.width = Cm(widths_cm[i])
         _cell_text(cell, hdr, bold=True, color=_WHITE_RGB, size_pt=8, align="center")
+
+
+def _division_total_cell(cell, text, *, bold=False, italic=False,
+                         size_pt=9, has_middle_line=True) -> None:
+    """Render the division table total column with distinct fill and borders."""
+    _set_cell_bg(cell, _TOTAL_HEX)
+    _set_cell_borders(
+        cell,
+        left="none",
+        top="none",
+        bottom="FFFFFF" if has_middle_line else "none",
+        right="none",
+    )
+    _cell_text(cell, text, bold=bold, italic=italic,
+               color=_WHITE_RGB, size_pt=size_pt, align="center")
+
+
+def _set_row_height(row, height_cm: float) -> None:
+    """Apply a fixed row height so division tables keep a stable layout."""
+    row.height = Cm(height_cm)
+    row.height_rule = WD_ROW_HEIGHT_RULE.EXACTLY
+
+
+def _apply_document_font_defaults(doc: Document) -> None:
+    """Set the generated document's styles to use a consistent font family."""
+    for style in doc.styles:
+        try:
+            style.font.name = _FONT_NAME
+        except Exception:
+            continue
 
 
 def _add_data_row(table, values: list, widths_cm: list,
@@ -375,6 +436,108 @@ def _write_overview(doc: Document, highest: int, year: int,
         _write_summary_table(["Club", "Unique Runners"], [10.5, 3.0], club_rows)
 
 
+def _team_narrative_name(team: TeamSeasonRecord) -> str:
+    """Compact team label for prose summaries."""
+    return team.display_name.replace(" -- ", " ")
+
+
+def _runner_narrative_name(record: RunnerSeasonRecord) -> str:
+    """Compact runner label for prose summaries."""
+    return f"{record.name} ({record.preferred_club})"
+
+
+def _write_league_narrative(doc: Document,
+                            highest_race: int,
+                            year: int,
+                            male_records: List[RunnerSeasonRecord],
+                            female_records: List[RunnerSeasonRecord],
+                            div1_teams: List[TeamSeasonRecord],
+                            div2_teams: List[TeamSeasonRecord]) -> None:
+    """Write a short season-level narrative ahead of the division tables."""
+    _sub_heading(doc, "League Summary")
+
+    div1 = sorted(div1_teams, key=lambda team: team.position)
+    div2 = sorted(div2_teams, key=lambda team: team.position)
+    male = sorted(male_records, key=lambda record: record.position)
+    female = sorted(female_records, key=lambda record: record.position)
+
+    div1_leader = div1[0] if div1 else None
+    div1_runner_up = div1[1] if len(div1) > 1 else None
+    div1_bottom = div1[-2:] if len(div1) >= 2 else div1
+    div2_leader = div2[0] if div2 else None
+    div2_promotion = div2[:2]
+    male_leader = male[0] if male else None
+    female_leader = female[0] if female else None
+
+    if highest_race == _SEASON_FINAL_RACE:
+        parts = [
+            f"Race {highest_race} brings the {year} WRRL league season to its conclusion.",
+        ]
+        if div1_leader and div1_runner_up:
+            parts.append(
+                f"Division 1 is won by {_team_narrative_name(div1_leader)} on {div1_leader.total_points} points, "
+                f"with {_team_narrative_name(div1_runner_up)} finishing second on {div1_runner_up.total_points}."
+            )
+        elif div1_leader:
+            parts.append(
+                f"Division 1 is led by {_team_narrative_name(div1_leader)} on {div1_leader.total_points} points."
+            )
+
+        if len(div2_promotion) == 2:
+            parts.append(
+                f"Promotion from Division 2 goes to {_team_narrative_name(div2_promotion[0])} and "
+                f"{_team_narrative_name(div2_promotion[1])}, while "
+                f"{', '.join(_team_narrative_name(team) for team in div1_bottom)} finish in the relegation places."
+            )
+        elif div2_leader:
+            parts.append(
+                f"Division 2 is topped by {_team_narrative_name(div2_leader)} on {div2_leader.total_points} points."
+            )
+
+        if male_leader and female_leader:
+            parts.append(
+                f"The individual tables are headed by {_runner_narrative_name(male_leader)} with {male_leader.total_points} points "
+                f"and {_runner_narrative_name(female_leader)} with {female_leader.total_points}."
+            )
+    else:
+        parts = [
+            f"After {highest_race} races, the {year} WRRL season has reached its middle phase and the league tables are beginning to settle.",
+        ]
+        if div1_leader and div1_runner_up:
+            parts.append(
+                f"{_team_narrative_name(div1_leader)} currently leads Division 1 on {div1_leader.total_points} points, "
+                f"with {_team_narrative_name(div1_runner_up)} closest on {div1_runner_up.total_points}."
+            )
+        elif div1_leader:
+            parts.append(
+                f"{_team_narrative_name(div1_leader)} currently leads Division 1 on {div1_leader.total_points} points."
+            )
+
+        if len(div2_promotion) == 2:
+            parts.append(
+                f"In Division 2, {_team_narrative_name(div2_promotion[0])} sets the pace and the current promotion places are held by "
+                f"{_team_narrative_name(div2_promotion[0])} and {_team_narrative_name(div2_promotion[1])}."
+            )
+        elif div2_leader:
+            parts.append(
+                f"In Division 2, {_team_narrative_name(div2_leader)} sets the pace on {div2_leader.total_points} points."
+            )
+
+        if male_leader and female_leader:
+            parts.append(
+                f"The individual standings are led by {_runner_narrative_name(male_leader)} and "
+                f"{_runner_narrative_name(female_leader)}, leaving the remaining races to decide titles, promotion and relegation."
+            )
+
+    paragraph = doc.add_paragraph()
+    paragraph.paragraph_format.space_before = Pt(0)
+    paragraph.paragraph_format.space_after = Pt(8)
+    paragraph.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+    run = paragraph.add_run(" ".join(parts))
+    run.font.size = Pt(10)
+    run.font.color.rgb = _NAVY_RGB
+
+
 def _write_club_table(doc: Document, teams: List[TeamSeasonRecord],
                       title: str, race_count: int,
                       is_div1: bool = False) -> None:
@@ -384,11 +547,11 @@ def _write_club_table(doc: Document, teams: List[TeamSeasonRecord],
     Div 2: position 1 = winner (green); position 2 = promoted (subtle teal).
     In both divisions position 1 always gets the green winner highlight.
     """
-    _section_heading(doc, title)
     races      = list(range(1, race_count + 1))
     headers    = ["Pos", "Club"] + [f"R{n}" for n in races] + ["Total"]
     name_col   = 1
-    widths_cm  = [1.0, 5.5] + [1.2] * len(races) + [1.5]
+    widths_cm  = [1.0, 5.5] + [1.2] * len(races) + [2.1]
+    title_text = title.replace(" — Club Table", "").upper()
 
     sorted_teams = sorted(teams, key=lambda x: x.position)
     if not is_div1:
@@ -397,9 +560,31 @@ def _write_club_table(doc: Document, teams: List[TeamSeasonRecord],
     RELEGATE_N   = 2   # bottom N in Div 1
     PROMOTE_N    = 2   # top N in Div 2 (pos 1 stays as leader)
 
-    t = doc.add_table(rows=1, cols=len(headers))
+    t = doc.add_table(rows=2, cols=len(headers))
     t.style = "Table Grid"
-    _make_header_row(t, headers, widths_cm)
+    t.autofit = False
+    _no_table_borders(t)
+
+    title_row = t.rows[0]
+    _set_row_height(title_row, 0.5)
+    merged_title = title_row.cells[0]
+    for cell in title_row.cells[1:]:
+        merged_title = merged_title.merge(cell)
+    _set_cell_bg(merged_title, _NAVY_HEX)
+    _cell_text(merged_title, title_text, bold=True,
+               color=_WHITE_RGB, size_pt=12, align="center")
+
+    header_row = t.rows[1]
+    _set_row_height(header_row, 0.5)
+    for i, hdr in enumerate(headers):
+        cell = header_row.cells[i]
+        if i < len(widths_cm) and widths_cm[i]:
+            cell.width = Cm(widths_cm[i])
+        if hdr == "Total":
+            _division_total_cell(cell, hdr, bold=True, size_pt=8, has_middle_line=True)
+        else:
+            _set_cell_bg(cell, _NAVY_HEX)
+            _cell_text(cell, hdr, bold=True, color=_WHITE_RGB, size_pt=8, align="center")
 
     for i, team in enumerate(sorted_teams):
         if team.position == 1:
@@ -411,13 +596,39 @@ def _write_club_table(doc: Document, teams: List[TeamSeasonRecord],
         else:
             style = None
 
+        if style and style in _ROW_STYLES:
+            bg, fg, is_bold, is_italic = _ROW_STYLES[style]
+        else:
+            bg, fg, is_bold, is_italic = (
+                (_ALT_HEX if i % 2 == 1 else _WHITE_HEX), None, False, False
+            )
+
+        row = t.add_row()
+        _set_row_height(row, 0.5)
         vals = [team.position, team.display_name]
         for n in races:
             rr = team.race_results.get(n)
             vals.append(rr.team_points if rr else "")
-        vals.append(team.total_points)
-        _add_data_row(t, vals, widths_cm, alt=i % 2 == 1,
-                      row_style=style, name_col=name_col)
+
+        for j, val in enumerate(vals):
+            cell = row.cells[j]
+            _set_cell_bg(cell, bg)
+            if j < len(widths_cm) and widths_cm[j]:
+                cell.width = Cm(widths_cm[j])
+            align = "left" if j == name_col else "center"
+            _cell_text(cell, val, bold=(is_bold or j == 0),
+                       italic=is_italic, color=fg, size_pt=9, align=align)
+
+        total_cell = row.cells[len(headers) - 1]
+        if len(widths_cm) >= len(headers):
+            total_cell.width = Cm(widths_cm[-1])
+        _division_total_cell(
+            total_cell,
+            team.total_points,
+            bold=is_bold,
+            italic=is_italic,
+            has_middle_line=(i < total - 1),
+        )
 
     # Legend note below the table
     legend_p = doc.add_paragraph()
@@ -891,6 +1102,7 @@ def write_race_report(
     filepath  = Path(filepath).with_suffix(".docx")
 
     doc = Document()
+    _apply_document_font_defaults(doc)
     section = doc.sections[0]
     section.page_width    = Cm(21.0)
     section.page_height   = Cm(29.7)
@@ -1046,6 +1258,7 @@ def write_combined_report(
     filepath = Path(filepath).with_suffix(".docx")
 
     doc = Document()
+    _apply_document_font_defaults(doc)
 
     # ── A4 Portrait ───────────────────────────────────────────────────────────
     section = doc.sections[0]
@@ -1061,12 +1274,14 @@ def write_combined_report(
 
     # ── Content ───────────────────────────────────────────────────────────────
     _build_cover_header(doc, year, highest_race, images_dir)
+    _write_league_narrative(doc, highest_race, year, male_records, female_records,
+                            div1_teams, div2_teams)
 
     # Club tables
-    _spacer(doc, height_pt=10)  # breathing room before first club section bar
+    _spacer(doc, height_pt=4)
     _write_club_table(doc, div1_teams, "Division 1 — Club Table",
                       highest_race, is_div1=True)
-    _spacer(doc, height_pt=6)
+    _page_break(doc)
     _write_club_table(doc, div2_teams, "Division 2 — Club Table",
                       highest_race, is_div1=False)
 
