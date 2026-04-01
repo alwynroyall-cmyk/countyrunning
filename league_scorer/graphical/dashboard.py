@@ -518,24 +518,60 @@ class LeagueScorerDashboard(tk.Tk):
         self._settings_panel = panel
 
     def _on_audit_runners(self) -> None:
-        """Placeholder action for the future runner audit workflow."""
+        """Show the audit runner panel inline within the dashboard."""
         if not self._require_configured("Audit Runners"):
             return
-        messagebox.showinfo(
-            "Audit Runners",
-            "Runner audit has not been implemented yet.\n\n"
-            "The button is now in place so we can wire it into a real audit workflow next.",
+        session_config.ensure_dirs()
+        self._home_frame.pack_forget()
+        from .audit_gui import LeagueAuditApp
+        panel = LeagueAuditApp(
+            self._page_container,
+            input_dir=session_config.input_dir,
+            output_dir=session_config.output_dir,
+            year=session_config.year,
+            back_callback=self._on_audit_back,
+            completion_callback=self._on_audit_complete_view,
         )
+        panel.pack(fill="both", expand=True)
+        self._audit_panel = panel
 
-    def _on_view_audit(self) -> None:
-        """Placeholder action for viewing future audit outputs."""
+    def _on_view_audit(self, preferred_workbook=None) -> None:
+        """Show the audit viewer panel inline within the dashboard."""
         if not self._require_configured("View Audit"):
             return
-        messagebox.showinfo(
-            "View Audit",
-            "Audit viewing has not been implemented yet.\n\n"
-            "Once the audit output format is defined, this button can open the saved audit results.",
+        self._home_frame.pack_forget()
+        from .audit_viewer import AuditViewerPanel
+        panel = AuditViewerPanel(self._page_container, preferred_workbook=preferred_workbook)
+        panel.pack(fill="both", expand=True)
+        self._audit_view_panel = panel
+
+        def on_close():
+            if hasattr(self, "_audit_view_panel"):
+                self._audit_view_panel.destroy()
+                del self._audit_view_panel
+            self._home_frame.pack(fill="both", expand=True)
+
+        close_btn = tk.Button(
+            panel,
+            text="Close",
+            command=on_close,
+            font=("Segoe UI", 10, "bold"),
+            bg=WRRL_GREEN,
+            fg=WRRL_WHITE,
         )
+        close_btn.pack(pady=8)
+
+    def _on_audit_back(self) -> None:
+        if hasattr(self, "_audit_panel"):
+            self._audit_panel.destroy()
+            del self._audit_panel
+        self._home_frame.pack(fill="both", expand=True)
+
+    def _on_audit_complete_view(self, preferred_workbook=None) -> None:
+        if hasattr(self, "_audit_panel"):
+            self._audit_panel.destroy()
+            del self._audit_panel
+        self._on_view_audit(preferred_workbook=preferred_workbook)
 
     def _on_help(self) -> None:
         """Show help information."""

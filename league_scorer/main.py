@@ -33,8 +33,9 @@ from .output_writer import (
     write_unrecognised_clubs,
 )
 from .report_writer import write_combined_report, write_race_report
-from .race_processor import extract_race_number, process_race_file
+from .race_processor import process_race_file
 from .season_aggregation import build_individual_season, build_team_season
+from .source_loader import discover_race_files
 from .team_scoring import build_team_scores
 
 log = logging.getLogger(__name__)
@@ -128,27 +129,8 @@ class LeagueScorer:
         )
 
     def _discover_races(self) -> Dict[int, Path]:
-        """Find all xlsx files with a valid Race # name, sorted by race number."""
-        races: Dict[int, Path] = {}
-        for fp in sorted(self.input_dir.glob("*.xlsx")):
-            if fp.name.lower() == "clubs.xlsx":
-                continue
-            n = extract_race_number(fp.stem)
-            if n is None:
-                log.warning(
-                    "Ignoring '%s' — no valid race number in filename.", fp.name
-                )
-                continue
-            if n in races:
-                log.warning(
-                    "Duplicate race number %d — ignoring '%s' (keeping '%s').",
-                    n,
-                    fp.name,
-                    races[n].name,
-                )
-                continue
-            races[n] = fp
-
+        """Find all supported race files with a valid Race # name."""
+        races = discover_race_files(self.input_dir, excluded_names=("clubs.xlsx",))
         log.info("Discovered %d race file(s).", len(races))
         return races
 

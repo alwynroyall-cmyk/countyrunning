@@ -17,17 +17,24 @@ from .normalisation import (
     parse_time_to_seconds,
     time_display,
 )
+from .source_loader import load_race_dataframe
 
 log = logging.getLogger(__name__)
 
-_REQUIRED_COLS = {"Position", "Name", "Club", "Gender", "Category"}
+_REQUIRED_COLS = {
+    "Position": ("position", "pos", "place"),
+    "Name": ("name", "runner", "runner name"),
+    "Club": ("club", "team", "affiliation"),
+    "Gender": ("gender", "sex"),
+    "Category": ("category", "cat", "age category"),
+}
 
 
 # ─────────────────────────────────────────────────────── public interface ────
 
 def extract_race_number(filename: str) -> Optional[int]:
     """Return the positive integer race number from a filename, or None."""
-    m = re.search(r"\brace\s*(\d+)\b", filename, re.IGNORECASE)
+    m = re.search(r"\brace\s*#?\s*(\d+)\b", filename, re.IGNORECASE)
     if m:
         n = int(m.group(1))
         return n if n > 0 else None
@@ -55,18 +62,18 @@ def process_race_file(
 
     try:
         # Do NOT force dtype=str — preserves native time / numeric types
-        df = pd.read_excel(filepath, engine="openpyxl")
+        df = load_race_dataframe(filepath)
     except Exception as exc:
         raise RaceProcessingError(f"Cannot read '{filepath.name}': {exc}") from exc
 
     df.columns = [str(c).strip() for c in df.columns]
 
     # ── Required column detection (case-insensitive) ──
-    col_lower = {c.lower(): c for c in df.columns}
+    col_lower = {_normalise_column_name(c): c for c in df.columns}
     col_map: Dict[str, str] = {}
     missing_cols = []
-    for req in _REQUIRED_COLS:
-        found = col_lower.get(req.lower())
+    for req, aliases in _REQUIRED_COLS.items():
+        found = next((col_lower.get(alias) for alias in aliases if alias in col_lower), None)
         if found is None:
             missing_cols.append(req)
         else:
@@ -100,6 +107,26 @@ def process_race_file(
         name_raw = row.get(col_map["Name"])
         name_s = "" if name_raw is None else str(name_raw).strip()
         if not name_s or name_s.lower() == "nan":
+            missing_time_seconds = parse_time_to_seconds(row.get(time_col))
+            if missing_time_seconds is not None:
+                raw_gender = row.get(col_map["Gender"])
+                raw_gender_text = "" if raw_gender is None else str(raw_gender).strip()
+                raw_club_val = row.get(col_map["Club"])
+                raw_club_text = "" if raw_club_val is None else str(raw_club_val).strip()
+                raw_cat_val = row.get(col_map["Category"])
+                raw_cat_text = "" if raw_cat_val is None else str(raw_cat_val).strip()
+                issue_notes.append(
+                    RaceIssue(
+                        "warning",
+                        "Missing runner name with valid time",
+                        row_num,
+                        "AUD-ROW-005",
+                        raw_club=raw_club_text,
+                        gender=raw_gender_text,
+                        raw_category=raw_cat_text,
+                        time_str=time_display(row.get(time_col)),
+                    )
+                )
             skipped += 1
             continue
         name = name_s
@@ -158,7 +185,17 @@ def process_race_file(
         # ── Gender ──
         gender = normalise_gender(raw_gender_val)
         if gender is None:
-            issue_notes.append(RaceIssue("warning", f"invalid gender '{raw_gender_val}'", row_num))
+            issue_notes.append(
+                RaceIssue(
+                    "warning",
+                    f"invalid gender '{raw_gender_val}'",
+                    row_num,
+                    "AUD-ROW-001",
+                    runner_name=name,
+                    raw_club=raw_club,
+                    raw_category=raw_cat,
+                )
+            )
             log.warning(
                 "  Row %d (%s): invalid gender '%s' — row skipped",
                 row_num, name, raw_gender_val,
@@ -169,7 +206,18 @@ def process_race_file(
         # ── Time ──
         time_seconds = parse_time_to_seconds(raw_time_val)
         if time_seconds is None:
-            issue_notes.append(RaceIssue("warning", f"invalid time '{raw_time_val}'", row_num))
+            issue_notes.append(
+                RaceIssue(
+                    "warning",
+                    f"invalid time '{raw_time_val}'",
+                    row_num,
+                    "AUD-ROW-002",
+                    runner_name=name,
+                    raw_club=raw_club,
+                    gender=gender or "",
+                    raw_category=raw_cat,
+                )
+            )
             log.warning(
                 "  Row %d (%s): invalid time '%s' — row skipped",
                 row_num, name, raw_time_val,
@@ -182,7 +230,19 @@ def process_race_file(
         norm_cat, cat_notes = normalise_category(raw_cat)
         row_warnings: List[str] = []
         if cat_notes:
-            issue_notes.append(RaceIssue("warning", cat_notes, row_num))
+            issue_notes.append(
+                RaceIssue(
+                    "warning",
+                    cat_notes,
+                    row_num,
+                    "AUD-ROW-003" if raw_cat == "" else "AUD-ROW-004",
+                    runner_name=name,
+                    raw_club=raw_club,
+                    gender=gender,
+                    raw_category=raw_cat,
+                    time_str=disp_time,
+                )
+            )
             row_warnings.append(cat_notes)
 
         cat_key = raw_cat.lower()
@@ -265,7 +325,28 @@ def _deduplicate(
                 warning_text = (
                     f"Duplicate runner: kept {r.time_str}, discarded {existing.time_str}"
                 )
-                issue_notes.append(RaceIssue("warning", warning_text, r.source_row))
+                code = "AUD-ROW-008"
+                if _has_duplicate_attribute_conflict(existing, r):
+                    code = "AUD-ROW-010"
+                    warning_text = (
+                        "Duplicate runner attribute conflict: "
+                        f"kept {r.time_str} (row {r.source_row}), "
+                        f"discarded {existing.time_str} (row {existing.source_row})"
+                    )
+
+                issue_notes.append(
+                    RaceIssue(
+                        "warning",
+                        warning_text,
+                        r.source_row,
+                        code,
+                        runner_name=r.name,
+                        raw_club=r.raw_club,
+                        gender=r.gender,
+                        raw_category=r.raw_category,
+                        time_str=r.time_str,
+                    )
+                )
                 log.warning(
                     "  Race %d duplicate '%s' (%s): keeping %s, discarding %s",
                     race_number, r.name,
@@ -277,10 +358,31 @@ def _deduplicate(
                 index = ordered.index(existing)
                 ordered[index] = r
             else:
+                code = "AUD-ROW-008"
                 warning_text = (
                     f"Duplicate runner: kept {existing.time_str}, discarded {r.time_str}"
                 )
-                issue_notes.append(RaceIssue("warning", warning_text, existing.source_row))
+                if _has_duplicate_attribute_conflict(existing, r):
+                    code = "AUD-ROW-010"
+                    warning_text = (
+                        "Duplicate runner attribute conflict: "
+                        f"kept {existing.time_str} (row {existing.source_row}), "
+                        f"discarded {r.time_str} (row {r.source_row})"
+                    )
+
+                issue_notes.append(
+                    RaceIssue(
+                        "warning",
+                        warning_text,
+                        existing.source_row,
+                        code,
+                        runner_name=existing.name,
+                        raw_club=existing.raw_club,
+                        gender=existing.gender,
+                        raw_category=existing.raw_category,
+                        time_str=existing.time_str,
+                    )
+                )
                 log.warning(
                     "  Race %d duplicate '%s' (%s): keeping %s, discarding %s",
                     race_number, r.name,
@@ -290,3 +392,19 @@ def _deduplicate(
                 existing.warnings.append(warning_text)
 
     return ordered
+
+
+def _has_duplicate_attribute_conflict(
+    existing: RunnerRaceEntry, candidate: RunnerRaceEntry,
+) -> bool:
+    return any(
+        (
+            existing.gender != candidate.gender,
+            existing.normalised_category != candidate.normalised_category,
+            existing.preferred_club != candidate.preferred_club,
+        )
+    )
+
+
+def _normalise_column_name(value: str) -> str:
+    return re.sub(r"\s+", " ", str(value).strip().lower())

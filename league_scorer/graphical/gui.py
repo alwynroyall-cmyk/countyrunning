@@ -16,7 +16,7 @@ from tkinter import messagebox, scrolledtext
 
 from ..exceptions import FatalError
 from ..main import LeagueScorer
-from ..race_processor import extract_race_number
+from ..source_loader import discover_race_files
 
 # ---------------------------------------------------------------------------
 # Brand colours (match dashboard)
@@ -115,14 +115,10 @@ class LeagueScorerApp(tk.Frame):
         """Scan input_dir and return {race_num: Path} for all valid race files."""
         if not self._input_dir or not self._input_dir.is_dir():
             return {}
-        found = {}
-        for fp in sorted(self._input_dir.glob("*.xlsx")):
-            if fp.name.lower() in ("clubs.xlsx", "wrrl_events.xlsx"):
-                continue
-            n = extract_race_number(fp.stem)
-            if n is not None and n not in found:
-                found[n] = fp
-        return dict(sorted(found.items()))
+        return discover_race_files(
+            self._input_dir,
+            excluded_names=("clubs.xlsx", "wrrl_events.xlsx"),
+        )
 
     # -------------------------------------------------------------------------
     # UI construction
