@@ -1,6 +1,7 @@
 """Load a race Excel file, normalise all fields, and handle duplicates."""
 
 import logging
+import math
 import re
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -8,7 +9,7 @@ from typing import Dict, List, Optional, Tuple
 import pandas as pd
 
 from .exceptions import RaceProcessingError
-from .models import CategoryRecord, RunnerRaceEntry, UnrecognisedClub
+from .models import CategoryRecord, RaceIssue, RunnerRaceEntry, UnrecognisedClub
 from .normalisation import (
     find_time_column,
     normalise_category,
@@ -37,7 +38,7 @@ def process_race_file(
     filepath: Path,
     race_number: int,
     raw_to_preferred: Dict[str, str],
-) -> Tuple[List[RunnerRaceEntry], List[CategoryRecord], List[UnrecognisedClub]]:
+) -> Tuple[List[RunnerRaceEntry], List[CategoryRecord], List[UnrecognisedClub], List[RaceIssue]]:
     """
     Load and validate a race file.
 
@@ -46,6 +47,7 @@ def process_race_file(
     runners      : normalised runner entries (duplicates already resolved)
     cat_records  : category exception report rows
     unrec_clubs  : unrecognised club report rows
+    issue_notes  : race-specific issues captured for output summaries
 
     Raises RaceProcessingError on fatal race-level conditions.
     """
@@ -88,6 +90,7 @@ def process_race_file(
     unrec_tracker: Dict[str, Tuple[str, int]] = {}       # raw_lower → (display, count)
 
     runners: List[RunnerRaceEntry] = []
+    issue_notes: List[RaceIssue] = []
     skipped = 0
 
     for idx, row in df.iterrows():
@@ -101,29 +104,7 @@ def process_race_file(
             continue
         name = name_s
 
-        # ── Gender ──
-        gender = normalise_gender(row.get(col_map["Gender"]))
-        if gender is None:
-            log.warning(
-                "  Row %d (%s): invalid gender '%s' — row skipped",
-                row_num, name, row.get(col_map["Gender"]),
-            )
-            skipped += 1
-            continue
-
-        # ── Time ──
-        raw_time_val = row.get(time_col)
-        time_seconds = parse_time_to_seconds(raw_time_val)
-        if time_seconds is None:
-            log.warning(
-                "  Row %d (%s): invalid time '%s' — row skipped",
-                row_num, name, raw_time_val,
-            )
-            skipped += 1
-            continue
-        disp_time = time_display(raw_time_val)
-
-        # ── Club ──
+        # ── Club / eligibility ──
         raw_club_val = row.get(col_map["Club"])
         raw_club = "" if raw_club_val is None else str(raw_club_val).strip()
         if raw_club.lower() == "nan":
@@ -131,6 +112,15 @@ def process_race_file(
 
         preferred_club = raw_to_preferred.get(raw_club.lower()) if raw_club else None
         eligible = preferred_club is not None
+
+        raw_gender_val = row.get(col_map["Gender"])
+        raw_cat_val = row.get(col_map["Category"])
+        raw_cat = (
+            ""
+            if (raw_cat_val is None or str(raw_cat_val).strip().lower() == "nan")
+            else str(raw_cat_val).strip()
+        )
+        raw_time_val = row.get(time_col)
 
         if not eligible:
             key = raw_club.lower()
@@ -142,14 +132,58 @@ def process_race_file(
                     row_num, name, raw_club,
                 )
 
+            gender_display = "" if raw_gender_val is None else str(raw_gender_val).strip()
+            time_seconds = parse_time_to_seconds(raw_time_val)
+            disp_time = time_display(raw_time_val) if time_seconds is not None else (
+                "" if raw_time_val is None else str(raw_time_val).strip()
+            )
+
+            runners.append(
+                RunnerRaceEntry(
+                    name=name,
+                    raw_club=raw_club,
+                    preferred_club=None,
+                    gender=gender_display,
+                    raw_category=raw_cat,
+                    normalised_category=raw_cat,
+                    time_str=disp_time,
+                    time_seconds=time_seconds if time_seconds is not None else math.inf,
+                    race_number=race_number,
+                    eligible=False,
+                    source_row=row_num,
+                )
+            )
+            continue
+
+        # ── Gender ──
+        gender = normalise_gender(raw_gender_val)
+        if gender is None:
+            issue_notes.append(RaceIssue("warning", f"invalid gender '{raw_gender_val}'", row_num))
+            log.warning(
+                "  Row %d (%s): invalid gender '%s' — row skipped",
+                row_num, name, raw_gender_val,
+            )
+            skipped += 1
+            continue
+
+        # ── Time ──
+        time_seconds = parse_time_to_seconds(raw_time_val)
+        if time_seconds is None:
+            issue_notes.append(RaceIssue("warning", f"invalid time '{raw_time_val}'", row_num))
+            log.warning(
+                "  Row %d (%s): invalid time '%s' — row skipped",
+                row_num, name, raw_time_val,
+            )
+            skipped += 1
+            continue
+        disp_time = time_display(raw_time_val)
+
         # ── Category ──
-        raw_cat_val = row.get(col_map["Category"])
-        raw_cat = (
-            ""
-            if (raw_cat_val is None or str(raw_cat_val).strip().lower() == "nan")
-            else str(raw_cat_val).strip()
-        )
         norm_cat, cat_notes = normalise_category(raw_cat)
+        row_warnings: List[str] = []
+        if cat_notes:
+            issue_notes.append(RaceIssue("warning", cat_notes, row_num))
+            row_warnings.append(cat_notes)
 
         cat_key = raw_cat.lower()
         _, _, cat_count = cat_tracker.get(cat_key, ("", "", 0))
@@ -167,13 +201,15 @@ def process_race_file(
                 time_seconds=time_seconds,
                 race_number=race_number,
                 eligible=eligible,
+                source_row=row_num,
+                warnings=row_warnings,
             )
         )
 
     log.info("  Parsed %d runner rows (%d skipped)", len(runners), skipped)
 
     # ── Deduplication ──
-    runners = _deduplicate(runners, race_number)
+    runners = _deduplicate(runners, race_number, issue_notes)
 
     # ── Build report objects ──
     cat_records = [
@@ -191,45 +227,66 @@ def process_race_file(
         for v in unrec_tracker.values()
     ]
 
-    return runners, cat_records, unrec_clubs
+    return runners, cat_records, unrec_clubs, issue_notes
 
 
 # ──────────────────────────────────────────────────────────── deduplication ──
 
 def _deduplicate(
-    runners: List[RunnerRaceEntry], race_number: int
+    runners: List[RunnerRaceEntry], race_number: int, issue_notes: List[RaceIssue]
 ) -> List[RunnerRaceEntry]:
     """
     Keep the fastest time when the same (Name, Preferred Club) appears more
-    than once. Ineligible runners are de-duplicated by (Name, raw club).
-    Logs a warning for every duplicate pair removed.
+    than once.
+
+    Ineligible runners are left unchanged, even if duplicate rows exist for the
+    same name and raw club.
+
+    Logs a warning only when an eligible duplicate pair is reduced.
     """
     # key → best RunnerRaceEntry so far
     best: Dict[Tuple, RunnerRaceEntry] = {}
+    ordered: List[RunnerRaceEntry] = []
 
     for r in runners:
-        # Use preferred_club for eligible runners, raw_club for ineligible
-        club_key = r.preferred_club if r.preferred_club else f"__raw__{r.raw_club.lower()}"
+        if not r.eligible:
+            ordered.append(r)
+            continue
+
+        club_key = r.preferred_club
         key = (r.name.lower(), club_key)
 
         if key not in best:
             best[key] = r
+            ordered.append(r)
         else:
             existing = best[key]
             if r.time_seconds < existing.time_seconds:
+                warning_text = (
+                    f"Duplicate runner: kept {r.time_str}, discarded {existing.time_str}"
+                )
+                issue_notes.append(RaceIssue("warning", warning_text, r.source_row))
                 log.warning(
                     "  Race %d duplicate '%s' (%s): keeping %s, discarding %s",
                     race_number, r.name,
                     r.preferred_club or r.raw_club,
                     r.time_str, existing.time_str,
                 )
+                r.warnings.append(warning_text)
                 best[key] = r
+                index = ordered.index(existing)
+                ordered[index] = r
             else:
+                warning_text = (
+                    f"Duplicate runner: kept {existing.time_str}, discarded {r.time_str}"
+                )
+                issue_notes.append(RaceIssue("warning", warning_text, existing.source_row))
                 log.warning(
                     "  Race %d duplicate '%s' (%s): keeping %s, discarding %s",
                     race_number, r.name,
                     r.preferred_club or r.raw_club,
                     existing.time_str, r.time_str,
                 )
+                existing.warnings.append(warning_text)
 
-    return list(best.values())
+    return ordered

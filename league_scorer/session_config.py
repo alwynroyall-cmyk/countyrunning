@@ -29,6 +29,7 @@ class SessionConfig:
         self._data_root: Optional[Path] = None
         self._year: int = datetime.date.today().year
         self._events_path: Optional[Path] = None
+        self._events_filename: Optional[str] = None
         self.load()  # restore previous session settings
 
     # ── year ──────────────────────────────────────────────────────────────────
@@ -40,7 +41,7 @@ class SessionConfig:
     @year.setter
     def year(self, value: int) -> None:
         self._year = int(value)
-        self._events_path = None          # reset events when season changes
+        self._sync_events_path()
         self.save()
 
     # ── data root ─────────────────────────────────────────────────────────────
@@ -52,6 +53,7 @@ class SessionConfig:
     @data_root.setter
     def data_root(self, value: Path) -> None:
         self._data_root = Path(value)
+        self._sync_events_path()
         self.save()
 
     # ── derived paths ─────────────────────────────────────────────────────────
@@ -77,6 +79,12 @@ class SessionConfig:
     @events_path.setter
     def events_path(self, value: Optional[Path]) -> None:
         self._events_path = Path(value) if value else None
+        self._events_filename = self._events_path.name if self._events_path else None
+        self.save()
+
+    @property
+    def events_filename(self) -> Optional[str]:
+        return self._events_filename
 
     # ── state checks ──────────────────────────────────────────────────────────
 
@@ -91,6 +99,18 @@ class SessionConfig:
             self.input_dir.mkdir(parents=True, exist_ok=True)
         if self.output_dir:
             self.output_dir.mkdir(parents=True, exist_ok=True)
+        self._sync_events_path()
+        self.save()
+
+    def _sync_events_path(self) -> None:
+        """Rebuild the events file path for the active season when possible."""
+        if not self._events_filename:
+            self._events_path = None
+            return
+        if self.input_dir is None:
+            self._events_path = None
+            return
+        self._events_path = self.input_dir / self._events_filename
 
     # ── persistence ──────────────────────────────────────────────────────────
 
@@ -99,6 +119,10 @@ class SessionConfig:
         prefs: dict = {"year": self._year}
         if self._data_root is not None:
             prefs["data_root"] = str(self._data_root)
+        if self._events_filename:
+            prefs["events_filename"] = self._events_filename
+        if self._events_path is not None:
+            prefs["events_path"] = str(self._events_path)
         try:
             _PREFS_FILE.write_text(json.dumps(prefs, indent=2), encoding="utf-8")
         except OSError:
@@ -116,6 +140,11 @@ class SessionConfig:
                 candidate = Path(prefs["data_root"])
                 if candidate.exists():
                     self._data_root = candidate
+            if "events_filename" in prefs:
+                self._events_filename = str(prefs["events_filename"])
+            elif "events_path" in prefs:
+                self._events_filename = Path(prefs["events_path"]).name
+            self._sync_events_path()
         except (OSError, json.JSONDecodeError, ValueError):
             pass  # corrupt file; start fresh
 

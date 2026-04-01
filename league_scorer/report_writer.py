@@ -1095,7 +1095,7 @@ def write_race_report(
     year: int,
     filepath: Path,
     source_file: Optional[Path] = None,
-) -> None:
+) -> Optional[str]:
     """Write the per-race scoring card DOCX (+ PDF) styled after the WRRL card."""
     race_name = _extract_race_name(source_file) if source_file else f"Race {race_num}"
     filepath  = Path(filepath).with_suffix(".docx")
@@ -1131,8 +1131,10 @@ def write_race_report(
         pdf_path = filepath.with_suffix(".pdf")
         convert(str(filepath), str(pdf_path))
         log.info("Race %d PDF written: %s", race_num, pdf_path.name)
+        return None
     except Exception as exc:
         log.warning("Race %d PDF conversion skipped — %s", race_num, exc)
+        return f"{filepath.stem}: PDF conversion skipped ({exc})"
 
 
 # ── Document header (branding) ─────────────────────────────────────────────────
@@ -1243,7 +1245,7 @@ def write_combined_report(
     unrec_all: List[UnrecognisedClub],
     images_dir: Optional[Path],
     filepath: Path,
-) -> None:
+) -> Optional[str]:
     """Write the branded combined report to *filepath* (.docx) and attempt PDF.
 
     Parameters
@@ -1315,5 +1317,7 @@ def write_combined_report(
         pdf_path = filepath.with_suffix(".pdf")
         convert(str(filepath), str(pdf_path))
         log.info("PDF written: %s", pdf_path.name)
+        return None
     except Exception as exc:
         log.warning("PDF conversion skipped — %s", exc)
+        return f"{filepath.stem}: PDF conversion skipped ({exc})"

@@ -51,6 +51,7 @@ class LeagueScorerDashboard(tk.Tk):
         self._build_header()
         self._build_main_content()
         self._build_footer()
+        self._restore_events_schedule()
 
         # Start maximised on Windows; fall back to large geometry on other OS
         try:
@@ -169,6 +170,8 @@ class LeagueScorerDashboard(tk.Tk):
             ("📋 View Events", self._on_view_events, 1, 1),
             ("⚙️ Settings", self._on_settings, 2, 0),
             ("❓ Help", self._on_help, 2, 1),
+            ("🧪 Audit Runners", self._on_audit_runners, 3, 0),
+            ("🔎 View Audit", self._on_view_audit, 3, 1),
         ]
 
         for text, cmd, row, col in buttons:
@@ -298,8 +301,7 @@ class LeagueScorerDashboard(tk.Tk):
         idx = years.index(session_config.year) if session_config.year in years else 0
         if idx > 0:
             session_config.year = years[idx - 1]
-            self._events_schedule = None
-            self._refresh_config_panel()
+            self._restore_events_schedule()
 
     def _on_year_next(self) -> None:
         """Step the season year forward by one."""
@@ -307,8 +309,7 @@ class LeagueScorerDashboard(tk.Tk):
         idx = years.index(session_config.year) if session_config.year in years else 0
         if idx < len(years) - 1:
             session_config.year = years[idx + 1]
-            self._events_schedule = None
-            self._refresh_config_panel()
+            self._restore_events_schedule()
 
     def _on_set_data_root(self) -> None:
         """Browse for and set the data root folder."""
@@ -320,7 +321,7 @@ class LeagueScorerDashboard(tk.Tk):
         if folder:
             session_config.data_root = Path(folder)
             session_config.ensure_dirs()
-            self._refresh_config_panel()
+            self._restore_events_schedule()
 
     # ── action buttons ──────────────────────────────────────────────────────
 
@@ -399,6 +400,7 @@ class LeagueScorerDashboard(tk.Tk):
             self._page_container,
             input_dir=session_config.input_dir,
             output_dir=session_config.output_dir,
+            year=session_config.year,
             back_callback=self._on_scorer_back,
         )
         scorer.pack(fill="both", expand=True)
@@ -415,7 +417,11 @@ class LeagueScorerDashboard(tk.Tk):
         """Browse for and load an events XLSX file."""
         if not self._require_configured("Load Events"):
             return
-        initial_dir = str(session_config.input_dir) if session_config.input_dir else "/"
+        initial_path = session_config.events_path
+        if initial_path and initial_path.parent.exists():
+            initial_dir = str(initial_path.parent)
+        else:
+            initial_dir = str(session_config.input_dir) if session_config.input_dir else "/"
         path_str = filedialog.askopenfilename(
             title="Select Events Spreadsheet",
             initialdir=initial_dir,
@@ -437,6 +443,25 @@ class LeagueScorerDashboard(tk.Tk):
             messagebox.showerror("Load Failed", str(exc))
             self._events_schedule = None
             session_config.events_path = None
+            self._refresh_config_panel()
+
+    def _restore_events_schedule(self) -> bool:
+        """Restore the remembered events file for the active season if possible."""
+        events_path = session_config.events_path
+        if not events_path or not events_path.exists():
+            self._events_schedule = None
+            self._refresh_config_panel()
+            return False
+
+        try:
+            self._events_schedule = load_events(events_path)
+        except Exception:
+            self._events_schedule = None
+            self._refresh_config_panel()
+            return False
+
+        self._refresh_config_panel()
+        return True
 
     def _on_view_events(self) -> None:
         """Open the events viewer window."""
@@ -482,10 +507,35 @@ class LeagueScorerDashboard(tk.Tk):
         if not self._require_configured("Settings"):
             return
         self._home_frame.pack_forget()
-        from .settings_dialog import SettingsDialog
-        dialog = SettingsDialog(self)
-        dialog.wait_window()
-        self._home_frame.pack(fill="both", expand=True)
+        from .settings_dialog import SettingsPanel
+        def on_close():
+            if hasattr(self, "_settings_panel"):
+                self._settings_panel.destroy()
+                del self._settings_panel
+            self._home_frame.pack(fill="both", expand=True)
+        panel = SettingsPanel(self._page_container, on_close=on_close)
+        panel.pack(fill="both", expand=True)
+        self._settings_panel = panel
+
+    def _on_audit_runners(self) -> None:
+        """Placeholder action for the future runner audit workflow."""
+        if not self._require_configured("Audit Runners"):
+            return
+        messagebox.showinfo(
+            "Audit Runners",
+            "Runner audit has not been implemented yet.\n\n"
+            "The button is now in place so we can wire it into a real audit workflow next.",
+        )
+
+    def _on_view_audit(self) -> None:
+        """Placeholder action for viewing future audit outputs."""
+        if not self._require_configured("View Audit"):
+            return
+        messagebox.showinfo(
+            "View Audit",
+            "Audit viewing has not been implemented yet.\n\n"
+            "Once the audit output format is defined, this button can open the saved audit results.",
+        )
 
     def _on_help(self) -> None:
         """Show help information."""
@@ -495,6 +545,7 @@ class LeagueScorerDashboard(tk.Tk):
             "  Folders are created as: {root}/{year}/inputs and {root}/{year}/outputs\n\n"
             "• Season: Select the current league year.\n\n"
             "• Load Events: Select the events XLSX from the season inputs folder.\n"
+            "  The filename is remembered and reused for the active season folder on later runs.\n"
             "• View Events: Browse the loaded events schedule.\n\n"
             "• Run League Management: Execute the scoring pipeline.\n"
             "• View Results: Browse generated results."

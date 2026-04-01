@@ -60,12 +60,13 @@ class _QueueHandler(logging.Handler):
 class LeagueScorerApp(tk.Frame):
     """League scorer panel — embeds inside the dashboard."""
 
-    _SENTINEL_OK    = ("done", "ok")
+    _SENTINEL_OK    = "done"
     _SENTINEL_FATAL = "fatal"
 
     def __init__(self, parent: tk.Misc,
                  input_dir: "Path | None" = None,
                  output_dir: "Path | None" = None,
+                 year: int | None = None,
                  back_callback=None) -> None:
         super().__init__(parent, bg=LIGHT)
 
@@ -74,6 +75,7 @@ class LeagueScorerApp(tk.Frame):
 
         self._input_dir  = Path(input_dir)  if input_dir  else None
         self._output_dir = Path(output_dir) if output_dir else None
+        self._year = year
 
         self._log_queue: queue.Queue = queue.Queue()
         self._worker: threading.Thread | None = None
@@ -162,13 +164,10 @@ class LeagueScorerApp(tk.Frame):
         ).pack(side="left", padx=16, pady=10)
 
         # Season badge
-        if self._input_dir:
-            # Extract year from path convention  .../YEAR/inputs
-            parts = self._input_dir.parts
-            year  = parts[-2] if len(parts) >= 2 else ""
+        if self._year is not None:
             tk.Label(
                 bar,
-                text=f"Season {year}",
+                text=f"Season {self._year}",
                 font=("Segoe UI", 10),
                 bg=NAVY, fg="#a0b8d0",
             ).pack(side="left", padx=4)
@@ -390,16 +389,19 @@ class LeagueScorerApp(tk.Frame):
 
         self._worker = threading.Thread(
             target=self._run_pipeline,
-            args=(self._input_dir, self._output_dir, selected),
+            args=(self._input_dir, self._output_dir, self._year, selected),
             daemon=True,
         )
         self._worker.start()
 
     def _run_pipeline(self, input_dir: Path, output_dir: Path,
+                      year: int | None,
                       race_files: dict) -> None:
         try:
-            LeagueScorer(input_dir, output_dir).run(race_files=race_files)
-            self._log_queue.put(self._SENTINEL_OK)
+            if year is None:
+                raise FatalError("Season year is not configured.")
+            warnings = LeagueScorer(input_dir, output_dir, year).run(race_files=race_files)
+            self._log_queue.put((self._SENTINEL_OK, warnings))
         except FatalError as exc:
             self._log_queue.put((self._SENTINEL_FATAL, str(exc)))
         except Exception as exc:
@@ -416,9 +418,12 @@ class LeagueScorerApp(tk.Frame):
             except queue.Empty:
                 break
 
-            if item == self._SENTINEL_OK:
+            if isinstance(item, tuple) and item[0] == self._SENTINEL_OK:
+                warnings = item[1]
                 self._append_log("✔  Pipeline completed successfully.", tag="SUCCESS")
                 self._on_done()
+                if warnings:
+                    self._show_completion_warnings(warnings)
 
             elif isinstance(item, tuple) and item[0] == self._SENTINEL_FATAL:
                 self._append_log(f"✘  FATAL — {item[1]}", tag="ERROR")
@@ -439,11 +444,29 @@ class LeagueScorerApp(tk.Frame):
         self._stop_progress()
         self._run_btn.config(state="normal", bg=GREEN)
 
+    def _show_completion_warnings(self, warnings: list[str]) -> None:
+        self._append_log("!  Run completed with warnings.", tag="WARNING")
+        self._append_log("!  DOCX reports were created, but some PDF exports failed.", tag="WARNING")
+        for warning in warnings:
+            self._append_log(f"!  {warning}", tag="WARNING")
+
+        summary = "Run completed with warnings.\n\nDOCX reports were created, but PDF export failed for:\n"
+        messagebox.showwarning(
+            "PDF Export Warnings",
+            summary + "\n".join(f"- {warning}" for warning in warnings),
+            parent=self,
+        )
+
     # -------------------------------------------------------------------------
     # Helpers
     # -------------------------------------------------------------------------
 
+    def _log_is_at_bottom(self) -> bool:
+        _, bottom = self._log_box.yview()
+        return bottom >= 0.999
+
     def _append_log(self, message: str, tag: str = "INFO") -> None:
+        follow_output = self._log_is_at_bottom()
         self._log_box.config(state="normal")
         if message == getattr(self, "_last_log_msg", None) and tag == getattr(self, "_last_log_tag", None):
             # Same as previous line — update repeat count in-place
@@ -451,13 +474,14 @@ class LeagueScorerApp(tk.Frame):
             # Replace the last line with the message + repeat annotation
             self._log_box.delete("end-2l", "end-1c")
             self._log_box.insert("end-1c",
-                f"{message}  \u00d7{self._last_log_count}", tag)
+                f"{message}  \u00d7{self._last_log_count}\n", tag)
         else:
             self._last_log_msg   = message
             self._last_log_tag   = tag
             self._last_log_count = 1
             self._log_box.insert("end", message + "\n", tag)
-        self._log_box.see("end")
+        if follow_output:
+            self._log_box.see("end")
         self._log_box.config(state="disabled")
 
     def _clear_log(self) -> None:

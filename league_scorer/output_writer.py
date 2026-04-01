@@ -2,7 +2,7 @@
 Write all output Excel files.
 
 Cumulative (single workbook per run):
-  Race N -- Results.xlsx   — sheets: Summary | Div 1 | Div 2 | Male | Female
+    Race N -- Results.xlsx   — sheets: Race Summary | Div 1 | Div 2 | Male | Female | Race N
 
 Per race:
   Race # -- unused clubs.xlsx
@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Dict, List
 
 from .models import (
-    CategoryRecord,
+    RaceIssue,
     RunnerRaceEntry,
     RunnerSeasonRecord,
     TeamRaceResult,
@@ -33,6 +33,7 @@ MAX_RACES = settings.get("MAX_RACES")
 _HEADER_FILL = PatternFill("solid", fgColor="4472C4")
 _HEADER_FONT = Font(color="FFFFFF", bold=True)
 _AGG_FILL    = PatternFill("solid", fgColor="D9E1F2")   # light blue tint for aggregate columns
+_ALT_ROW_FILL = PatternFill("solid", fgColor="EEF3F8")
 
 
 # ──────────────────────────────────────────────────────────────── helpers ────
@@ -56,12 +57,31 @@ def _style_and_width(ws, df: pd.DataFrame) -> None:
             if cell.column in agg_col_indices:
                 cell.fill = _AGG_FILL
 
+    if ws.title == "Race Summary":
+        for row_idx, row in enumerate(ws.iter_rows(min_row=2, max_row=ws.max_row), start=0):
+            use_alt_fill = row_idx % 2 == 1
+            for cell in row:
+                cell.alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
+                if use_alt_fill:
+                    cell.fill = _ALT_ROW_FILL
+
+    issue_col_indices = [
+        col_idx
+        for col_idx, col_name in enumerate(df.columns, start=1)
+        if str(col_name) in {"Warnings", "Other Issues"}
+    ]
+    for row in ws.iter_rows(min_row=2, max_row=ws.max_row):
+        for cell in row:
+            if cell.column in issue_col_indices:
+                cell.alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
+
     # Auto-width
     for col_idx, col_name in enumerate(df.columns, start=1):
         values = [str(col_name)] + [
             str(v) for v in df.iloc[:, col_idx - 1] if str(v) != ""
         ]
-        width = min(max((len(v) for v in values), default=8) + 2, 50)
+        max_width = 80 if str(col_name) in {"Warnings", "Other Issues"} else 50
+        width = min(max((len(v) for v in values), default=8) + 2, max_width)
         ws.column_dimensions[get_column_letter(col_idx)].width = width
 
 
@@ -84,33 +104,22 @@ def write_results_workbook(
     div1_teams: List[TeamSeasonRecord],
     div2_teams: List[TeamSeasonRecord],
     all_race_runners: Dict[int, List[RunnerRaceEntry]],
-    unrec_clubs_all: List[UnrecognisedClub],
+    race_files: Dict[int, Path],
+    all_unrec_clubs: Dict[int, List[UnrecognisedClub]],
+    race_issues: Dict[int, List[RaceIssue]],
     filepath: Path,
-    all_categories: list = None,
 ) -> None:
-    """Write Summary, Div 1, Div 2, Male and Female into a single workbook."""
+    """Write Race Summary, Div 1, Div 2, Male, Female, and Race N sheets."""
 
-    # ── Summary data ────────────────────────────────────────────────────────
-    clubs_scored = {r.preferred_club for r in male_records + female_records}
-    # Remove 'Unidentified Clubs' from the summary sheet
-    overview_rows = [
-        ("Highest Race Number",     highest_race),
-        ("Race Files Processed",    len(all_race_runners)),
-        ("Runners Scored (Male)",   len(male_records)),
-        ("Runners Scored (Female)", len(female_records)),
-        ("Clubs Scored",            len(clubs_scored)),
-    ]
-    df_summary = pd.DataFrame(overview_rows, columns=["Item", "Value"])
-    # Append all per-race categories rows under the summary rows if provided
-    if all_categories:
-        df_cats = pd.DataFrame(all_categories)
-        # Add a blank row for separation
-        blank = pd.DataFrame([{"Item": "", "Value": ""}])
-        # Reindex category columns to match summary columns, then add extra columns
-        cat_cols = ["Race", "Raw Category", "Normalised Category", "Count", "Notes"]
-        df_cats = df_cats[cat_cols]
-        # Concatenate summary, blank, and categories
-        df_summary = pd.concat([df_summary, blank, df_cats], ignore_index=True)
+    def _format_issue(issue: RaceIssue) -> str:
+        if issue.source_row is not None:
+            return f"Row {issue.source_row}: {issue.message}"
+        return issue.message
+
+    def _summarise_issue_bucket(messages: List[str]) -> str:
+        if not messages:
+            return ""
+        return f"Count: {len(messages)}\n" + "\n".join(messages)
 
     # ── Individual table builder ─────────────────────────────────────────────
     def _ind_df(records: List[RunnerSeasonRecord]) -> pd.DataFrame:
@@ -148,10 +157,86 @@ def write_results_workbook(
             rows.append(row)
         return pd.DataFrame(rows)
 
+    def _race_df(race_num: int, runners: List[RunnerRaceEntry]) -> pd.DataFrame:
+        rows = []
+        sorted_runners = sorted(runners, key=lambda r: (r.time_seconds, r.name.lower()))
+        gender_positions = {"M": 0, "F": 0}
+
+        for overall_position, runner in enumerate(sorted_runners, start=1):
+            gender_positions[runner.gender] = gender_positions.get(runner.gender, 0) + 1
+            rows.append(
+                {
+                    "Overall Pos": overall_position,
+                    "Gender Pos": gender_positions[runner.gender],
+                    "Name": runner.name,
+                    "Raw Club": runner.raw_club,
+                    "Club": runner.preferred_club or "",
+                    "Gender": runner.gender,
+                    "Raw Category": runner.raw_category,
+                    "Category": runner.normalised_category,
+                    "Time": runner.time_str,
+                    "Wiltshire Eligible": "Yes" if runner.eligible else "No",
+                    "Points": runner.points if runner.points > 0 else "",
+                    "Team": runner.team_id,
+                    "Warnings": "\n".join(runner.warnings),
+                }
+            )
+
+        return pd.DataFrame(
+            rows,
+            columns=[
+                "Overall Pos",
+                "Gender Pos",
+                "Name",
+                "Raw Club",
+                "Club",
+                "Gender",
+                "Raw Category",
+                "Category",
+                "Time",
+                "Wiltshire Eligible",
+                "Points",
+                "Team",
+                "Warnings",
+            ],
+        )
+
+    def _race_summary_df() -> pd.DataFrame:
+        rows = []
+        for race_num in sorted(race_files):
+            issues = race_issues.get(race_num, [])
+            warnings = [_format_issue(issue) for issue in issues if issue.kind == "warning"]
+            other_issues = [_format_issue(issue) for issue in issues if issue.kind != "warning"]
+            runners = all_race_runners.get(race_num, [])
+            unrec = all_unrec_clubs.get(race_num, [])
+            rows.append(
+                {
+                    "Race": race_num,
+                    "Source File": race_files[race_num].name,
+                    "Status": "Processed" if race_num in all_race_runners else "Skipped",
+                    "Runner Rows": len(runners),
+                    "Unrecognised Clubs": len(unrec),
+                    "Warnings": _summarise_issue_bucket(warnings),
+                    "Other Issues": _summarise_issue_bucket(other_issues),
+                }
+            )
+        return pd.DataFrame(
+            rows,
+            columns=[
+                "Race",
+                "Source File",
+                "Status",
+                "Runner Rows",
+                "Unrecognised Clubs",
+                "Warnings",
+                "Other Issues",
+            ],
+        )
+
     try:
         with pd.ExcelWriter(filepath, engine="openpyxl") as writer:
             for df, sheet in [
-                (df_summary,              "Summary"),
+                (_race_summary_df(),      "Race Summary"),
                 (_club_df(div1_teams),    "Div 1"),
                 (_club_df(div2_teams),    "Div 2"),
                 (_ind_df(male_records),   "Male"),
@@ -159,6 +244,12 @@ def write_results_workbook(
             ]:
                 df.to_excel(writer, index=False, sheet_name=sheet)
                 _style_and_width(writer.sheets[sheet], df)
+
+            for race_num in sorted(all_race_runners):
+                race_df = _race_df(race_num, all_race_runners[race_num])
+                sheet_name = f"Race {race_num}"
+                race_df.to_excel(writer, index=False, sheet_name=sheet_name)
+                _style_and_width(writer.sheets[sheet_name], race_df)
         log.debug("Written: %s", filepath.name)
     except Exception as exc:
         log.error("Failed to write results workbook '%s': %s", filepath, exc)
