@@ -20,7 +20,9 @@ from .models import (
 
 log = logging.getLogger(__name__)
 
-BEST_N = 6
+from .settings import settings
+
+BEST_N = settings.get("BEST_N")
 
 
 # ───────────────────────────────────────────────────────────── individuals ───

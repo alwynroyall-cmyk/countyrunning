@@ -21,8 +21,17 @@ class RunnerRaceEntry:
     time_seconds: float              # float seconds for comparison
     race_number: int
     eligible: bool
+    source_row: int = 0
     points: int = 0                  # individual race points (0 if ineligible)
     team_id: str = ""                # 'A', 'B', or '' (not in any team)
+    warnings: List[str] = field(default_factory=list)
+
+
+@dataclass
+class RaceIssue:
+    kind: str                        # 'warning' or 'other'
+    message: str
+    source_row: Optional[int] = None
 
 
 @dataclass

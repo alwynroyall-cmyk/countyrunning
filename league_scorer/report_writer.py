@@ -44,7 +44,9 @@ _WHITE_HEX   = "ffffff"
 _ALT_HEX     = "eef2f7"   # alternating data row tint
 _TOTAL_HEX   = "00b050"   # highlighted total-points column in division tables
 _FONT_NAME   = "Calibri"
-_SEASON_FINAL_RACE = 8
+from .settings import settings
+
+_SEASON_FINAL_RACE = settings.get("SEASON_FINAL_RACE")
 
 _NAVY_RGB   = RGBColor(0x3a, 0x46, 0x58)
 _WHITE_RGB  = RGBColor(0xff, 0xff, 0xff)
@@ -1093,7 +1095,7 @@ def write_race_report(
     year: int,
     filepath: Path,
     source_file: Optional[Path] = None,
-) -> None:
+) -> Optional[str]:
     """Write the per-race scoring card DOCX (+ PDF) styled after the WRRL card."""
     race_name = _extract_race_name(source_file) if source_file else f"Race {race_num}"
     filepath  = Path(filepath).with_suffix(".docx")
@@ -1129,8 +1131,10 @@ def write_race_report(
         pdf_path = filepath.with_suffix(".pdf")
         convert(str(filepath), str(pdf_path))
         log.info("Race %d PDF written: %s", race_num, pdf_path.name)
+        return None
     except Exception as exc:
         log.warning("Race %d PDF conversion skipped — %s", race_num, exc)
+        return f"{filepath.stem}: PDF conversion skipped ({exc})"
 
 
 # ── Document header (branding) ─────────────────────────────────────────────────
@@ -1192,6 +1196,7 @@ def _build_cover_header(
 # ── Footer ─────────────────────────────────────────────────────────────────────
 
 def _build_footer(doc: Document, year: int, include_page_numbers: bool = False) -> None:
+        # (no change needed here, version already centralized)
     footer = doc.sections[0].footer
     if footer.paragraphs:
         footer.paragraphs[0].clear()
@@ -1214,7 +1219,8 @@ def _build_footer(doc: Document, year: int, include_page_numbers: bool = False) 
 
     center_p = center_cell.paragraphs[0]
     center_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    center_run = center_p.add_run("Wiltshire League Scorer v2.1")
+    from . import __version__
+    center_run = center_p.add_run(f"Wiltshire League Scorer v{__version__}")
     center_run.font.size = Pt(8)
     center_run.font.color.rgb = RGBColor(0x80, 0x80, 0x90)
 
@@ -1239,7 +1245,7 @@ def write_combined_report(
     unrec_all: List[UnrecognisedClub],
     images_dir: Optional[Path],
     filepath: Path,
-) -> None:
+) -> Optional[str]:
     """Write the branded combined report to *filepath* (.docx) and attempt PDF.
 
     Parameters
@@ -1311,5 +1317,7 @@ def write_combined_report(
         pdf_path = filepath.with_suffix(".pdf")
         convert(str(filepath), str(pdf_path))
         log.info("PDF written: %s", pdf_path.name)
+        return None
     except Exception as exc:
         log.warning("PDF conversion skipped — %s", exc)
+        return f"{filepath.stem}: PDF conversion skipped ({exc})"
