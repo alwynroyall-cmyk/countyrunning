@@ -9,6 +9,7 @@ from ..audit import LeagueAuditor
 from ..club_loader import load_clubs
 from ..exceptions import FatalError
 from ..race_processor import extract_race_number
+from ..series_consolidation import consolidate_series_files
 from .gui import GREEN, GREEN_H, LIGHT, NAVY, PANEL, WHITE, LeagueScorerApp
 
 
@@ -118,6 +119,42 @@ class LeagueAuditApp(LeagueScorerApp):
             fg="#59687a",
         ).pack(anchor="w", pady=(4, 0))
 
+        consolidate_row = tk.Frame(outer, bg=LIGHT)
+        consolidate_row.pack(fill="x", pady=(10, 0))
+
+        tk.Label(
+            consolidate_row,
+            text="Series consolidation:",
+            font=("Segoe UI", 9, "bold"),
+            bg=LIGHT,
+            fg=NAVY,
+        ).pack(side="left")
+
+        tk.Button(
+            consolidate_row,
+            text="Consolidate Series…",
+            command=self._consolidate_series,
+            font=("Segoe UI", 9, "bold"),
+            bg=GREEN,
+            fg=WHITE,
+            relief="flat",
+            padx=14,
+            pady=6,
+            cursor="hand2",
+            activebackground=GREEN_H,
+            activeforeground=WHITE,
+        ).pack(side="left", padx=(10, 0))
+
+        tk.Label(
+            outer,
+            text="Use this for multi-leg files such as Westbury 5k Series #1/#2/#3. The selected files are merged into one Consolidated workbook and the originals are moved into a series folder.",
+            font=("Segoe UI", 8),
+            bg=LIGHT,
+            fg="#59687a",
+            wraplength=920,
+            justify="left",
+        ).pack(anchor="w", pady=(4, 0))
+
     def _browse_race_file(self) -> None:
         if not self._input_dir or not self._input_dir.is_dir():
             messagebox.showerror("Input not found", f"Input folder does not exist:\n{self._input_dir}", parent=self)
@@ -158,6 +195,51 @@ class LeagueAuditApp(LeagueScorerApp):
 
         self._selected_race_file = path
         self._selected_race_var.set(path.name)
+
+    def _consolidate_series(self) -> None:
+        if not self._input_dir or not self._input_dir.is_dir():
+            messagebox.showerror("Input not found", f"Input folder does not exist:\n{self._input_dir}", parent=self)
+            return
+
+        selected_paths = filedialog.askopenfilenames(
+            parent=self,
+            title="Select Series Files To Consolidate",
+            initialdir=str(self._input_dir),
+            filetypes=[("Race workbooks", "*.xlsx *.xlsm *.xls"), ("All files", "*.*")],
+        )
+        if not selected_paths:
+            return
+
+        try:
+            result = consolidate_series_files(
+                [Path(path_str) for path_str in selected_paths],
+                self._input_dir,
+            )
+        except Exception as exc:
+            messagebox.showerror("Series consolidation failed", str(exc), parent=self)
+            return
+
+        self._selected_race_file = result.consolidated_path
+        self._selected_race_var.set(result.consolidated_path.name)
+        self._append_log(
+            f"INFO      Consolidated → {result.consolidated_path.name}",
+            tag="INFO",
+        )
+        self._append_log(
+            f"INFO      Moved source files into → {result.archive_dir.name}",
+            tag="INFO",
+        )
+        messagebox.showinfo(
+            "Series Consolidated",
+            "\n\n".join(
+                [
+                    f"Consolidated workbook created:\n{result.consolidated_path}",
+                    f"Source files moved into:\n{result.archive_dir}",
+                    "The consolidated workbook is now selected for audit.",
+                ]
+            ),
+            parent=self,
+        )
 
     def _on_run(self) -> None:
         if not self._input_dir or not self._input_dir.is_dir():
