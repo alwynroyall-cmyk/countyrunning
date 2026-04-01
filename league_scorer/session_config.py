@@ -18,8 +18,8 @@ import json
 from pathlib import Path
 from typing import Optional
 
-# Persisted settings file lives next to the top-level package directory
-_PREFS_FILE = Path(__file__).resolve().parent.parent / ".wrrl_prefs.json"
+# Persisted settings file lives in the user's home directory.
+_PREFS_FILE = Path.home() / ".wrrl_prefs.json"
 
 
 class SessionConfig:

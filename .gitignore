@@ -1,6 +1,7 @@
 __pycache__/
 *.py[cod]
 ~$*
+.wrrl_prefs.json
 data/
 .pytest_cache/
 .mypy_cache/
