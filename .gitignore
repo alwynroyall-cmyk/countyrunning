@@ -9,3 +9,4 @@ data/
 .cache/
 output/division-format-check/
 sporthive_event.json
+output/staged-checks/

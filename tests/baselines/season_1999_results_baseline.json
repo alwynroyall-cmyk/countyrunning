@@ -1,0 +1,75 @@
+{
+  "workbook_name": "Race 8 -- Results.xlsx",
+  "sheets": {
+    "Race Summary": {
+      "rows": 9,
+      "cols": 7,
+      "sha256": "182899ca068ae5a9ae53a114b70920458547fc7103721713c114f6025bc743d3"
+    },
+    "Div 1": {
+      "rows": 13,
+      "cols": 35,
+      "sha256": "00abbfa167138a4e42dbadaa0a93fbabbe107ca6e47e98931a7ad22b6fc682c1"
+    },
+    "Div 2": {
+      "rows": 31,
+      "cols": 35,
+      "sha256": "f547f9c32b08bdbfcd3e838b34f5f7124aed79a93bfd61d45b75d6671a775229"
+    },
+    "Male": {
+      "rows": 504,
+      "cols": 13,
+      "sha256": "ab86be63dd6a0ef5b90b463963c61cfeb0f1aed529c66aa4ee2c53ef1ce3d768"
+    },
+    "Female": {
+      "rows": 378,
+      "cols": 13,
+      "sha256": "636c49234b80f7475021cfb5e67a55cccd21f705eb5b584f6d6f1690bb82d589"
+    },
+    "Category Review": {
+      "rows": 291,
+      "cols": 9,
+      "sha256": "0e40b2e1c6ad2b6e1d53f6164b4e59906042eb69bab283a2f4580f9151d62b89"
+    },
+    "Race 1": {
+      "rows": 301,
+      "cols": 13,
+      "sha256": "4c3f0befa009a4b922590193e6da334e1b8e675ddfd15bf69aa10afc51996d8c"
+    },
+    "Race 2": {
+      "rows": 1283,
+      "cols": 13,
+      "sha256": "ccaf2846025b17b062d2a0a02f10aef99e6765076513233807b4a3835180ab2e"
+    },
+    "Race 3": {
+      "rows": 530,
+      "cols": 13,
+      "sha256": "56ace26e4258f9438d35fb4471daeb892e2424f46bdeac5a2b22f8c77c09696a"
+    },
+    "Race 4": {
+      "rows": 263,
+      "cols": 13,
+      "sha256": "c2fceb178f925e4e2aeddc10149c52eae2b0861c86e7e2a3b194e8b612509ca5"
+    },
+    "Race 5": {
+      "rows": 376,
+      "cols": 13,
+      "sha256": "c229efecd1fb5bc4561eba39631501a0f655cc8a8109059c53c7c4d5abcc4868"
+    },
+    "Race 6": {
+      "rows": 197,
+      "cols": 13,
+      "sha256": "528e479a045dcdc5ba88d93c2bef51100e261390f0667c5ed405d4f061c85021"
+    },
+    "Race 7": {
+      "rows": 1031,
+      "cols": 13,
+      "sha256": "a8593294b2cc0c53ee7778894f10ca3db833b12de5fef5bba1ecb2969a974911"
+    },
+    "Race 8": {
+      "rows": 287,
+      "cols": 13,
+      "sha256": "627a3ca9bf95a472eb25fe9f777a2510a62cde642c293d047d5e189700b9d12f"
+    }
+  }
+}
