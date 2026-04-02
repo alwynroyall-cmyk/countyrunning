@@ -791,6 +791,10 @@ class LeagueScorerDashboard(tk.Tk):
 
     def _on_help(self) -> None:
         """Show help information."""
+        docs_dir = Path(__file__).resolve().parents[2] / "documents"
+        dependencies_doc = docs_dir / "dependencies.md"
+        ops_doc = docs_dir / "operational_dependencies.md"
+
         help_text = (
             "WRRL League Management Help\n\n"
             "• Set Root…: Choose your base data folder once.\n"
@@ -802,7 +806,13 @@ class LeagueScorerDashboard(tk.Tk):
             "• Import Race Roster: Paste a Race Roster URL and save it directly\n"
             "  as a race workbook in the active season inputs folder.\n\n"
             "• Run League Management: Execute the scoring pipeline.\n"
-            "• View Results: Browse generated results."
+            "• View Results: Browse generated results.\n\n"
+            "Operational dependencies docs:\n"
+            f"• {dependencies_doc}\n"
+            f"• {ops_doc}\n\n"
+            "Key notes:\n"
+            "• PDF output requires Microsoft Word (docx2pdf).\n"
+            "• Browser automation features may require: playwright install chromium"
         )
         messagebox.showinfo("Help", help_text)
 
