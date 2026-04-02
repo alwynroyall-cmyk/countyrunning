@@ -466,6 +466,12 @@ class LeagueAuditor:
                 summary = f"EA-style female category evidence: {meta['scheme_evidence']}"
                 next_step = "Review derived categories and confirm the race used EA 5-year bands."
 
+            if status == "Open" and any(code in race_codes for code in ("AUD-RACE-008", "AUD-RACE-009")):
+                status = "Manual Review"
+                depends_on = "Source Data Correction"
+                summary = "Schema pre-check found header or required-field issues in this race workbook."
+                next_step = "Review race-level schema warnings before relying on downstream row audit findings."
+
             rows.append(
                 {
                     "Severity Max": _max_severity(severities),

@@ -17,18 +17,10 @@ from .normalisation import (
     parse_time_to_seconds,
     time_display,
 )
+from .race_validation import validate_race_schema
 from .source_loader import load_race_dataframe
 
 log = logging.getLogger(__name__)
-
-_REQUIRED_COLS = {
-    "Position": ("position", "pos", "place"),
-    "Name": ("name", "runner", "runner name"),
-    "Club": ("club", "team", "affiliation"),
-    "Gender": ("gender", "sex"),
-    "Category": ("category", "cat", "age category"),
-}
-
 
 # ─────────────────────────────────────────────────────── public interface ────
 
@@ -68,28 +60,9 @@ def process_race_file(
 
     df.columns = [str(c).strip() for c in df.columns]
 
-    # ── Required column detection (case-insensitive) ──
-    col_lower = {_normalise_column_name(c): c for c in df.columns}
-    col_map: Dict[str, str] = {}
-    missing_cols = []
-    for req, aliases in _REQUIRED_COLS.items():
-        found = next((col_lower.get(alias) for alias in aliases if alias in col_lower), None)
-        if found is None:
-            missing_cols.append(req)
-        else:
-            col_map[req] = found
-
-    if missing_cols:
-        raise RaceProcessingError(
-            f"'{filepath.name}' missing required columns: {missing_cols}"
-        )
-
-    # ── Time column ──
-    time_col = find_time_column(list(df.columns))
-    if time_col is None:
-        raise RaceProcessingError(
-            f"'{filepath.name}' has no time-like column (need Chip Time / Gun Time / *time*)"
-        )
+    schema_validation = validate_race_schema(df, filepath)
+    col_map = schema_validation.column_map
+    time_col = schema_validation.time_column
     log.info("  Time column: '%s'", time_col)
 
     # accumulators for exception reports
@@ -97,7 +70,7 @@ def process_race_file(
     unrec_tracker: Dict[str, Tuple[str, int]] = {}       # raw_lower → (display, count)
 
     runners: List[RunnerRaceEntry] = []
-    issue_notes: List[RaceIssue] = []
+    issue_notes: List[RaceIssue] = list(schema_validation.issues)
     skipped = 0
 
     for idx, row in df.iterrows():
@@ -405,6 +378,3 @@ def _has_duplicate_attribute_conflict(
         )
     )
 
-
-def _normalise_column_name(value: str) -> str:
-    return re.sub(r"\s+", " ", str(value).strip().lower())
