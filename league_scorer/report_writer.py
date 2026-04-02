@@ -4,7 +4,7 @@ report_writer.py — Branded DOCX + PDF season report.
 Sections (combined league report)
 ----------------------------------
   1. Cover header      (WRRL shield + season title)
-  2. League narrative  (season summary prose, auto end-of-season at Race 8)
+    2. League narrative  (season summary prose, auto end-of-season at configured final race)
   3. Division 1 Club Table
   4. Division 2 Club Table  (page 2)
   5. Top 20 Male Individual
@@ -1188,9 +1188,10 @@ def _build_cover_header(
 
     p2 = title_cell.add_paragraph()
     p2.paragraph_format.left_indent = Cm(0.4)
+    season_final_race = settings.get("SEASON_FINAL_RACE")
     subtitle = (
         "Wiltshire Road Race League  —  Season Summary"
-        if highest_race == 8
+        if highest_race == season_final_race
         else f"Wiltshire Road Race League  —  Update Race {highest_race}"
     )
     r2 = p2.add_run(subtitle)
@@ -1207,7 +1208,6 @@ def _build_cover_header(
 # ── Footer ─────────────────────────────────────────────────────────────────────
 
 def _build_footer(doc: Document, year: int, include_page_numbers: bool = False) -> None:
-        # (no change needed here, version already centralized)
     footer = doc.sections[0].footer
     if footer.paragraphs:
         footer.paragraphs[0].clear()

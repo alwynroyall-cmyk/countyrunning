@@ -2,7 +2,7 @@
 Aggregate per-race results into season standings.
 
 Spec §9.3 / §10.3:
-  • Best 6 race scores count (fewer than 6 available → all count).
+    • Best N race scores count (N = BEST_N; if fewer available, all count).
   • Individual tiebreak: (1) total pts, (2) races completed, (3) shared pos.
   • Team tiebreak: total pts, then race aggregate, then shared position.
 """

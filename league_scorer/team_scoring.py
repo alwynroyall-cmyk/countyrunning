@@ -2,11 +2,11 @@
 Build A/B team scores per race and award division points.
 
 Spec §10:
-  • A Team = top-5 men + top-5 women (by individual race points).
-  • B Team = next-5 men + next-5 women (positions 6-10).
-  • Fewer than 5 of a gender → use all available.
+    • A Team = top-N men + top-N women (by individual race points), N = TEAM_SIZE.
+    • B Team = next-N men + next-N women.
+    • Fewer than N of a gender -> use all available.
   • Team Score = sum(men points) + sum(women points).
-  • Each division ranked independently: 1st = 20 pts … min 1 pt.
+    • Each division ranked independently: 1st = MAX_DIV_PTS ... min 1 pt.
   • No runners → 0 pts (not 1).
 """
 
