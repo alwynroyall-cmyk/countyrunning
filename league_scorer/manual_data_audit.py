@@ -59,6 +59,12 @@ def log_manual_data_changes(
                 "New Value": str(row.get("new_value", "") or ""),
                 "File": _safe_rel_path(row.get("file_path"), output_dir),
                 "Row": row.get("row_idx", ""),
+                "Issue Identity": str(row.get("issue_identity", "") or ""),
+                "Issue Code": str(row.get("issue_code", "") or ""),
+                "Issue Race": str(row.get("issue_race", "") or ""),
+                "Issue Source Row": str(row.get("issue_source_row", "") or ""),
+                "Resolution Status": str(row.get("resolution_status", "") or ""),
+                "Verification Note": str(row.get("verification_note", "") or ""),
                 "Season": session_config.year,
             }
         )

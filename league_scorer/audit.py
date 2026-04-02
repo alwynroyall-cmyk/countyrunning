@@ -31,6 +31,7 @@ class LeagueAuditor:
         self.all_unrec_clubs: Dict[int, List[UnrecognisedClub]] = {}
         self.all_race_issues: Dict[int, List[RaceIssue]] = {}
         self.selected_race_files: Dict[int, Path] = {}
+        self.latest_actionable_issue_count: int = 0
 
     def run(self, race_files: "Dict[int, Path] | None" = None) -> Path:
         self._validate_paths()
@@ -101,9 +102,12 @@ class LeagueAuditor:
         runner_df = self._build_runner_audit_df(race_meta)
         club_df, unrec_df = self._build_club_audit_dfs()
         ea_candidates_df, ea_checked_df = self._build_ea_review_dfs(race_meta)
+        actionable_df = self._build_actionable_issues_df(row_df, runner_df, club_df)
+        self.latest_actionable_issue_count = len(actionable_df)
         race_df = self._build_race_summary_df(race_meta, row_df, runner_df, club_df)
         return {
             "Race Audit Summary": race_df,
+            "Actionable Issues": actionable_df,
             "Row Audit": row_df,
             "Runner Audit": runner_df,
             "Club Audit": club_df,
@@ -111,6 +115,92 @@ class LeagueAuditor:
             "Candidates To Check": ea_candidates_df,
             "EA Checked": ea_checked_df,
         }
+
+    def _build_actionable_issues_df(
+        self,
+        row_df: pd.DataFrame,
+        runner_df: pd.DataFrame,
+        club_df: pd.DataFrame,
+    ) -> pd.DataFrame:
+        """Return a compact list of high-signal issues that need manual correction."""
+        row_codes = {"AUD-ROW-001", "AUD-ROW-002", "AUD-ROW-005", "AUD-ROW-010"}
+        runner_codes = {"AUD-RUNNER-007", "AUD-RUNNER-008"}
+        club_codes = {"AUD-CLUB-002", "AUD-CLUB-003"}
+
+        rows: List[dict] = []
+
+        if not row_df.empty:
+            subset = row_df[row_df["Issue Code"].astype(str).isin(row_codes)]
+            for _, item in subset.iterrows():
+                rows.append(
+                    {
+                        "Type": "Row",
+                        "Severity": item.get("Severity", ""),
+                        "Issue Code": item.get("Issue Code", ""),
+                        "Race": item.get("Race", ""),
+                        "Source Row": item.get("Source Row", ""),
+                        "Key": "",
+                        "Name": item.get("Runner Name", ""),
+                        "Club": item.get("Club", ""),
+                        "Message": item.get("Message", ""),
+                        "Next Step": item.get("Next Step", ""),
+                    }
+                )
+
+        if not runner_df.empty:
+            subset = runner_df[runner_df["Issue Code"].astype(str).isin(runner_codes)]
+            for _, item in subset.iterrows():
+                rows.append(
+                    {
+                        "Type": "Runner",
+                        "Severity": item.get("Severity", ""),
+                        "Issue Code": item.get("Issue Code", ""),
+                        "Race": "",
+                        "Source Row": "",
+                        "Key": item.get("Runner Key", ""),
+                        "Name": item.get("Display Name", ""),
+                        "Club": item.get("Clubs Seen", ""),
+                        "Message": item.get("Message", ""),
+                        "Next Step": item.get("Next Step", ""),
+                    }
+                )
+
+        if not club_df.empty:
+            subset = club_df[club_df["Issue Code"].astype(str).isin(club_codes)]
+            for _, item in subset.iterrows():
+                rows.append(
+                    {
+                        "Type": "Club",
+                        "Severity": item.get("Severity", ""),
+                        "Issue Code": item.get("Issue Code", ""),
+                        "Race": "",
+                        "Source Row": "",
+                        "Key": item.get("Raw Club", ""),
+                        "Name": "",
+                        "Club": item.get("Preferred Club", ""),
+                        "Message": item.get("Message", ""),
+                        "Next Step": item.get("Next Step", ""),
+                    }
+                )
+
+        out = pd.DataFrame(
+            rows,
+            columns=[
+                "Type",
+                "Severity",
+                "Issue Code",
+                "Race",
+                "Source Row",
+                "Key",
+                "Name",
+                "Club",
+                "Message",
+                "Next Step",
+            ],
+        )
+        if not out.empty:
+            out = out.sort_values(by=["Type", "Issue Code", "Race", "Source Row", "Name"], ignore_index=True)
+        return out
 
     def _build_race_metadata(self) -> Dict[int, dict]:
         metadata: Dict[int, dict] = {}
@@ -131,9 +221,18 @@ class LeagueAuditor:
             runners = self.all_race_runners.get(race_num, [])
             issues = self.all_race_issues.get(race_num, [])
             runner_by_row = {runner.source_row: runner for runner in runners}
+            is_series = _is_series_race(meta["file"])
 
             for issue in issues:
                 if not issue.code.startswith("AUD-ROW"):
+                    continue
+                # Dedupe trace notes are expected and numerous in consolidated
+                # series files; suppress them from the report there.
+                if issue.code == "AUD-ROW-008" and is_series:
+                    continue
+                # Duplicate-person conflicts are expected in consolidated
+                # series files where the same runner appears across events.
+                if issue.code == "AUD-ROW-010" and is_series:
                     continue
                 runner = runner_by_row.get(issue.source_row or -1)
                 rows.append(
@@ -147,6 +246,8 @@ class LeagueAuditor:
 
             if meta["scheme"] == "EA 5-Year":
                 for runner in runners:
+                    if not runner.eligible:
+                        continue
                     if runner.gender != "F":
                         continue
                     derived_category = _derived_audit_category(runner, meta["scheme"])
@@ -172,28 +273,8 @@ class LeagueAuditor:
                         )
 
             for runner in runners:
-                if runner.preferred_club is None and runner.raw_club:
-                    issue = RaceIssue(
-                        "warning",
-                        "Unrecognised club - excluded from league scoring",
-                        source_row=runner.source_row,
-                        code="AUD-ROW-006",
-                        runner_name=runner.name,
-                        raw_club=runner.raw_club,
-                        gender=runner.gender,
-                        raw_category=runner.raw_category,
-                        time_str=runner.time_str,
-                    )
-                    rows.append(
-                        _build_row_entry(
-                            race_num=race_num,
-                            race_file=race_file,
-                            issue=issue,
-                            runner=runner,
-                        )
-                    )
-
-            for runner in runners:
+                if not runner.eligible:
+                    continue
                 ea_candidate = _build_ea_candidate_row(runner, race_num, race_file)
                 if ea_candidate is None:
                     continue
@@ -228,6 +309,8 @@ class LeagueAuditor:
         by_identity: Dict[Tuple[str, str, str], List[RunnerRaceEntry]] = defaultdict(list)
 
         for runner in all_runners:
+            if not runner.eligible:
+                continue
             name_key = runner.name.strip().lower()
             club_key = (runner.preferred_club or runner.raw_club or "").strip().lower()
             by_name[name_key].append(runner)
@@ -310,81 +393,14 @@ class LeagueAuditor:
                     )
                 )
 
-        for name_key, grouped in sorted(by_name.items()):
-            eligible = [r for r in grouped if r.preferred_club is not None]
-            ineligible = [r for r in grouped if r.preferred_club is None and r.raw_club]
-            if eligible and ineligible:
-                sample = grouped[0]
-                rows.append(
-                    _build_runner_entry(
-                        code="AUD-RUNNER-004",
-                        severity="warning",
-                        runner_key=f"{name_key}|eligibility",
-                        display_name=sample.name,
-                        clubs_seen=sorted({_display_club(r) for r in grouped}),
-                        sexes_seen=sorted({r.gender for r in grouped if r.gender}),
-                        categories_seen=sorted({r.normalised_category for r in grouped if r.normalised_category}),
-                        races_seen=sorted({r.race_number for r in grouped}),
-                        status="Dependent",
-                        depends_on="Club Lookup",
-                        message="Runner appears eligible in some races and non-league in others.",
-                        next_step="Review club mapping first, then confirm eligibility state.",
-                    )
-                )
-
         for cluster in _find_name_variant_clusters(by_identity):
             rows.append(cluster)
 
         return pd.DataFrame(rows, columns=_RUNNER_AUDIT_COLUMNS)
 
     def _build_club_audit_dfs(self) -> Tuple[pd.DataFrame, pd.DataFrame]:
-        summary_rows: List[dict] = []
-        club_rows: List[dict] = []
-
-        club_occurrences: Dict[str, dict] = {}
-        for race_num, clubs in sorted(self.all_unrec_clubs.items()):
-            for club in clubs:
-                entry = club_occurrences.setdefault(
-                    club.raw_club_name,
-                    {"occurrences": 0, "races": set()},
-                )
-                entry["occurrences"] += club.occurrences
-                entry["races"].add(race_num)
-
-        for raw_club, info in sorted(club_occurrences.items()):
-            best_match, confidence = _best_club_match(raw_club, self.preferred_clubs)
-            races_seen = sorted(info["races"])
-            message = f"Confidence {confidence}% | Occurrences {info['occurrences']} | Races {', '.join(map(str, races_seen))}"
-            summary_rows.append(
-                {
-                    "Raw Club": raw_club,
-                    "Best Match": best_match,
-                    "Confidence": confidence,
-                    "Occurrences": info["occurrences"],
-                    "Races Seen": ", ".join(map(str, races_seen)),
-                    "Status": "Open",
-                    "Message": message,
-                }
-            )
-            club_rows.append(
-                {
-                    "Severity": "error",
-                    "Raw Club": raw_club,
-                    "Issue Code": "AUD-CLUB-001",
-                    "Preferred Club": best_match,
-                    "Confidence": confidence,
-                    "Occurrences": info["occurrences"],
-                    "Races Seen": ", ".join(map(str, races_seen)),
-                    "Status": "Open",
-                    "Depends On": "Club Lookup",
-                    "Message": "Club in race data has no direct mapping in the league lookup.",
-                    "Next Step": "Review the suggested club match and decide whether to add a lookup conversion.",
-                }
-            )
-
-        club_rows.extend(_inspect_club_lookup_file(self.input_dir / "clubs.xlsx"))
-        club_df = pd.DataFrame(club_rows, columns=_CLUB_AUDIT_COLUMNS)
-        summary_df = pd.DataFrame(summary_rows, columns=_UNREC_COLUMNS)
+        club_df = pd.DataFrame(columns=_CLUB_AUDIT_COLUMNS)
+        summary_df = pd.DataFrame(columns=_UNREC_COLUMNS)
         return club_df, summary_df
 
     def _build_ea_review_dfs(self, race_meta: Dict[int, dict]) -> Tuple[pd.DataFrame, pd.DataFrame]:
@@ -698,6 +714,12 @@ def _derived_audit_category(runner: RunnerRaceEntry, scheme: str) -> str:
     if raw_age < 70:
         return "V60"
     return "V70+"
+
+
+def _is_series_race(path: Path) -> bool:
+    """Return True when the race file is a consolidated multi-event series."""
+    stem = path.stem.lower()
+    return "consolidated" in stem or "series" in stem
 
 
 def _best_club_match(raw_club: str, preferred_clubs: List[str]) -> Tuple[str, int]:

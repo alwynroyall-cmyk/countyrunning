@@ -4,8 +4,7 @@ from tkinter import ttk
 
 import pandas as pd
 
-from ..session_config import config as session_config
-from .manual_review_dialog import ManualReviewDialog
+from ..audit_data_service import list_audit_workbooks
 
 
 class AuditViewerPanel(tk.Frame):
@@ -54,18 +53,6 @@ class AuditViewerPanel(tk.Frame):
         self._sheet_dropdown.pack(side="left")
         self._sheet_dropdown.bind("<<ComboboxSelected>>", lambda e: self._load_results())
 
-        tk.Button(
-            selector,
-            text="Manual Review",
-            command=self._open_manual_review,
-            font=("Segoe UI", 10, "bold"),
-            bg="#2d7a4a",
-            fg="#ffffff",
-            relief="flat",
-            padx=10,
-            pady=5,
-        ).pack(side="right")
-
         table_frame = tk.Frame(self, bg="#f5f5f5")
         table_frame.pack(fill="both", expand=True, padx=10, pady=10)
         table_frame.grid_rowconfigure(0, weight=1)
@@ -88,24 +75,8 @@ class AuditViewerPanel(tk.Frame):
         self._load_sheet_options()
         self._load_results()
 
-    def _audit_dir(self) -> Path | None:
-        out_dir = session_config.output_dir
-        if not out_dir:
-            return None
-        return out_dir / "audit"
-
     def _load_workbooks(self):
-        self._workbooks = {}
-        audit_dir = self._audit_dir()
-        input_dir = session_config.input_dir
-
-        if audit_dir and audit_dir.exists():
-            for path in sorted(audit_dir.glob("*.xlsx"), key=lambda item: item.stat().st_mtime, reverse=True):
-                self._workbooks[f"Audit / {path.name}"] = path
-
-        if input_dir and input_dir.exists():
-            for path in sorted(input_dir.glob("* (audited).xlsx"), key=lambda item: item.stat().st_mtime, reverse=True):
-                self._workbooks[f"Inputs / {path.name}"] = path
+        self._workbooks = list_audit_workbooks()
 
         if not self._workbooks:
             self._file_dropdown["values"] = []
@@ -159,54 +130,6 @@ class AuditViewerPanel(tk.Frame):
             self._populate_table(df)
         except Exception as exc:
             self._show_message(f"Failed to load audit sheet: {exc}")
-
-    def _open_manual_review(self):
-        workbook = self._selected_workbook()
-        if workbook is None:
-            self._show_message("No audit workbook found.")
-            return
-        input_dir = session_config.input_dir
-        if input_dir is None:
-            self._show_message("Input folder is not configured.")
-            return
-
-        clubs_path = input_dir / "clubs.xlsx"
-        if not clubs_path.exists():
-            clubs_path = None
-        names_path = input_dir / "name_corrections.xlsx"
-
-        club_df = None
-        name_df = None
-        load_error = None
-        for sheet_name in ("Unrecognised Club Summary", "Club Review"):
-            try:
-                club_df = pd.read_excel(workbook, sheet_name=sheet_name, engine="openpyxl")
-                break
-            except Exception as exc:
-                load_error = exc
-
-        try:
-            name_df = pd.read_excel(workbook, sheet_name="Name Review", engine="openpyxl")
-        except Exception:
-            name_df = None
-
-        club_df = None if club_df is None or club_df.empty else club_df
-        name_df = None if name_df is None or name_df.empty else name_df
-
-        if club_df is None and name_df is None:
-            self._show_message(f"No manual review sheets were found in this workbook: {load_error}")
-            return
-        if club_df is not None and clubs_path is None and name_df is None:
-            self._show_message("clubs.xlsx was not found in the input folder.")
-            return
-
-        ManualReviewDialog(
-            self,
-            club_df=club_df,
-            clubs_path=clubs_path,
-            name_df=name_df,
-            names_path=names_path,
-        )
 
     def _populate_table(self, df: pd.DataFrame):
         self._tree.delete(*self._tree.get_children())

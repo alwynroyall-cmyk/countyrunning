@@ -71,12 +71,12 @@ Status:
 ## Proposed First-Cut Audit Views
 
 - `Race Audit Summary`: one row per race with counts by issue type and severity
+- `Actionable Issues`: compact high-signal queue for manual correction and follow-up
 - `Runner Audit`: one row per runner-level issue across the season
 - `Row Audit`: one row per source-row issue for exact correction work
 - `Club Audit`: one row per club mapping/configuration issue
-- `Unrecognised Club Summary`: one row per unrecognised raw club, with occurrence count, races seen, best fuzzy match, and confidence score
-- `Club Match Approval`: a popout review view with columns `Tick`, `Current Club`, `Proposed Club`, and `Message`, plus a button labelled `Add conversions to Club Lookup` for approved `raw club -> preferred club` mappings. The `Message` field should carry confidence, occurrence count, and races seen within the same column. All ticks should start cleared so approval is always an active user choice, and the view should stay fully manual with no bulk-select actions. After pressing the button, the UI should show a confirmation summary of the selected mappings and only write changes after explicit confirmation.
-- `Club Conflict Return`: when the user returns from a conflicting existing-match warning, the same selection state should reopen and the conflicting rows should be visibly highlighted so they can be unticked quickly.
+- `Unrecognised Club Summary`: retained as a workbook view, but currently deferred as an active population target in this branch
+- `Review Issues`: dedicated UI panel backed by `Actionable Issues` with filtering, source-file navigation, runner-history jump, and code-specific quick-fix actions
 - `Missing Name Review`: row-audit entries for missing runner names should show race, source row, captured time, and any available club, category, or sex values so the source row can be located quickly. These cases should stay manual only and be corrected in source data, not inside audit.
 - `Category Scheme Review`: race-audit entries should classify each race as `League Bands`, `EA 5-Year`, or `External Data Check`. For `EA 5-Year`, row audit should show original and derived categories. For `External Data Check`, race audit should list the distinct female categories that triggered the warning.
 - `Duplicate Conflict Review`: duplicate-runner audit should group entries by runner within race, showing the kept row and discarded row references. When club, category, and sex all match, the audit should stay warning-level. When they conflict, the race should surface a high-severity duplicate conflict summary, but results should still keep the quickest time.
@@ -90,10 +90,13 @@ Build first:
 
 - All current issue types should be emitted in the first audit test drive, including warning- and info-level items.
 - Interactive resolution for suspected name variants is deferred, but the issue itself should still be reported.
-- `AUD-CLUB-001` to `AUD-CLUB-004`
+- `Actionable Issues` sheet and `Review Issues` workflow
+- audit run scopes (`single file` and `all discovered files`) with replace-existing control
+- staged-checks quality gate and data-quality report output
 
 Defer or make optional later:
 
+- `AUD-CLUB-001` to `AUD-CLUB-004` population and club conversion approval workflows
 - `AUD-RUNNER-005`
 - `AUD-RUNNER-006`
 - `AUD-SEASON-001`

@@ -230,14 +230,10 @@ class LeagueScorerDashboard(tk.Tk):
             ("▶ Create League Results", "Run scoring and generate outputs", self._on_run_scorer, 3, 0, "primary"),
             ("📊 View Results", "Open generated standings and reports", self._on_view_results, 3, 1, "secondary"),
 
-            ("✏️ Edit Clubs", "Manually correct runner club assignments", self._on_edit_clubs, 4, 0, "secondary"),
-            ("🏟️ Club History", "View one club across all races", self._on_view_club_history, 4, 1, "secondary"),
+            ("🔧 Review Issues", "Examine and resolve audit issues at source", self._on_issue_review, 4, 0, "primary"),
+            ("⚙️ Settings", "League scoring and report options", self._on_settings, 4, 1, "secondary"),
 
-            ("🧩 Check All Runners", "Suggest blank-club fixes across races", self._on_check_all_runners, 5, 0, "secondary"),
-            ("🏃 Runner History", "View one runner across all races", self._on_view_runner_history, 5, 1, "secondary"),
-
-            ("🌐 Import Race Roster", "Pull race results into this season", self._on_import_raceroster, 6, 0, "primary"),
-            ("⚙️ Settings", "League scoring and report options", self._on_settings, 6, 1, "secondary"),
+            ("🌐 Import Race Roster", "Pull race results into this season", self._on_import_raceroster, 5, 0, "primary"),
         ]
 
         for text, subtitle, cmd, row, col, tone in buttons:
@@ -750,83 +746,45 @@ class LeagueScorerDashboard(tk.Tk):
             del self._audit_panel
         self._home_frame.pack(fill="both", expand=True)
 
-    def _on_edit_clubs(self) -> None:
-        """Show the club assignment editor panel inline within the dashboard."""
-        if not self._require_configured("Edit Clubs"):
-            return
-        session_config.ensure_dirs()
-        self._home_frame.pack_forget()
-        from .club_editor import ClubEditorPanel
-        panel = ClubEditorPanel(
-            self._page_container,
-            back_callback=self._on_edit_clubs_back,
-        )
-        panel.pack(fill="both", expand=True)
-        self._club_editor_panel = panel
-
-    def _on_edit_clubs_back(self) -> None:
-        if hasattr(self, "_club_editor_panel"):
-            self._club_editor_panel.destroy()
-            del self._club_editor_panel
-        self._home_frame.pack(fill="both", expand=True)
-
-    def _on_check_all_runners(self) -> None:
-        """Show cross-race runner club checks panel inline within the dashboard."""
-        if not self._require_configured("Check All Runners"):
-            return
-        session_config.ensure_dirs()
-        self._home_frame.pack_forget()
-        from .check_all_runners import CheckAllRunnersPanel
-        panel = CheckAllRunnersPanel(
-            self._page_container,
-            back_callback=self._on_check_all_runners_back,
-        )
-        panel.pack(fill="both", expand=True)
-        self._check_all_runners_panel = panel
-
-    def _on_check_all_runners_back(self) -> None:
-        if hasattr(self, "_check_all_runners_panel"):
-            self._check_all_runners_panel.destroy()
-            del self._check_all_runners_panel
-        self._home_frame.pack(fill="both", expand=True)
-
-    def _on_view_runner_history(self) -> None:
-        """Show runner history viewer panel inline within the dashboard."""
-        if not self._require_configured("Runner History"):
-            return
-        self._home_frame.pack_forget()
-        from .runner_history_viewer import RunnerHistoryPanel
-        panel = RunnerHistoryPanel(
-            self._page_container,
-            back_callback=self._on_view_runner_history_back,
-        )
-        panel.pack(fill="both", expand=True)
-        self._runner_history_panel = panel
-
     def _on_view_runner_history_back(self) -> None:
         if hasattr(self, "_runner_history_panel"):
             self._runner_history_panel.destroy()
             del self._runner_history_panel
         self._home_frame.pack(fill="both", expand=True)
 
-    def _on_view_club_history(self) -> None:
-        """Show club history viewer panel inline within the dashboard."""
-        if not self._require_configured("Club History"):
+    def _on_issue_review(self) -> None:
+        """Show the Issue Review panel inline within the dashboard."""
+        if not self._require_configured("Review Issues"):
             return
         self._home_frame.pack_forget()
-        from .club_history_viewer import ClubHistoryPanel
-        panel = ClubHistoryPanel(
+        from .issue_reviewer import IssueReviewPanel
+        panel = IssueReviewPanel(
             self._page_container,
-            back_callback=self._on_view_club_history_back,
+            back_callback=self._on_issue_review_back,
+            view_runner_callback=self._on_issue_review_open_runner,
         )
         panel.pack(fill="both", expand=True)
-        self._club_history_panel = panel
+        self._issue_review_panel = panel
 
-    def _on_view_club_history_back(self) -> None:
-        if hasattr(self, "_club_history_panel"):
-            self._club_history_panel.destroy()
-            del self._club_history_panel
+    def _on_issue_review_back(self) -> None:
+        if hasattr(self, "_issue_review_panel"):
+            self._issue_review_panel.destroy()
+            del self._issue_review_panel
         self._home_frame.pack(fill="both", expand=True)
+
+    def _on_issue_review_open_runner(self, runner_name: str) -> None:
+        """Close Issue Review panel and open Runner History pre-loaded for runner_name."""
+        if hasattr(self, "_issue_review_panel"):
+            self._issue_review_panel.destroy()
+            del self._issue_review_panel
+        from .runner_history_viewer import RunnerHistoryPanel
+        panel = RunnerHistoryPanel(
+            self._page_container,
+            back_callback=self._on_view_runner_history_back,
+            initial_runner=runner_name,
+        )
+        panel.pack(fill="both", expand=True)
+        self._runner_history_panel = panel
 
     def _on_audit_complete_view(self, preferred_workbook=None) -> None:
         self._on_view_audit(preferred_workbook=preferred_workbook, return_to_audit=True)

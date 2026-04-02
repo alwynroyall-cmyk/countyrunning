@@ -263,8 +263,9 @@ Reason:
 - fixed views make it easier to compare runs and refine noise later
 
 Effect:
-- emit workbook sheets for `Race Audit Summary`, `Row Audit`, `Runner Audit`, `Club Audit`, and `Unrecognised Club Summary`
-- mirror those same views on screen after writing the workbook
+- emit workbook sheets for `Race Audit Summary`, `Actionable Issues`, `Row Audit`, `Runner Audit`, `Club Audit`, `Unrecognised Club Summary`, `Candidates To Check`, and `EA Checked`
+- use `Actionable Issues` as the data source for the on-screen `Review Issues` workflow
+- mirror workbook sheets in the `View Audit` screen after writing the workbook
 - use the column definitions captured in `audit_output_design.md`
 
 ### Decision 20

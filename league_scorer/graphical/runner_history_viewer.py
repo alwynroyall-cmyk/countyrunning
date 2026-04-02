@@ -8,6 +8,7 @@ import pandas as pd
 from ..common_files import race_discovery_exclusions
 from ..manual_data_audit import log_manual_data_changes
 from ..manual_edit_service import resolve_runner_field_across_files
+from ..normalisation import parse_time_to_seconds
 from ..race_processor import extract_race_number
 from ..session_config import config as session_config
 from ..source_loader import discover_race_files
@@ -18,9 +19,10 @@ from .results_workbook import find_latest_results_workbook, sorted_race_sheet_na
 class RunnerHistoryPanel(tk.Frame):
     """View one runner's results across all race sheets in the latest results workbook."""
 
-    def __init__(self, parent, back_callback=None):
+    def __init__(self, parent, back_callback=None, initial_runner: str | None = None):
         super().__init__(parent, bg=WRRL_LIGHT)
         self._back_callback = back_callback
+        self._initial_runner = initial_runner
         self._style = ttk.Style(self)
         self._runner_name_map = {}
         self._all_runner_names: list[str] = []
@@ -160,6 +162,37 @@ class RunnerHistoryPanel(tk.Frame):
             command=self._resolve_club_across_inputs,
         ).pack(side="left", padx=(8, 0))
 
+        self._gender_resolve_row = tk.Frame(self._resolve_frame, bg=WRRL_LIGHT)
+        tk.Label(
+            self._gender_resolve_row,
+            text="Resolve Gender:",
+            font=("Segoe UI", 10, "bold"),
+            bg=WRRL_LIGHT,
+            fg=WRRL_NAVY,
+        ).pack(side="left", padx=(0, 8))
+        self._gender_resolve_var = tk.StringVar()
+        self._gender_resolve_combo = ttk.Combobox(
+            self._gender_resolve_row,
+            textvariable=self._gender_resolve_var,
+            state="readonly",
+            width=10,
+        )
+        self._gender_resolve_combo.pack(side="left")
+        tk.Button(
+            self._gender_resolve_row,
+            text="Apply Gender To All Inputs",
+            font=("Segoe UI", 9, "bold"),
+            bg=WRRL_GREEN,
+            fg=WRRL_WHITE,
+            relief="flat",
+            padx=10,
+            pady=3,
+            cursor="hand2",
+            activebackground="#1f5632",
+            activeforeground=WRRL_WHITE,
+            command=self._resolve_gender_across_inputs,
+        ).pack(side="left", padx=(8, 0))
+
         self._category_resolve_row = tk.Frame(self._resolve_frame, bg=WRRL_LIGHT)
         tk.Label(
             self._category_resolve_row,
@@ -190,6 +223,43 @@ class RunnerHistoryPanel(tk.Frame):
             activeforeground=WRRL_WHITE,
             command=self._resolve_category_across_inputs,
         ).pack(side="left", padx=(8, 0))
+
+        self._time_resolve_row = tk.Frame(self._resolve_frame, bg=WRRL_LIGHT)
+        tk.Label(
+            self._time_resolve_row,
+            text="Fix QRY Time:",
+            font=("Segoe UI", 10, "bold"),
+            bg=WRRL_LIGHT,
+            fg=WRRL_NAVY,
+        ).pack(side="left", padx=(0, 8))
+        self._time_resolve_var = tk.StringVar()
+        self._time_resolve_entry = ttk.Entry(
+            self._time_resolve_row,
+            textvariable=self._time_resolve_var,
+            width=14,
+        )
+        self._time_resolve_entry.pack(side="left")
+        tk.Label(
+            self._time_resolve_row,
+            text="Use hh:mm:ss",
+            font=("Segoe UI", 9, "italic"),
+            bg=WRRL_LIGHT,
+            fg="#666666",
+        ).pack(side="left", padx=(8, 0))
+        tk.Button(
+            self._time_resolve_row,
+            text="Apply Time To All Inputs",
+            font=("Segoe UI", 9, "bold"),
+            bg=WRRL_GREEN,
+            fg=WRRL_WHITE,
+            relief="flat",
+            padx=10,
+            pady=3,
+            cursor="hand2",
+            activebackground="#1f5632",
+            activeforeground=WRRL_WHITE,
+            command=self._resolve_time_across_inputs,
+        ).pack(side="left", padx=(10, 0))
 
         table_frame = tk.Frame(self, bg=WRRL_LIGHT)
         table_frame.pack(fill="both", expand=True, padx=14, pady=(0, 14))
@@ -251,7 +321,20 @@ class RunnerHistoryPanel(tk.Frame):
 
         if sorted_names:
             current = self._runner_var.get()
-            if current not in sorted_names:
+            # Honour initial_runner requested from external callers (e.g. Issue Review panel)
+            if self._initial_runner:
+                # Try exact match first, then case-insensitive via the name map
+                initial = self._initial_runner
+                self._initial_runner = None  # consume once
+                if initial in sorted_names:
+                    self._runner_var.set(initial)
+                else:
+                    matched = self._runner_name_map.get(initial.lower())
+                    if matched:
+                        self._runner_var.set(matched)
+                    elif current not in sorted_names:
+                        self._runner_var.set(sorted_names[0])
+            elif current not in sorted_names:
                 self._runner_var.set(sorted_names[0])
             self._load_runner_history()
         else:
@@ -363,7 +446,9 @@ class RunnerHistoryPanel(tk.Frame):
         """Show/hide club/category resolve controls based on conflicting values."""
         self._resolve_frame.pack_forget()
         self._club_resolve_row.pack_forget()
+        self._gender_resolve_row.pack_forget()
         self._category_resolve_row.pack_forget()
+        self._time_resolve_row.pack_forget()
 
         if df is None or df.empty:
             return
@@ -384,6 +469,20 @@ class RunnerHistoryPanel(tk.Frame):
             self._club_resolve_row.pack(fill="x", pady=(0, 6))
             show_any = True
 
+        gender_values_all = [_norm(v).upper() for v in df.get("Gender", pd.Series(dtype=str)).tolist()]
+        gender_nonblank = {v for v in gender_values_all if v in {"F", "M"}}
+        has_blank_gender = any(not v for v in gender_values_all)
+        if has_blank_gender or len(gender_nonblank) > 1:
+            gender_choices = [value for value in ("F", "M") if value in gender_nonblank]
+            for value in ("F", "M"):
+                if value not in gender_choices:
+                    gender_choices.append(value)
+            self._gender_resolve_combo["values"] = gender_choices
+            if self._gender_resolve_var.get() not in gender_choices:
+                self._gender_resolve_var.set(next(iter(gender_nonblank), gender_choices[0]))
+            self._gender_resolve_row.pack(fill="x", pady=(0, 6))
+            show_any = True
+
         category_values_all = [_norm(v) for v in df.get("Category", pd.Series(dtype=str)).tolist()]
         category_values_unique = set(category_values_all)
         category_choices = sorted({v for v in category_values_all if v}, key=lambda s: s.lower())
@@ -394,14 +493,41 @@ class RunnerHistoryPanel(tk.Frame):
             self._category_resolve_row.pack(fill="x")
             show_any = True
 
+        time_values_all = [_norm(v) for v in df.get("Time", pd.Series(dtype=str)).tolist()]
+        has_qry_time = any(v.upper() == "QRY" for v in time_values_all if v)
+        if has_qry_time:
+            self._time_resolve_row.pack(fill="x", pady=(6, 0))
+            show_any = True
+
         if show_any:
             self._resolve_frame.pack(fill="x", padx=14, pady=(0, 6))
 
     def _resolve_club_across_inputs(self) -> None:
         self._resolve_field_across_inputs(field_type="club", target_value=self._club_resolve_var.get().strip())
 
+    def _resolve_gender_across_inputs(self) -> None:
+        self._resolve_field_across_inputs(field_type="gender", target_value=self._gender_resolve_var.get().strip().upper())
+
     def _resolve_category_across_inputs(self) -> None:
         self._resolve_field_across_inputs(field_type="category", target_value=self._category_resolve_var.get().strip())
+
+    def _resolve_time_across_inputs(self) -> None:
+        entered = self._time_resolve_var.get().strip()
+        if not entered:
+            messagebox.showwarning("No Time Entered", "Enter a replacement time value first.", parent=self)
+            return
+
+        seconds = parse_time_to_seconds(entered)
+        if seconds is None or seconds <= 0:
+            messagebox.showerror("Invalid Time", "Enter time as hh:mm:ss (for example 00:42:17).", parent=self)
+            return
+
+        total = int(round(seconds))
+        hours = total // 3600
+        minutes = (total % 3600) // 60
+        secs = total % 60
+        normalised = f"{hours:02d}:{minutes:02d}:{secs:02d}"
+        self._resolve_field_across_inputs(field_type="time", target_value=normalised)
 
     def _resolve_field_across_inputs(self, field_type: str, target_value: str) -> None:
         selected_runner = self._runner_var.get().strip()

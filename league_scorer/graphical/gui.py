@@ -12,7 +12,7 @@ import queue
 import threading
 import tkinter as tk
 from pathlib import Path
-from tkinter import messagebox
+from tkinter import messagebox, scrolledtext
 
 from ..common_files import race_discovery_exclusions
 from ..exceptions import FatalError

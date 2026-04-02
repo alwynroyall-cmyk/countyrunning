@@ -30,8 +30,9 @@ from .models import (
     UnrecognisedClub,
 )
 from .output_writer import (
+    write_category_mismatch_todo,
     write_results_workbook,
-    write_unrecognised_clubs,
+    write_time_qry_todo,
 )
 from .report_writer import write_combined_report, write_race_report
 from .race_processor import process_race_file
@@ -197,17 +198,8 @@ class LeagueScorer:
         self.all_unrec_clubs[race_num] = unrec
         self.all_race_issues[race_num] = list(issue_notes)
 
-        # Write per-race exception reports immediately
-        pfx = f"Race {race_num} -- "
-        unrec_out = self.output_dir / f"{pfx}unused clubs.xlsx"
-        write_unrecognised_clubs(unrec, unrec_out)
-        if unrec:
-            log.info(
-                "Race %d: %d non-league club(s) excluded — see %s",
-                race_num, len(unrec), unrec_out.name,
-            )
-
         # Write branded per-race scoring card
+        pfx = f"Race {race_num} -- "
         images_dir = Path(__file__).parent / "images"
         pdf_warning = write_race_report(
             race_num=race_num,
@@ -265,6 +257,16 @@ class LeagueScorer:
             all_unrec_clubs=self.all_unrec_clubs,
             race_issues=self.all_race_issues,
             filepath=self.output_dir / f"{pfx}Results.xlsx",
+        )
+
+        write_category_mismatch_todo(
+            all_race_runners=self.all_race_runners,
+            filepath=self.output_dir / f"{pfx}Category Mismatch TODO.xlsx",
+        )
+
+        write_time_qry_todo(
+            all_race_runners=self.all_race_runners,
+            filepath=self.output_dir / f"{pfx}Time QRY TODO.xlsx",
         )
 
         images_dir = Path(__file__).parent / "images"

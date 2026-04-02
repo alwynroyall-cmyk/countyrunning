@@ -54,6 +54,8 @@ def create_cleansed_race_file(
 
     name_corrections = load_name_corrections(filepath.parent / "name_corrections.xlsx")
 
+    use_excel_time_format = _is_race_over_5k(filepath.stem)
+
     race_df, club_df, name_df = _build_output_frames(
         source_df,
         col_map,
@@ -61,6 +63,7 @@ def create_cleansed_race_file(
         raw_to_preferred,
         sorted(preferred_clubs),
         name_corrections,
+        prefer_excel_time_format=use_excel_time_format,
     )
     race_sheet_name = _build_race_sheet_name(filepath)
 
@@ -75,7 +78,11 @@ def create_cleansed_race_file(
         club_df.to_excel(writer, index=False, sheet_name="Club Review")
         name_df.to_excel(writer, index=False, sheet_name="Name Review")
 
-        _style_sheet(writer.sheets[race_sheet_name], race_df)
+        _style_sheet(
+            writer.sheets[race_sheet_name],
+            race_df,
+            excel_time_columns=("Time", "Gun Time") if use_excel_time_format else (),
+        )
         _style_sheet(writer.sheets["Club Review"], club_df)
         _style_sheet(writer.sheets["Name Review"], name_df)
 
@@ -90,6 +97,7 @@ def _build_output_frames(
     raw_to_preferred: Dict[str, str],
     preferred_clubs: list[str],
     name_corrections: Dict[str, str],
+    prefer_excel_time_format: bool = False,
 ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     race_rows = []
     club_suggestions: Dict[str, dict] = {}
@@ -168,13 +176,37 @@ def _build_output_frames(
         if category_note:
             comments.append(category_note)
 
+        # Wheelchair entries from non-eligible clubs are excluded from the audited output
+        # and logged so operators can trace what was removed.
+        if _is_wheelchair_category(raw_category) and not preferred_club:
+            log.warning(
+                "Dropped wheelchair row from audited output (non-eligible club): source_row=%s name='%s' club='%s' category='%s'",
+                source_row,
+                clean_name or raw_name,
+                raw_club,
+                raw_category,
+            )
+            continue
+
         chip_time_value = row.get(time_col)
-        chip_time = time_display(chip_time_value) if _clean_text(chip_time_value) else ""
+        time_seconds = parse_time_to_seconds(chip_time_value)
+        if _clean_text(chip_time_value):
+            if prefer_excel_time_format and time_seconds is not None and time_seconds > 0:
+                chip_time = _seconds_to_excel_time(time_seconds)
+            else:
+                chip_time = time_display(chip_time_value)
+        else:
+            chip_time = ""
+
         gun_time = ""
         if col_map.get("gun_time"):
             gun_time_value = row.get(col_map["gun_time"])
-            gun_time = time_display(gun_time_value) if _clean_text(gun_time_value) else ""
-        time_seconds = parse_time_to_seconds(chip_time_value)
+            if _clean_text(gun_time_value):
+                gun_seconds = parse_time_to_seconds(gun_time_value)
+                if prefer_excel_time_format and gun_seconds is not None and gun_seconds > 0:
+                    gun_time = _seconds_to_excel_time(gun_seconds)
+                else:
+                    gun_time = time_display(gun_time_value)
 
         include = "Yes"
         status = "Ready"
@@ -286,8 +318,24 @@ def _derive_clean_category(raw_category: str, clean_gender: str | None) -> Tuple
     deterministic = {
         "ages 20 - 34": "Sen",
         "ages 20 - 39": "Sen",
+        "ages 35 - 44": "V35",
         "ages 40 - 49": "V40",
+        "ages 45 - 54": "V45",
         "ages 50 - 59": "V50",
+        "ages 55 +": "V55",
+        "ages 60 +": "V60",
+        "unknown": "Sen",
+        "os": "Sen",
+        "fs": "Sen",
+        "ms": "Sen",
+        "sm": "Sen",
+        "sl": "Sen",
+        "top 3": "FIX",
+        "top 3 male": "FIX",
+        "top 3 female": "FIX",
+        "pacer": "FIX",
+        "oj": "Jun",
+        "fj": "Jun",
         "under 17": "Jun",
         "under 20": "Jun",
     }
@@ -295,10 +343,6 @@ def _derive_clean_category(raw_category: str, clean_gender: str | None) -> Tuple
         derived = deterministic[stripped_compact]
         notes.append(f"Category derived from '{category}' to '{derived}'")
         return derived, " | ".join(dict.fromkeys(notes))
-
-    if stripped_compact in {"unknown", "ages 35 - 44", "ages 45 - 54", "ages 55 +", "ages 60 +"}:
-        notes.append(f"Category '{category}' needs manual review")
-        return "", " | ".join(dict.fromkeys(notes))
 
     work = re.sub(r"[\s_\.]", "", stripped_compact)
     work = work.replace("vet", "v")
@@ -410,6 +454,12 @@ def _strip_category_gender(category: str) -> Tuple[str, str | None]:
     return remainder, match.group(1).upper()
 
 
+def _is_wheelchair_category(raw_category: str) -> bool:
+    stripped, _ = _strip_category_gender(raw_category)
+    compact = re.sub(r"[^a-z0-9]", "", stripped.lower())
+    return compact in {"wheelchair", "wheelchairracer"}
+
+
 def _format_clean_veteran_category(age: int, has_plus: bool) -> str:
     if age >= 70:
         return "V70+" if has_plus else "V70"
@@ -450,7 +500,35 @@ def _build_audited_stem(stem: str) -> str:
     return f"Race {race_num} - {suffix}" if suffix else f"Race {race_num}"
 
 
-def _style_sheet(ws, df: pd.DataFrame) -> None:
+def _is_race_over_5k(stem: str) -> bool:
+    text = stem.lower()
+
+    km_match = re.search(r"(\d+(?:\.\d+)?)\s*k\b", text)
+    if km_match:
+        try:
+            return float(km_match.group(1)) > 5.0
+        except ValueError:
+            pass
+
+    mile_match = re.search(r"(\d+(?:\.\d+)?)\s*mile", text)
+    if mile_match:
+        try:
+            miles = float(mile_match.group(1))
+            return miles > 3.10686
+        except ValueError:
+            pass
+
+    if "half marathon" in text or re.search(r"\bmarathon\b", text):
+        return True
+
+    return False
+
+
+def _seconds_to_excel_time(seconds: float) -> float:
+    return float(seconds) / 86400.0
+
+
+def _style_sheet(ws, df: pd.DataFrame, excel_time_columns: Iterable[str] = ()) -> None:
     ws.freeze_panes = "A2"
     ws.auto_filter.ref = ws.dimensions
 
@@ -465,6 +543,17 @@ def _style_sheet(ws, df: pd.DataFrame) -> None:
             cell.alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
             if use_alt_fill:
                 cell.fill = _ALT_FILL
+
+    if excel_time_columns:
+        time_col_indices = {
+            idx
+            for idx, name in enumerate(df.columns, start=1)
+            if str(name) in set(excel_time_columns)
+        }
+        for row in ws.iter_rows(min_row=2, max_row=ws.max_row):
+            for cell in row:
+                if cell.column in time_col_indices and isinstance(cell.value, (int, float)):
+                    cell.number_format = "h:mm:ss.0"
 
     for index, column_name in enumerate(df.columns, start=1):
         values = [str(column_name)]

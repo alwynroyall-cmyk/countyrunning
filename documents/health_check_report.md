@@ -27,21 +27,21 @@
 
 The application is a well-structured Python scoring system for the Wiltshire Road Running League (WRRL). The processing core — individual ranking, team scoring, season aggregation, and report generation — is in good shape and produces correct output across 8 races. The codebase is clean following the recent code-quality pass.
 
-However, several issues warrant attention before the application is considered production-ready. The most significant are the **complete absence of automated tests**, **data/output files committed to git** (polluting the repository and blocking a clean diff), and a **deleted `.gitignore`** that leaves the repository vulnerable to future accidental commits of generated artefacts. There are also minor version-string inconsistencies, hardcoded season constants that should be configurable, and two placeholder GUI features that are not yet implemented.
+However, several issues still warrant attention before the application is considered production-ready. The most significant now are repository hygiene drift risks (generated artefacts), expanding automated test breadth for scoring edge cases, and keeping documentation aligned with active audit workflows. Version consistency and core GUI placeholder concerns have been addressed in this branch.
 
-**Overall assessment: Good foundation. Address the repository hygiene and testing gap before the next season.**
+**Overall assessment: Good foundation with materially improved coverage and workflow completeness. Continue strengthening regression depth and repository hygiene controls.**
 
 | Area | Status |
 |---|---|
 | Processing pipeline correctness | ✅ Sound |
 | Error handling | ✅ Good |
 | GUI — core scorer workflow | ✅ Complete |
-| GUI — View Results / Settings | ⚠️ Placeholders |
+| GUI — View Results / Settings | ✅ Implemented |
 | Version consistency | ⚠️ Mismatch |
 | Hardcoded season constants | ⚠️ Not configurable |
 | Dependencies | ⚠️ Stale comment in requirements.txt |
 | Repository hygiene | ❌ No .gitignore, output files committed |
-| Automated testing | ❌ None |
+| Automated testing | ⚠️ Present, expanding |
 
 ---
 
@@ -215,8 +215,8 @@ If the directory naming convention ever changes (e.g. a flat layout), the fallba
 | Run Scorer | ✅ Fully implemented |
 | View Events | ✅ Fully implemented (opens EventsViewerWindow) |
 | View Timeline | ✅ Fully implemented (generates PNG, opens in system viewer) |
-| View Results | ⚠️ Placeholder — shows messagebox only |
-| Settings | ⚠️ Placeholder — shows messagebox only |
+| View Results | ✅ Implemented |
+| Settings | ✅ Implemented |
 | Year selector | ✅ Functional |
 | Data root picker | ✅ Functional |
 
@@ -229,7 +229,7 @@ The scorer panel is fully implemented:
 - Colour-coded log output (INFO, WARNING, ERROR, SUCCESS)
 - Duplicate-line collapsing with repeat counter (×N)
 
-**Assessment:** Core workflow is complete. "View Results" and "Settings" are stubs that display a "coming soon" messagebox. These are acceptable for a current release but should be noted as outstanding work.
+**Assessment:** Core workflow is complete and now includes implemented `View Results`, `Settings`, and `Review Issues` flows.
 
 ### Events Viewer (`events_viewer.py`)
 
@@ -318,11 +318,15 @@ Active branch `League-Report-Cleanup` is fully synced with `origin/League-Report
 
 ## 9. Testing
 
-**There are zero automated tests in this codebase.**
+Automated tests are present in the current branch, including integration coverage for staged checks and unit coverage for audit cleanser and output writer behavior.
 
-No test files, no test directory, no test runner configuration (`pytest.ini`, `setup.cfg [tool:pytest]`, `pyproject.toml`).
+Current test examples include:
 
-This is the most significant quality risk for a scoring application where correctness is critical. A miscalculation in points, tie-breaking, team composition, or season aggregation could go unnoticed until a club queries their standings.
+- `tests/integration/test_staged_checks.py`
+- `tests/unit/test_audit_cleanser.py`
+- `tests/unit/test_output_writer.py`
+
+The main remaining quality risk is depth rather than absence: scoring and aggregation regressions still need broader scenario coverage.
 
 ### Suggested Test Coverage Priorities
 
@@ -364,7 +368,7 @@ The application is currently **Windows-only by design** (the target environment 
 
 | # | Issue | Location | Impact |
 |---|---|---|---|
-| H-1 | No automated tests | Entire codebase | Scoring bugs could go undetected |
+| H-1 | Test depth still incomplete for scoring edge cases | Core scoring and aggregation modules | Regressions may still slip through if new rules are introduced |
 | H-2 | `.gitignore` deleted | Repository root | Build artefacts risk being committed |
 | H-3 | Generated output files committed to git | `data/2025/outputs/` | Repository bloat, noisy diffs, poor hygiene |
 
@@ -373,8 +377,8 @@ The application is currently **Windows-only by design** (the target environment 
 | # | Issue | Location | Impact |
 |---|---|---|---|
 | M-1 | Version string mismatch: `__init__.py` says `v3.1`, report footer says `v2.1` | `__init__.py`, `report_writer.py` | User confusion; unclear which is authoritative |
-| M-2 | "View Results" button is a placeholder | `dashboard.py` `_on_view_results()` | Feature gap — user cannot view results from GUI |
-| M-3 | "Settings" button is a placeholder | `dashboard.py` `_on_settings()` | Feature gap — no in-app configuration UI |
+| M-2 | Review Issues workflow still evolving | `graphical/issue_reviewer.py` | UX and quick-fix breadth should continue to improve |
+| M-3 | Audit documentation drift risk | `documents/*.md` | Out-of-date docs can mislead operations and QA |
 | M-4 | Season constants hardcoded in 5 separate files | `season_aggregation.py`, `output_writer.py`, `team_scoring.py`, `report_writer.py` | Fragile if league rules change |
 | M-5 | Year fallback silently produces `2026` if dir convention changes | `main.py` (×2) | Silent data integrity bug |
 | M-6 | `__pycache__` bytecode tracked by git | `graphical/__pycache__/` | Repository pollution |
@@ -401,7 +405,7 @@ Status after the latest cleanup pass:
 3. ✅ Version text is centralised through `league_scorer.__version__` and reused in report/dashboard output.
 4. ✅ `requirements.txt` stale structure block removed.
 5. ✅ Race discovery and results-workbook lookup logic are now shared helpers.
-6. ⚠️ Automated tests are still the largest outstanding gap.
+6. ⚠️ Automated tests now exist, but high-value regression depth is still the largest outstanding quality gap.
 
 The remaining high-priority recommendation is adding a focused pytest suite over scoring and season aggregation logic.
 

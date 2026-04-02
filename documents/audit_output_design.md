@@ -23,10 +23,13 @@ This file captures the recommended first-pass layout and wording for audit outpu
 Recommended first-pass sheets:
 
 1. `Race Audit Summary`
-2. `Row Audit`
-3. `Runner Audit`
-4. `Club Audit`
-5. `Unrecognised Club Summary`
+2. `Actionable Issues`
+3. `Row Audit`
+4. `Runner Audit`
+5. `Club Audit`
+6. `Unrecognised Club Summary`
+7. `Candidates To Check`
+8. `EA Checked`
 
 Keep one audit view per sheet and mirror the same views on screen.
 
@@ -45,6 +48,19 @@ Keep one audit view per sheet and mirror the same views on screen.
 - `Status`
 - `Depends On`
 - `Summary`
+- `Next Step`
+
+### Actionable Issues
+
+- `Type`
+- `Severity`
+- `Issue Code`
+- `Race`
+- `Source Row`
+- `Key`
+- `Name`
+- `Club`
+- `Message`
 - `Next Step`
 
 ### Row Audit
@@ -195,8 +211,9 @@ Use status order `Manual Review`, `Dependent`, `Ready To Fix`, `Open`, `Informat
 
 ## Screen Presentation Recommendation
 
-- Use the same tabs as the workbook sheets
-- Default to `Race Audit Summary`
-- Allow race filtering above the grid
-- Keep dependency and next-step columns visible without opening a detail panel
-- Open selected rows in a detail pane only if the base grid becomes too wide
+- `View Audit` should behave as a workbook/sheet browser and expose all workbook sheets.
+- `Review Issues` should be a dedicated panel over `Actionable Issues` with:
+	- code and race filters
+	- open-source-file action
+	- runner-history jump action
+	- quick-fix actions where supported by issue code

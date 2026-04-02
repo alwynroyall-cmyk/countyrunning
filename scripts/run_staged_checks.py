@@ -30,6 +30,7 @@ from league_scorer.main import LeagueScorer
 from league_scorer.race_processor import extract_race_number
 from league_scorer.race_validation import validate_race_schema
 from league_scorer.source_loader import discover_race_files, load_race_dataframe
+from scripts.analyse_data_quality import analyse_season
 
 
 @dataclass
@@ -39,6 +40,16 @@ class StageResult:
     status: str
     message: str
     details: dict[str, Any] = field(default_factory=dict)
+
+
+def _quality_success_pct(audited_summary: dict[str, Any]) -> float:
+    completeness_values = [
+        100.0 - float(audited_summary.get("blank_category_pct", 0.0)),
+        100.0 - float(audited_summary.get("blank_name_pct", 0.0)),
+        100.0 - float(audited_summary.get("blank_gender_pct", 0.0)),
+        100.0 - float(audited_summary.get("invalid_time_pct", 0.0)),
+    ]
+    return round(sum(completeness_values) / len(completeness_values), 2)
 
 
 def _resolve_data_root(explicit: Path | None) -> Path | None:
@@ -184,17 +195,50 @@ def run_checks(args: argparse.Namespace) -> tuple[bool, list[StageResult]]:
     audited_race_nums = set(audited_race_files)
 
     missing_from_audited = sorted(raw_race_nums - audited_race_nums)
-    status = "passed" if not missing_from_audited else "failed"
+    stage2_details: dict[str, Any] = {
+        "missing_from_audited": missing_from_audited,
+        "audited_files": {k: str(v) for k, v in audited_race_files.items()},
+    }
+
+    quality_output_dir = getattr(args, "data_quality_output_dir", Path("output") / "data-quality")
+    quality_threshold = float(getattr(args, "quality_gate_threshold", 80.0))
+    quality_gate_passed = True
+    try:
+        quality_payload, quality_json, quality_md = analyse_season(args.year, data_root, quality_output_dir)
+        audited_summary = quality_payload.get("audited_summary", {})
+        hotspots = quality_payload.get("hotspots", {}).get("audited_blank_category", [])
+        quality_success_pct = _quality_success_pct(audited_summary)
+        quality_gate_passed = quality_success_pct >= quality_threshold
+        stage2_details["data_quality"] = {
+            "report_json": str(quality_json),
+            "report_markdown": str(quality_md),
+            "quality_gate_threshold_pct": quality_threshold,
+            "quality_success_pct": quality_success_pct,
+            "quality_gate_passed": quality_gate_passed,
+            "audited_blank_category_pct": audited_summary.get("blank_category_pct", 0.0),
+            "audited_invalid_time_pct": audited_summary.get("invalid_time_pct", 0.0),
+            "top_blank_category_hotspots": hotspots[:3],
+        }
+    except Exception as exc:
+        quality_gate_passed = False
+        stage2_details["data_quality_error"] = str(exc)
+
+    status = "passed" if (not missing_from_audited and quality_gate_passed) else "failed"
+    gate_summary = f"quality gate={quality_threshold:.1f}%"
+    if "data_quality" in stage2_details:
+        gate_summary = (
+            f"quality gate={quality_threshold:.1f}% "
+            f"(observed={stage2_details['data_quality']['quality_success_pct']:.2f}%)."
+        )
+    if "data_quality_error" in stage2_details:
+        gate_summary = f"quality gate unavailable ({stage2_details['data_quality_error']})."
     results.append(
         StageResult(
             2,
             "Raw To Audited Consolidation",
             status,
-            f"Raw races={len(raw_race_nums)}, audited races={len(audited_race_nums)}.",
-            {
-                "missing_from_audited": missing_from_audited,
-                "audited_files": {k: str(v) for k, v in audited_race_files.items()},
-            },
+            f"Raw races={len(raw_race_nums)}, audited races={len(audited_race_nums)}; {gate_summary}",
+            stage2_details,
         )
     )
     if status == "failed":
@@ -204,16 +248,18 @@ def run_checks(args: argparse.Namespace) -> tuple[bool, list[StageResult]]:
     auditor = LeagueAuditor(input_dir=input_dir, output_dir=output_dir, year=args.year)
     audit_path = auditor.run(race_files=audited_race_files)
 
-    issue_count = sum(len(v) for v in auditor.all_race_issues.values())
+    total_issue_count = sum(len(v) for v in auditor.all_race_issues.values())
+    actionable_issue_count = int(getattr(auditor, "latest_actionable_issue_count", total_issue_count))
     results.append(
         StageResult(
             3,
             "Audit Generation Validation",
             "passed",
-            f"Audit workbook generated with {issue_count} issue row(s).",
+            f"Audit workbook generated with {actionable_issue_count} actionable issue row(s).",
             {
                 "audit_workbook": str(audit_path),
-                "issue_count": issue_count,
+                "issue_count": actionable_issue_count,
+                "total_issue_count": total_issue_count,
             },
         )
     )
@@ -307,6 +353,79 @@ def write_report(results: list[StageResult], report_dir: Path, success: bool) ->
         lines.append("")
         lines.append(item.message)
         lines.append("")
+
+        if item.stage == 2:
+            quality = item.details.get("data_quality") if isinstance(item.details, dict) else None
+            if isinstance(quality, dict):
+                lines.append("### Stage 2 Quality Gate Details")
+                lines.append("")
+                lines.append(
+                    f"- Threshold: {quality.get('quality_gate_threshold_pct', 80.0)}%"
+                )
+                lines.append(
+                    f"- Observed Success: {quality.get('quality_success_pct', 0.0)}%"
+                )
+                lines.append(
+                    f"- Gate Passed: {quality.get('quality_gate_passed', False)}"
+                )
+                lines.append(
+                    f"- Audited Blank Category %: {quality.get('audited_blank_category_pct', 0.0)}"
+                )
+                lines.append(
+                    f"- Audited Invalid Time %: {quality.get('audited_invalid_time_pct', 0.0)}"
+                )
+                lines.append(
+                    f"- Data Quality Report: {quality.get('report_markdown', '')}"
+                )
+                lines.append("")
+
+                hotspots = quality.get("top_blank_category_hotspots", [])
+                if hotspots:
+                    lines.append("### Top Blank Category Hotspots")
+                    lines.append("")
+                    lines.append("| File | Blank Category % | Blank Count |")
+                    lines.append("| --- | ---: | ---: |")
+                    for hotspot in hotspots:
+                        file_name = Path(str(hotspot.get("file", ""))).name
+                        lines.append(
+                            f"| {file_name} | {hotspot.get('blank_category_pct', 0.0)} | {hotspot.get('blank_category', 0)} |"
+                        )
+                    lines.append("")
+
+                suggestions: list[str] = []
+                blank_pct = float(quality.get("audited_blank_category_pct", 0.0))
+                invalid_time_pct = float(quality.get("audited_invalid_time_pct", 0.0))
+
+                if blank_pct > 0:
+                    suggestions.append(
+                        "Add or tighten category mapping rules in audit normalization for common missing patterns (for example age-band aliases and empty placeholders)."
+                    )
+                    suggestions.append(
+                        "Apply targeted source cleanup to the top hotspot files first, then re-run staged checks to confirm reduction."
+                    )
+
+                if invalid_time_pct > 0:
+                    suggestions.append(
+                        "Normalize common time formatting variants in source files before parsing (for example stray spaces, punctuation, and hh:mm:ss variants)."
+                    )
+
+                if hotspots:
+                    suggestions.append(
+                        "For each hotspot race, add a small race-specific pre-clean step in consolidation to infer category from known metadata where safe."
+                    )
+
+                if suggestions:
+                    lines.append("### Suggested Fixes")
+                    lines.append("")
+                    for suggestion in suggestions:
+                        lines.append(f"- {suggestion}")
+                    lines.append("")
+
+            if isinstance(item.details, dict) and item.details.get("data_quality_error"):
+                lines.append("### Stage 2 Quality Gate Details")
+                lines.append("")
+                lines.append(f"- Data Quality Error: {item.details['data_quality_error']}")
+                lines.append("")
     (report_dir / "staged_checks_report.md").write_text("\n".join(lines), encoding="utf-8")
 
 
@@ -323,6 +442,17 @@ def parse_args() -> argparse.Namespace:
         "--baseline-file",
         type=Path,
         default=Path("tests") / "baselines" / "season_1999_results_baseline.json",
+    )
+    parser.add_argument(
+        "--data-quality-output-dir",
+        type=Path,
+        default=Path("output") / "data-quality",
+    )
+    parser.add_argument(
+        "--quality-gate-threshold",
+        type=float,
+        default=80.0,
+        help="Minimum quality success percentage required to proceed past Stage 2.",
     )
     parser.add_argument("--write-baseline", action="store_true")
     parser.add_argument("--allow-missing-data", action="store_true")

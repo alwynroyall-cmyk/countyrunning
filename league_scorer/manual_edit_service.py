@@ -219,6 +219,16 @@ def _find_columns(ws, field_type: str):
 
     if field_type == "club":
         field_col = next((i + 1 for i, h in enumerate(headers) if "club" in h), None)
+    elif field_type == "gender":
+        field_col = next((i + 1 for i, h in enumerate(headers) if h == "gender" or h == "sex"), None)
+        if field_col is None:
+            field_col = next((i + 1 for i, h in enumerate(headers) if "gender" in h or "sex" in h), None)
+    elif field_type == "time":
+        field_col = next((i + 1 for i, h in enumerate(headers) if "chip" in h and "time" in h), None)
+        if field_col is None:
+            field_col = next((i + 1 for i, h in enumerate(headers) if h == "time"), None)
+        if field_col is None:
+            field_col = next((i + 1 for i, h in enumerate(headers) if "time" in h), None)
     else:
         field_col = next((i + 1 for i, h in enumerate(headers) if "category" in h or h == "cat"), None)
 

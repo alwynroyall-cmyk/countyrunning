@@ -7,24 +7,40 @@ from tkinter import filedialog, messagebox
 from ..audit_cleanser import create_cleansed_race_file
 from ..audit import LeagueAuditor
 from ..club_loader import load_clubs
+from ..common_files import race_discovery_exclusions
 from ..exceptions import FatalError
 from ..race_processor import extract_race_number
 from ..series_consolidation import consolidate_series_files
+from ..source_loader import discover_race_files
 from .gui import GREEN, GREEN_H, LIGHT, NAVY, PANEL, WHITE, LeagueScorerApp
 
 
 class LeagueAuditApp(LeagueScorerApp):
-    """Runner audit panel with single-file browsing for one race at a time."""
+    """Runner audit panel supporting single-file and all-file audit runs."""
 
     def __init__(self, *args, **kwargs) -> None:
         self._completion_callback = kwargs.pop("completion_callback", None)
+        # _race_dir: folder the user browses for race files (may differ from session inputs).
+        # _input_dir (set by parent): session inputs folder — used for clubs.xlsx / LeagueAuditor.
+        self._race_dir: Path | None = None
+        self._race_dir_var = tk.StringVar(value="Same as session input folder (default)")
         self._selected_race_file: Path | None = None
         self._selected_race_var = tk.StringVar(value="No race file selected.")
+        self._audit_mode_var = tk.StringVar(value="single")
+        self._replace_existing_var = tk.BooleanVar(value=True)
         super().__init__(*args, **kwargs)
 
     def _discover_race_files(self) -> dict:
-        """Audit uses explicit single-file selection rather than checkbox discovery."""
-        return {}
+        """Discover race files from _race_dir (if set) or the session input folder."""
+        scan_dir = self._race_dir if self._race_dir and self._race_dir.is_dir() else self._input_dir
+        if not scan_dir or not scan_dir.is_dir():
+            return {}
+        discovered = discover_race_files(scan_dir, excluded_names=race_discovery_exclusions())
+        return {
+            race_num: path
+            for race_num, path in discovered.items()
+            if not path.name.lower().endswith(" (audited).xlsx")
+        }
 
     def _build_header(self) -> None:
         bar = tk.Frame(self, bg=NAVY, height=52)
@@ -70,16 +86,56 @@ class LeagueAuditApp(LeagueScorerApp):
         self._run_btn.config(text="▶   Run Audit")
 
     def _build_race_selector(self) -> None:
-        outer = tk.Frame(self, bg=LIGHT)
-        outer.pack(side="top", fill="x", padx=14, pady=(0, 4))
+        for child in self._race_selector_host.winfo_children():
+            child.destroy()
+        outer = tk.Frame(self._race_selector_host, bg=LIGHT)
+        outer.pack(fill="x", padx=14, pady=(0, 4))
 
         tk.Label(
             outer,
-            text="Race file to audit:",
+            text="Race results folder:",
             font=("Segoe UI", 9, "bold"),
             bg=LIGHT,
             fg=NAVY,
         ).pack(anchor="w")
+
+        folder_row = tk.Frame(outer, bg=PANEL, highlightthickness=1, highlightbackground="#c0c8d8")
+        folder_row.pack(fill="x", pady=(4, 0))
+
+        tk.Label(
+            folder_row,
+            textvariable=self._race_dir_var,
+            font=("Segoe UI", 9),
+            bg=PANEL,
+            fg="#22313f",
+            anchor="w",
+            justify="left",
+            padx=10,
+            pady=10,
+        ).pack(side="left", fill="x", expand=True)
+
+        tk.Button(
+            folder_row,
+            text="Browse Folder…",
+            command=self._browse_input_folder,
+            font=("Segoe UI", 9, "bold"),
+            bg=GREEN,
+            fg=WHITE,
+            relief="flat",
+            padx=14,
+            pady=6,
+            cursor="hand2",
+            activebackground=GREEN_H,
+            activeforeground=WHITE,
+        ).pack(side="right", padx=8, pady=8)
+
+        tk.Label(
+            outer,
+            text="Race file to audit (single-file mode):",
+            font=("Segoe UI", 9, "bold"),
+            bg=LIGHT,
+            fg=NAVY,
+        ).pack(anchor="w", pady=(8, 0))
 
         row = tk.Frame(outer, bg=PANEL, highlightthickness=1, highlightbackground="#c0c8d8")
         row.pack(fill="x", pady=(4, 0))
@@ -98,7 +154,7 @@ class LeagueAuditApp(LeagueScorerApp):
 
         tk.Button(
             row,
-            text="Browse…",
+            text="Browse File…",
             command=self._browse_race_file,
             font=("Segoe UI", 9, "bold"),
             bg=GREEN,
@@ -111,28 +167,62 @@ class LeagueAuditApp(LeagueScorerApp):
             activeforeground=WHITE,
         ).pack(side="right", padx=8, pady=8)
 
-        tk.Button(
-            row,
-            text="Import URL…",
-            command=self._on_import_raceroster_for_audit,
-            font=("Segoe UI", 9, "bold"),
-            bg=GREEN,
-            fg=WHITE,
-            relief="flat",
-            padx=14,
-            pady=6,
-            cursor="hand2",
-            activebackground=GREEN_H,
-            activeforeground=WHITE,
-        ).pack(side="right", padx=(0, 0), pady=8)
-
         tk.Label(
             outer,
-            text="Select exactly one race file from the active season input folder.",
+            text="Choose a folder first. In All mode, all discovered race files in that folder are audited.",
             font=("Segoe UI", 8),
             bg=LIGHT,
             fg="#59687a",
         ).pack(anchor="w", pady=(4, 0))
+
+        mode_row = tk.Frame(outer, bg=LIGHT)
+        mode_row.pack(fill="x", pady=(8, 0))
+
+        tk.Label(
+            mode_row,
+            text="Audit scope:",
+            font=("Segoe UI", 9, "bold"),
+            bg=LIGHT,
+            fg=NAVY,
+        ).pack(side="left")
+
+        tk.Radiobutton(
+            mode_row,
+            text="Selected file",
+            variable=self._audit_mode_var,
+            value="single",
+            font=("Segoe UI", 9),
+            bg=LIGHT,
+            fg="#22313f",
+            selectcolor=WHITE,
+            activebackground=LIGHT,
+            activeforeground="#22313f",
+        ).pack(side="left", padx=(8, 0))
+
+        tk.Radiobutton(
+            mode_row,
+            text="All discovered race files",
+            variable=self._audit_mode_var,
+            value="all",
+            font=("Segoe UI", 9),
+            bg=LIGHT,
+            fg="#22313f",
+            selectcolor=WHITE,
+            activebackground=LIGHT,
+            activeforeground="#22313f",
+        ).pack(side="left", padx=(8, 0))
+
+        tk.Checkbutton(
+            mode_row,
+            text="Replace existing audited files",
+            variable=self._replace_existing_var,
+            font=("Segoe UI", 9),
+            bg=LIGHT,
+            fg="#22313f",
+            selectcolor=WHITE,
+            activebackground=LIGHT,
+            activeforeground="#22313f",
+        ).pack(side="left", padx=(16, 0))
 
         consolidate_row = tk.Frame(outer, bg=LIGHT)
         consolidate_row.pack(fill="x", pady=(10, 0))
@@ -169,6 +259,29 @@ class LeagueAuditApp(LeagueScorerApp):
             wraplength=920,
             justify="left",
         ).pack(anchor="w", pady=(4, 0))
+
+    def _browse_input_folder(self) -> None:
+        initial_dir = str(self._race_dir or self._input_dir) if (self._race_dir or self._input_dir) else None
+        selected_dir = filedialog.askdirectory(
+            parent=self,
+            title="Select Race Results Folder",
+            initialdir=initial_dir,
+            mustexist=True,
+        )
+        if not selected_dir:
+            return
+
+        chosen = Path(selected_dir)
+        if not chosen.is_dir():
+            messagebox.showerror("Folder not found", f"Selected folder does not exist:\n{chosen}", parent=self)
+            return
+
+        self._race_dir = chosen
+        self._race_dir_var.set(str(chosen))
+
+        self._selected_race_file = None
+        self._selected_race_var.set("No race file selected.")
+        self._refresh_race_discovery()
 
     def _browse_race_file(self) -> None:
         if not self._input_dir or not self._input_dir.is_dir():
@@ -256,19 +369,6 @@ class LeagueAuditApp(LeagueScorerApp):
             parent=self,
         )
 
-    def _on_import_raceroster_for_audit(self) -> None:
-        imported = self._prompt_raceroster_import()
-        if imported is None:
-            return
-
-        self._selected_race_file = imported
-        self._selected_race_var.set(imported.name)
-        messagebox.showinfo(
-            "Import Complete",
-            f"Imported race file selected for audit:\n{imported}",
-            parent=self,
-        )
-
     def _on_run(self) -> None:
         if not self._input_dir or not self._input_dir.is_dir():
             messagebox.showerror("Input not found", f"Input folder does not exist:\n{self._input_dir}", parent=self)
@@ -278,16 +378,28 @@ class LeagueAuditApp(LeagueScorerApp):
             return
         (self._output_dir / "audit").mkdir(parents=True, exist_ok=True)
 
-        if self._selected_race_file is None:
-            messagebox.showwarning("No race file selected", "Browse to a single race file before running audit.", parent=self)
-            return
+        selected: dict[int, Path] = {}
+        mode = self._audit_mode_var.get().strip().lower()
+        if mode == "all":
+            selected = dict(self._race_files)
+            if not selected:
+                messagebox.showwarning(
+                    "No race files found",
+                    "No discoverable race files were found in the active input folder.",
+                    parent=self,
+                )
+                return
+        else:
+            if self._selected_race_file is None:
+                messagebox.showwarning("No race file selected", "Browse to a single race file before running audit.", parent=self)
+                return
 
-        race_num = extract_race_number(self._selected_race_file.stem)
-        if race_num is None:
-            messagebox.showerror("Invalid race file", "The selected race file no longer has a valid race number.", parent=self)
-            return
+            race_num = extract_race_number(self._selected_race_file.stem)
+            if race_num is None:
+                messagebox.showerror("Invalid race file", "The selected race file no longer has a valid race number.", parent=self)
+                return
 
-        selected = {race_num: self._selected_race_file}
+            selected = {race_num: self._selected_race_file}
 
         self._run_btn.config(state="disabled", bg="#557766")
         self._start_progress()
@@ -295,17 +407,34 @@ class LeagueAuditApp(LeagueScorerApp):
         self._append_log("─" * 64, tag="DIVIDER")
         self._append_log(f"INFO      Input   → {self._input_dir}", tag="INFO")
         self._append_log(f"INFO      Output  → {self._output_dir / 'audit'}", tag="INFO")
-        self._append_log(f"INFO      Race    → {self._selected_race_file.name}", tag="INFO")
+        if mode == "all":
+            self._append_log(f"INFO      Scope   → All files ({len(selected)})", tag="INFO")
+        else:
+            self._append_log(f"INFO      Scope   → Single file", tag="INFO")
+            self._append_log(f"INFO      Race    → {self._selected_race_file.name}", tag="INFO")
+        self._append_log(
+            f"INFO      Replace → {'Yes' if self._replace_existing_var.get() else 'No'}",
+            tag="INFO",
+        )
         self._append_log("INFO      Audit starting…", tag="INFO")
 
         self._worker = threading.Thread(
             target=self._run_pipeline,
-            args=(self._input_dir, self._output_dir, self._year, selected),
+            args=(self._input_dir, self._output_dir, self._year, selected, self._replace_existing_var.get()),
+            # _input_dir is always the session inputs folder (clubs.xlsx / LeagueAuditor);
+            # race files in `selected` may come from a different folder.
             daemon=True,
         )
         self._worker.start()
 
-    def _run_pipeline(self, input_dir: Path, output_dir: Path, year: int | None, race_files: dict) -> None:
+    def _run_pipeline(
+        self,
+        input_dir: Path,
+        output_dir: Path,
+        year: int | None,
+        race_files: dict,
+        overwrite_existing: bool,
+    ) -> None:
         try:
             if year is None:
                 raise FatalError("Season year is not configured.")
@@ -313,17 +442,22 @@ class LeagueAuditApp(LeagueScorerApp):
             preferred_clubs = sorted(club_info)
 
             audited_paths = []
+            audited_race_files = {}
             for filepath in race_files.values():
                 audited_path = create_cleansed_race_file(
                     filepath,
                     raw_to_preferred,
                     preferred_clubs,
-                    overwrite_existing=True,
+                    overwrite_existing=overwrite_existing,
                 )
                 self._log_queue.put(("log", "INFO", f"INFO      Audited → {audited_path.name}"))
                 audited_paths.append(audited_path)
+                race_num = extract_race_number(audited_path.stem)
+                if race_num is None:
+                    raise FatalError(f"Audited file does not contain a valid race number: {audited_path.name}")
+                audited_race_files[race_num] = audited_path
 
-            workbook_path = LeagueAuditor(input_dir, output_dir, year).run(race_files=race_files)
+            workbook_path = LeagueAuditor(input_dir, output_dir, year).run(race_files=audited_race_files)
             self._log_queue.put((self._SENTINEL_OK, workbook_path, audited_paths))
         except FatalError as exc:
             self._log_queue.put((self._SENTINEL_FATAL, str(exc)))
