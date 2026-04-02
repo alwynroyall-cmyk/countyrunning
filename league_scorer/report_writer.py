@@ -14,6 +14,7 @@ Sections (combined league report)
 """
 
 import logging
+import os
 import re
 from collections import Counter
 from pathlib import Path
@@ -37,6 +38,12 @@ from .models import (
 
 log = logging.getLogger(__name__)
 
+
+def _pdf_conversion_enabled() -> bool:
+    """Allow disabling PDF export via env var to avoid Word/printer hangs."""
+    value = os.getenv("WRRL_DISABLE_PDF", "").strip().lower()
+    return value not in {"1", "true", "yes", "on"}
+
 # ── Brand colours ──────────────────────────────────────────────────────────────
 _NAVY_HEX    = "3a4658"
 _GREEN_HEX   = "2d7a4a"
@@ -45,8 +52,6 @@ _ALT_HEX     = "eef2f7"   # alternating data row tint
 _TOTAL_HEX   = "00b050"   # highlighted total-points column in division tables
 _FONT_NAME   = "Calibri"
 from .settings import settings
-
-_SEASON_FINAL_RACE = settings.get("SEASON_FINAL_RACE")
 
 _NAVY_RGB   = RGBColor(0x3a, 0x46, 0x58)
 _WHITE_RGB  = RGBColor(0xff, 0xff, 0xff)
@@ -59,7 +64,7 @@ _BRONZE_HEX    = "b87440"   # 3rd place — bronze
 _PROMOTED_HEX  = "d0ead8"   # Div 2 promotion zone (subtle green tint)
 _RELEGATED_HEX = "f5d8d8"   # Div 1 relegation zone (subtle red tint)
 
-_CATEGORIES = ["Sen", "V40", "V50", "V60", "V70+"]
+_CATEGORIES = ["Sen", "V35", "V40", "V45", "V50", "V55", "V60", "V65", "V70", "V70+"]
 
 # Per-category badge background colours (hex without #)
 _CAT_BADGE_HEX = {
@@ -468,7 +473,9 @@ def _write_league_narrative(doc: Document,
     male_leader = male[0] if male else None
     female_leader = female[0] if female else None
 
-    if highest_race == _SEASON_FINAL_RACE:
+    season_final_race = settings.get("SEASON_FINAL_RACE")
+
+    if highest_race == season_final_race:
         parts = [
             f"Race {highest_race} brings the {year} WRRL league season to its conclusion.",
         ]
@@ -1126,6 +1133,10 @@ def write_race_report(
     doc.save(str(filepath))
     log.info("Race %d report written: %s", race_num, filepath.name)
 
+    if not _pdf_conversion_enabled():
+        log.info("Race %d PDF conversion skipped — WRRL_DISABLE_PDF is enabled", race_num)
+        return None
+
     try:
         from docx2pdf import convert  # type: ignore
         pdf_path = filepath.with_suffix(".pdf")
@@ -1310,6 +1321,10 @@ def write_combined_report(
     filepath.parent.mkdir(parents=True, exist_ok=True)
     doc.save(str(filepath))
     log.info("Report written: %s", filepath.name)
+
+    if not _pdf_conversion_enabled():
+        log.info("PDF conversion skipped — WRRL_DISABLE_PDF is enabled")
+        return None
 
     # ── PDF conversion (requires Microsoft Word on Windows) ───────────────────
     try:

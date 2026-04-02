@@ -17,6 +17,8 @@ _WRAP_COLUMNS = {
     "Summary",
     "Message",
     "Next Step",
+    "Reason",
+    "Notes",
     "Clubs Seen",
     "Sexes Seen",
     "Categories Seen",

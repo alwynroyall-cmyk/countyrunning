@@ -135,74 +135,74 @@ def load_events(path: Path | str) -> EventsSchedule:
         raise FileNotFoundError(f"Events file not found: {path}")
 
     wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
-
-    if SHEET_NAME not in wb.sheetnames:
-        available = ", ".join(wb.sheetnames)
-        raise ValueError(
-            f"Sheet '{SHEET_NAME}' not found in {path.name}. "
-            f"Available sheets: {available}"
-        )
-
-    ws = wb[SHEET_NAME]
-    rows = list(ws.iter_rows(values_only=True))
-
-    if not rows:
-        return EventsSchedule(source_path=path)
-
-    # ------------------------------------------------------------------ #
-    # Parse header row
-    # ------------------------------------------------------------------ #
-    header = [str(h).strip() if h is not None else "" for h in rows[0]]
-    col_index: dict[str, int] = {}
-    for col_name, attr in _COL_MAP.items():
-        try:
-            col_index[attr] = header.index(col_name)
-        except ValueError:
+    try:
+        if SHEET_NAME not in wb.sheetnames:
+            available = ", ".join(wb.sheetnames)
             raise ValueError(
-                f"Required column '{col_name}' not found in sheet '{SHEET_NAME}'. "
-                f"Found columns: {header}"
+                f"Sheet '{SHEET_NAME}' not found in {path.name}. "
+                f"Available sheets: {available}"
             )
 
-    # ------------------------------------------------------------------ #
-    # Parse data rows
-    # ------------------------------------------------------------------ #
-    schedule = EventsSchedule(source_path=path)
+        ws = wb[SHEET_NAME]
+        rows = list(ws.iter_rows(values_only=True))
 
-    for row_num, row in enumerate(rows[1:], start=2):
-        # Skip completely blank rows
-        if all(cell is None for cell in row):
-            continue
+        if not rows:
+            return EventsSchedule(source_path=path)
 
-        def get(attr: str) -> str:
-            val = row[col_index[attr]]
-            if val is None:
-                return ""
-            if isinstance(val, datetime.datetime):
-                return f"{val.day} {val.strftime('%b %Y')}"
-            if isinstance(val, (int, float)):
-                # Entry fees may be numeric; format sensibly
-                if isinstance(val, float) and val.is_integer():
-                    return f"£{int(val)}"
-                if isinstance(val, int):
-                    return f"£{val}"
-                return str(val)
-            return str(val).strip()
+        # ------------------------------------------------------------------ #
+        # Parse header row
+        # ------------------------------------------------------------------ #
+        header = [str(h).strip() if h is not None else "" for h in rows[0]]
+        col_index: dict[str, int] = {}
+        for col_name, attr in _COL_MAP.items():
+            try:
+                col_index[attr] = header.index(col_name)
+            except ValueError:
+                raise ValueError(
+                    f"Required column '{col_name}' not found in sheet '{SHEET_NAME}'. "
+                    f"Found columns: {header}"
+                )
 
-        entry = EventEntry(
-            race_ref           = get("race_ref"),
-            event_name         = get("event_name"),
-            category           = get("category"),
-            distance           = get("distance"),
-            location           = get("location"),
-            organiser          = get("organiser"),
-            date_type          = get("date_type"),
-            scheduled_dates    = get("scheduled_dates"),
-            eligibility_window = get("eligibility_window"),
-            entry_fee          = get("entry_fee"),
-            scoring_basis      = get("scoring_basis"),
-            notes              = get("notes"),
-            status             = get("status") or STATUS_TBC,
-        )
-        schedule.events.append(entry)
+        # ------------------------------------------------------------------ #
+        # Parse data rows
+        # ------------------------------------------------------------------ #
+        schedule = EventsSchedule(source_path=path)
 
-    return schedule
+        for row_num, row in enumerate(rows[1:], start=2):
+            # Skip completely blank rows
+            if all(cell is None for cell in row):
+                continue
+
+            def get(attr: str) -> str:
+                val = row[col_index[attr]]
+                if val is None:
+                    return ""
+                if isinstance(val, datetime.datetime):
+                    return f"{val.day} {val.strftime('%b %Y')}"
+                if isinstance(val, (int, float)):
+                    # Keep numerics as plain numbers (no currency prefix).
+                    if isinstance(val, float) and val.is_integer():
+                        return str(int(val))
+                    return str(val)
+                return str(val).strip()
+
+            entry = EventEntry(
+                race_ref           = get("race_ref"),
+                event_name         = get("event_name"),
+                category           = get("category"),
+                distance           = get("distance"),
+                location           = get("location"),
+                organiser          = get("organiser"),
+                date_type          = get("date_type"),
+                scheduled_dates    = get("scheduled_dates"),
+                eligibility_window = get("eligibility_window"),
+                entry_fee          = get("entry_fee"),
+                scoring_basis      = get("scoring_basis"),
+                notes              = get("notes"),
+                status             = get("status") or STATUS_TBC,
+            )
+            schedule.events.append(entry)
+
+        return schedule
+    finally:
+        wb.close()

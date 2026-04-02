@@ -303,21 +303,34 @@ def _build_candidates(summary_df: pd.DataFrame) -> List[ClubMatchCandidate]:
 
 def _read_club_lookup_state(clubs_path: Path) -> dict:
     workbook = load_workbook(clubs_path)
-    worksheet = workbook.active
-    headers = [str(cell.value).strip() if cell.value is not None else "" for cell in worksheet[1]]
-    header_map = {name: idx for idx, name in enumerate(headers)}
+    try:
+        worksheet = workbook.active
+        headers = [str(cell.value).strip() if cell.value is not None else "" for cell in worksheet[1]]
+        header_map = {name: idx for idx, name in enumerate(headers)}
 
-    alias_to_preferred: Dict[str, str] = {}
-    preferred_to_divisions: Dict[str, tuple[str, str]] = {}
-    for row in worksheet.iter_rows(min_row=2, values_only=True):
-        raw = str(row[header_map["Club"]]).strip() if row[header_map["Club"]] is not None else ""
-        preferred = str(row[header_map["Preferred name"]]).strip() if row[header_map["Preferred name"]] is not None else ""
-        if raw:
-            alias_to_preferred[raw.lower()] = preferred
-        if preferred and preferred not in preferred_to_divisions:
-            team_a = str(row[header_map["Team A"]]).strip() if row[header_map["Team A"]] is not None else ""
-            team_b = str(row[header_map["Team B"]]).strip() if row[header_map["Team B"]] is not None else ""
-            preferred_to_divisions[preferred] = (team_a, team_b)
+        required_headers = ["Club", "Preferred name", "Team A", "Team B"]
+        missing = [h for h in required_headers if h not in header_map]
+        if missing:
+            raise ValueError(
+                "clubs.xlsx is missing required column(s): "
+                + ", ".join(missing)
+                + ". Found columns: "
+                + ", ".join(headers)
+            )
+
+        alias_to_preferred: Dict[str, str] = {}
+        preferred_to_divisions: Dict[str, tuple[str, str]] = {}
+        for row in worksheet.iter_rows(min_row=2, values_only=True):
+            raw = str(row[header_map["Club"]]).strip() if row[header_map["Club"]] is not None else ""
+            preferred = str(row[header_map["Preferred name"]]).strip() if row[header_map["Preferred name"]] is not None else ""
+            if raw:
+                alias_to_preferred[raw.lower()] = preferred
+            if preferred and preferred not in preferred_to_divisions:
+                team_a = str(row[header_map["Team A"]]).strip() if row[header_map["Team A"]] is not None else ""
+                team_b = str(row[header_map["Team B"]]).strip() if row[header_map["Team B"]] is not None else ""
+                preferred_to_divisions[preferred] = (team_a, team_b)
+    finally:
+        workbook.close()
 
     return {
         "alias_to_preferred": alias_to_preferred,

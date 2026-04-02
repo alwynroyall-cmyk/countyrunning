@@ -22,8 +22,6 @@ log = logging.getLogger(__name__)
 
 from .settings import settings
 
-BEST_N = settings.get("BEST_N")
-
 
 # ───────────────────────────────────────────────────────────── individuals ───
 
@@ -58,9 +56,10 @@ def build_individual_season(
             rec.race_points[race_num] = r.points
 
     # Compute season totals
+    best_n = settings.get("BEST_N")
     for rec in season_map.values():
         sorted_scores = sorted(rec.race_points.values(), reverse=True)
-        rec.total_points = sum(sorted_scores[:BEST_N])
+        rec.total_points = sum(sorted_scores[:best_n])
         rec.races_completed = len(sorted_scores)
 
     male = [r for r in season_map.values() if r.gender == "M"]
@@ -112,7 +111,7 @@ def _team_aggregate(team: TeamSeasonRecord) -> int:
     """
     Sum of (men_score + women_score) across ALL races for this team.
     Used as the tiebreaker when two teams share the same total league points.
-    Lower aggregate = better (cross-country scoring: sum of finishing positions).
+    Higher aggregate = better.
     """
     return sum(
         (rr.men_score or 0) + (rr.women_score or 0)
@@ -146,12 +145,13 @@ def build_team_season(
                 season_map[key].race_results[race_num] = t
 
     # Compute best-6 season totals
+    best_n = settings.get("BEST_N")
     for rec in season_map.values():
         pts_list = sorted(
             (t.team_points for t in rec.race_results.values()),
             reverse=True,
         )
-        rec.total_points = sum(pts_list[:BEST_N])
+        rec.total_points = sum(pts_list[:best_n])
 
     div1 = [r for r in season_map.values() if r.division == 1]
     div2 = [r for r in season_map.values() if r.division == 2]
@@ -167,7 +167,7 @@ def _rank_teams(teams: List[TeamSeasonRecord]) -> None:
     """
     Sort teams by:
       1. total_points descending       — primary
-      2. race aggregate ascending      — tiebreaker (lower score = better)
+            2. race aggregate descending     — tiebreaker (higher score = better)
     Shared position only assigned when BOTH total_points AND aggregate are equal.
     """
     teams.sort(

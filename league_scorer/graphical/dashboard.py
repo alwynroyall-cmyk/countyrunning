@@ -5,13 +5,20 @@ Provides a professional console with branded header and execution options.
 """
 
 import tkinter as tk
+import queue
+import threading
 from pathlib import Path
-from tkinter import filedialog, messagebox, ttk
+from tkinter import filedialog, messagebox, scrolledtext, simpledialog, ttk
 from PIL import Image, ImageTk
 
 from .gui import LeagueScorerApp
 from .events_viewer import EventsViewerWindow
 from ..events_loader import load_events
+from ..raceroster_import import (
+    SporthiveRaceNotDirectlyImportableError,
+    import_raceroster_results,
+    import_sporthive_manual_pages,
+)
 from ..session_config import config as session_config
 
 
@@ -93,10 +100,33 @@ class LeagueScorerDashboard(tk.Tk):
         header.pack(side="top", fill="x", padx=0, pady=0)
         header.pack_propagate(False)
 
+        # Right-side stack for WAA logo + subtle help action
+        right_stack = tk.Frame(header, bg=WRRL_NAVY)
+        right_stack.pack(side="right", padx=20, pady=10, anchor="n")
+
         # WAA logo — small, top right
         if self.waa_img:
-            waa_label = tk.Label(header, image=self.waa_img, bg=WRRL_NAVY)
-            waa_label.pack(side="right", padx=20, pady=10, anchor="n")
+            waa_label = tk.Label(right_stack, image=self.waa_img, bg=WRRL_NAVY)
+            waa_label.pack(anchor="e")
+
+        # Minimal help action under WAA logo
+        help_btn = tk.Button(
+            right_stack,
+            text="Help",
+            command=self._on_help,
+            font=("Segoe UI", 9),
+            bg=WRRL_NAVY,
+            fg="#a0b0c0",
+            activebackground=WRRL_NAVY,
+            activeforeground=WRRL_WHITE,
+            relief="flat",
+            bd=0,
+            padx=2,
+            pady=0,
+            cursor="hand2",
+            highlightthickness=0,
+        )
+        help_btn.pack(anchor="e", pady=(6, 0))
 
         # WRRL shield — large, left side
         if self.shield_img:
@@ -163,19 +193,49 @@ class LeagueScorerDashboard(tk.Tk):
         button_frame = tk.Frame(self._home_frame, bg=WRRL_LIGHT)
         button_frame.pack(fill="both", expand=True)
 
+        button_frame.grid_columnconfigure(0, weight=1)
+        button_frame.grid_columnconfigure(1, weight=1)
+
+        proc_lbl = tk.Label(
+            button_frame,
+            text="Processing",
+            font=("Segoe UI", 11, "bold"),
+            bg=WRRL_LIGHT,
+            fg=WRRL_NAVY,
+        )
+        proc_lbl.grid(row=0, column=0, sticky="w", padx=10, pady=(0, 2))
+
+        view_lbl = tk.Label(
+            button_frame,
+            text="Views",
+            font=("Segoe UI", 11, "bold"),
+            bg=WRRL_LIGHT,
+            fg=WRRL_NAVY,
+        )
+        view_lbl.grid(row=0, column=1, sticky="w", padx=10, pady=(0, 2))
+
         buttons = [
-            ("▶ Create League Results", self._on_run_scorer, 0, 0),
-            ("📊 View Results", self._on_view_results, 0, 1),
-            ("📅 Load Events", self._on_load_events, 1, 0),
-            ("📋 View Events", self._on_view_events, 1, 1),
-            ("⚙️ Settings", self._on_settings, 2, 0),
-            ("❓ Help", self._on_help, 2, 1),
-            ("🧪 Audit Runners", self._on_audit_runners, 3, 0),
-            ("🔎 View Audit", self._on_view_audit, 3, 1),
+            ("📅 Load Events", "Load season events spreadsheet", self._on_load_events, 1, 0, "secondary"),
+            ("📋 View Events", "Browse loaded events schedule", self._on_view_events, 1, 1, "secondary"),
+
+            ("🧪 Audit Races", "Audit and standardise race workbook names", self._on_audit_runners, 2, 0, "secondary"),
+            ("🔎 View Audit", "Review latest audit workbook", self._on_view_audit, 2, 1, "secondary"),
+
+            ("▶ Create League Results", "Run scoring and generate outputs", self._on_run_scorer, 3, 0, "primary"),
+            ("📊 View Results", "Open generated standings and reports", self._on_view_results, 3, 1, "secondary"),
+
+            ("✏️ Edit Clubs", "Manually correct runner club assignments", self._on_edit_clubs, 4, 0, "secondary"),
+            ("🏟️ Club History", "View one club across all races", self._on_view_club_history, 4, 1, "secondary"),
+
+            ("🧩 Check All Runners", "Suggest blank-club fixes across races", self._on_check_all_runners, 5, 0, "secondary"),
+            ("🏃 Runner History", "View one runner across all races", self._on_view_runner_history, 5, 1, "secondary"),
+
+            ("🌐 Import Race Roster", "Pull race results into this season", self._on_import_raceroster, 6, 0, "primary"),
+            ("⚙️ Settings", "League scoring and report options", self._on_settings, 6, 1, "secondary"),
         ]
 
-        for text, cmd, row, col in buttons:
-            self._create_action_button(button_frame, text, cmd, row, col)
+        for text, subtitle, cmd, row, col, tone in buttons:
+            self._create_action_button(button_frame, text, subtitle, cmd, row, col, tone=tone)
 
     # ── config panel ──────────────────────────────────────────────────────────
 
@@ -329,31 +389,81 @@ class LeagueScorerDashboard(tk.Tk):
         self,
         parent: tk.Frame,
         text: str,
+        subtitle: str,
         command,
         row: int,
         col: int,
+        tone: str = "secondary",
     ) -> None:
-        """Create a styled action button."""
+        """Create a modern action card with title, subtitle, and hover styling."""
         btn_frame = tk.Frame(parent, bg=WRRL_LIGHT)
         btn_frame.grid(row=row, column=col, padx=10, pady=10, sticky="nsew")
         parent.grid_rowconfigure(row, weight=1)
         parent.grid_columnconfigure(col, weight=1)
 
-        btn = tk.Button(
+        if tone == "primary":
+            card_bg = WRRL_GREEN
+            title_fg = WRRL_WHITE
+            subtitle_fg = "#d9efe2"
+            hover_bg = "#24653d"
+            border = "#1f5632"
+        else:
+            card_bg = "#ffffff"
+            title_fg = WRRL_NAVY
+            subtitle_fg = "#66788d"
+            hover_bg = "#eef2f7"
+            border = "#d4dce4"
+
+        card = tk.Frame(
             btn_frame,
-            text=text,
-            font=("Segoe UI", 16, "bold"),
-            bg=WRRL_GREEN,
-            fg=WRRL_WHITE,
-            padx=20,
-            pady=24,
-            relief="flat",
+            bg=card_bg,
             cursor="hand2",
-            command=command,
-            activebackground="#1f5632",
-            activeforeground=WRRL_WHITE,
+            highlightthickness=1,
+            highlightbackground=border,
+            highlightcolor=border,
+            padx=16,
+            pady=14,
         )
-        btn.pack(fill="both", expand=True)
+        card.pack(fill="both", expand=True)
+
+        title_lbl = tk.Label(
+            card,
+            text=text,
+            font=("Segoe UI", 13, "bold"),
+            bg=card_bg,
+            fg=title_fg,
+            anchor="w",
+            justify="left",
+        )
+        title_lbl.pack(anchor="w")
+
+        subtitle_lbl = tk.Label(
+            card,
+            text=subtitle,
+            font=("Segoe UI", 9),
+            bg=card_bg,
+            fg=subtitle_fg,
+            anchor="w",
+            justify="left",
+            wraplength=320,
+        )
+        subtitle_lbl.pack(anchor="w", pady=(6, 0))
+
+        def _set_bg(bg: str) -> None:
+            card.configure(bg=bg)
+            title_lbl.configure(bg=bg)
+            subtitle_lbl.configure(bg=bg)
+
+        def _on_enter(_event) -> None:
+            _set_bg(hover_bg)
+
+        def _on_leave(_event) -> None:
+            _set_bg(card_bg)
+
+        for widget in (card, title_lbl, subtitle_lbl):
+            widget.bind("<Button-1>", lambda _e: command())
+            widget.bind("<Enter>", _on_enter)
+            widget.bind("<Leave>", _on_leave)
 
     # ── footer section ────────────────────────────────────────────────────────
 
@@ -498,9 +608,22 @@ class LeagueScorerDashboard(tk.Tk):
                 self._results_panel.destroy()
                 del self._results_panel
             self._home_frame.pack(fill="both", expand=True)
-        # Add a close button
-        close_btn = tk.Button(panel, text="Close", command=on_close, font=("Segoe UI", 10, "bold"), bg=WRRL_GREEN, fg=WRRL_WHITE)
-        close_btn.pack(pady=8)
+        # Always-visible return control (top-right overlay)
+        close_btn = tk.Button(
+            panel,
+            text="\u25c4 Dashboard",
+            command=on_close,
+            font=("Segoe UI", 10, "bold"),
+            bg=WRRL_GREEN,
+            fg=WRRL_WHITE,
+            relief="flat",
+            padx=10,
+            pady=4,
+            cursor="hand2",
+            activebackground="#1f5632",
+            activeforeground=WRRL_WHITE,
+        )
+        close_btn.place(relx=1.0, x=-12, y=10, anchor="ne")
 
     def _on_settings(self) -> None:
         """Show the settings panel inline within the dashboard."""
@@ -535,11 +658,14 @@ class LeagueScorerDashboard(tk.Tk):
         panel.pack(fill="both", expand=True)
         self._audit_panel = panel
 
-    def _on_view_audit(self, preferred_workbook=None) -> None:
+    def _on_view_audit(self, preferred_workbook=None, return_to_audit: bool = False) -> None:
         """Show the audit viewer panel inline within the dashboard."""
         if not self._require_configured("View Audit"):
             return
-        self._home_frame.pack_forget()
+        if return_to_audit and hasattr(self, "_audit_panel"):
+            self._audit_panel.pack_forget()
+        else:
+            self._home_frame.pack_forget()
         from .audit_viewer import AuditViewerPanel
         panel = AuditViewerPanel(self._page_container, preferred_workbook=preferred_workbook)
         panel.pack(fill="both", expand=True)
@@ -549,17 +675,27 @@ class LeagueScorerDashboard(tk.Tk):
             if hasattr(self, "_audit_view_panel"):
                 self._audit_view_panel.destroy()
                 del self._audit_view_panel
-            self._home_frame.pack(fill="both", expand=True)
+            if return_to_audit and hasattr(self, "_audit_panel"):
+                self._audit_panel.pack(fill="both", expand=True)
+            else:
+                self._home_frame.pack(fill="both", expand=True)
 
+        close_text = "\u25c4 Audit" if return_to_audit else "\u25c4 Dashboard"
         close_btn = tk.Button(
             panel,
-            text="Close",
+            text=close_text,
             command=on_close,
             font=("Segoe UI", 10, "bold"),
             bg=WRRL_GREEN,
             fg=WRRL_WHITE,
+            relief="flat",
+            padx=10,
+            pady=4,
+            cursor="hand2",
+            activebackground="#1f5632",
+            activeforeground=WRRL_WHITE,
         )
-        close_btn.pack(pady=8)
+        close_btn.place(relx=1.0, x=-12, y=10, anchor="ne")
 
     def _on_audit_back(self) -> None:
         if hasattr(self, "_audit_panel"):
@@ -567,11 +703,86 @@ class LeagueScorerDashboard(tk.Tk):
             del self._audit_panel
         self._home_frame.pack(fill="both", expand=True)
 
+    def _on_edit_clubs(self) -> None:
+        """Show the club assignment editor panel inline within the dashboard."""
+        if not self._require_configured("Edit Clubs"):
+            return
+        session_config.ensure_dirs()
+        self._home_frame.pack_forget()
+        from .club_editor import ClubEditorPanel
+        panel = ClubEditorPanel(
+            self._page_container,
+            back_callback=self._on_edit_clubs_back,
+        )
+        panel.pack(fill="both", expand=True)
+        self._club_editor_panel = panel
+
+    def _on_edit_clubs_back(self) -> None:
+        if hasattr(self, "_club_editor_panel"):
+            self._club_editor_panel.destroy()
+            del self._club_editor_panel
+        self._home_frame.pack(fill="both", expand=True)
+
+    def _on_check_all_runners(self) -> None:
+        """Show cross-race runner club checks panel inline within the dashboard."""
+        if not self._require_configured("Check All Runners"):
+            return
+        session_config.ensure_dirs()
+        self._home_frame.pack_forget()
+        from .check_all_runners import CheckAllRunnersPanel
+        panel = CheckAllRunnersPanel(
+            self._page_container,
+            back_callback=self._on_check_all_runners_back,
+        )
+        panel.pack(fill="both", expand=True)
+        self._check_all_runners_panel = panel
+
+    def _on_check_all_runners_back(self) -> None:
+        if hasattr(self, "_check_all_runners_panel"):
+            self._check_all_runners_panel.destroy()
+            del self._check_all_runners_panel
+        self._home_frame.pack(fill="both", expand=True)
+
+    def _on_view_runner_history(self) -> None:
+        """Show runner history viewer panel inline within the dashboard."""
+        if not self._require_configured("Runner History"):
+            return
+        self._home_frame.pack_forget()
+        from .runner_history_viewer import RunnerHistoryPanel
+        panel = RunnerHistoryPanel(
+            self._page_container,
+            back_callback=self._on_view_runner_history_back,
+        )
+        panel.pack(fill="both", expand=True)
+        self._runner_history_panel = panel
+
+    def _on_view_runner_history_back(self) -> None:
+        if hasattr(self, "_runner_history_panel"):
+            self._runner_history_panel.destroy()
+            del self._runner_history_panel
+        self._home_frame.pack(fill="both", expand=True)
+
+    def _on_view_club_history(self) -> None:
+        """Show club history viewer panel inline within the dashboard."""
+        if not self._require_configured("Club History"):
+            return
+        self._home_frame.pack_forget()
+        from .club_history_viewer import ClubHistoryPanel
+        panel = ClubHistoryPanel(
+            self._page_container,
+            back_callback=self._on_view_club_history_back,
+        )
+        panel.pack(fill="both", expand=True)
+        self._club_history_panel = panel
+
+    def _on_view_club_history_back(self) -> None:
+        if hasattr(self, "_club_history_panel"):
+            self._club_history_panel.destroy()
+            del self._club_history_panel
+        self._home_frame.pack(fill="both", expand=True)
+
     def _on_audit_complete_view(self, preferred_workbook=None) -> None:
-        if hasattr(self, "_audit_panel"):
-            self._audit_panel.destroy()
-            del self._audit_panel
-        self._on_view_audit(preferred_workbook=preferred_workbook)
+        self._on_view_audit(preferred_workbook=preferred_workbook, return_to_audit=True)
 
     def _on_help(self) -> None:
         """Show help information."""
@@ -583,10 +794,263 @@ class LeagueScorerDashboard(tk.Tk):
             "• Load Events: Select the events XLSX from the season inputs folder.\n"
             "  The filename is remembered and reused for the active season folder on later runs.\n"
             "• View Events: Browse the loaded events schedule.\n\n"
+            "• Import Race Roster: Paste a Race Roster URL and save it directly\n"
+            "  as a race workbook in the active season inputs folder.\n\n"
             "• Run League Management: Execute the scoring pipeline.\n"
             "• View Results: Browse generated results."
         )
         messagebox.showinfo("Help", help_text)
+
+    def _on_import_raceroster(self) -> None:
+        """Import Race Roster results directly into the active season input folder."""
+        if not self._require_configured("Import Race Roster"):
+            return
+
+        session_config.ensure_dirs()
+        input_dir = session_config.input_dir
+        if not input_dir or not input_dir.exists():
+            messagebox.showerror("Input not found", f"Input folder does not exist:\n{input_dir}")
+            return
+
+        race_url = simpledialog.askstring(
+            "Import From Race Roster",
+            "Paste the Race Roster race URL:",
+            parent=self,
+        )
+        if not race_url:
+            return
+
+        race_number = simpledialog.askinteger(
+            "League Race Number",
+            "Enter the league race number for this file (for example 4):",
+            parent=self,
+            minvalue=1,
+            maxvalue=99,
+        )
+        if race_number is None:
+            return
+
+        race_name = simpledialog.askstring(
+            "Race Name",
+            "Optional race name for the file title (for example Broad Town 5):",
+            parent=self,
+        )
+
+        sporthive_race_hint = None
+        if "sporthive.com/events/s/" in race_url.lower() and "/race/" not in race_url.lower():
+            sporthive_race_hint = simpledialog.askinteger(
+                "Sporthive Race ID",
+                "This Sporthive link is an event summary. Enter the Race ID from the 'View results' URL (the number after /race/).",
+                parent=self,
+                minvalue=1,
+            )
+            if sporthive_race_hint is None:
+                return
+
+        self._run_raceroster_import_async(
+            race_url=race_url,
+            input_dir=input_dir,
+            race_number=race_number,
+            race_name=race_name,
+            sporthive_race_hint=sporthive_race_hint,
+        )
+
+    def _run_raceroster_import_async(
+        self,
+        race_url: str,
+        input_dir: Path,
+        race_number: int,
+        race_name: str | None,
+        sporthive_race_hint: int | None,
+    ) -> None:
+        """Run Race Roster import off the UI thread with progress feedback."""
+        result_queue: queue.Queue = queue.Queue()
+
+        progress = tk.Toplevel(self)
+        progress.title("Importing Race Roster")
+        progress.transient(self)
+        progress.grab_set()
+        progress.resizable(False, False)
+        progress.configure(bg=WRRL_LIGHT)
+        progress.geometry("480x140")
+
+        tk.Label(
+            progress,
+            text="Importing race results. This can take a moment...",
+            font=("Segoe UI", 10),
+            bg=WRRL_LIGHT,
+            fg=WRRL_NAVY,
+            wraplength=440,
+            justify="left",
+        ).pack(fill="x", padx=16, pady=(16, 8))
+
+        bar = ttk.Progressbar(progress, mode="indeterminate", length=430)
+        bar.pack(padx=16, pady=(0, 12))
+        bar.start(12)
+
+        tk.Label(
+            progress,
+            text="Please wait...",
+            font=("Segoe UI", 9, "italic"),
+            bg=WRRL_LIGHT,
+            fg="#666666",
+        ).pack(padx=16, pady=(0, 8))
+
+        def _ignore_close() -> None:
+            messagebox.showinfo(
+                "Import Running",
+                "Import is still running. Please wait for it to finish.",
+                parent=progress,
+            )
+
+        progress.protocol("WM_DELETE_WINDOW", _ignore_close)
+
+        def _worker() -> None:
+            try:
+                output_path, count, history_path = import_raceroster_results(
+                    race_url=race_url,
+                    input_dir=input_dir,
+                    league_race_number=race_number,
+                    race_name_override=race_name,
+                    sporthive_race_id_hint=sporthive_race_hint,
+                )
+            except SporthiveRaceNotDirectlyImportableError:
+                result_queue.put(("manual", None))
+            except Exception as exc:
+                result_queue.put(("error", str(exc)))
+            else:
+                result_queue.put(("ok", (output_path, count, history_path)))
+
+        threading.Thread(target=_worker, daemon=True).start()
+
+        def _poll_result() -> None:
+            if not progress.winfo_exists():
+                return
+            try:
+                status, payload = result_queue.get_nowait()
+            except queue.Empty:
+                self.after(120, _poll_result)
+                return
+
+            bar.stop()
+            progress.grab_release()
+            progress.destroy()
+
+            if status == "manual":
+                use_manual = messagebox.askyesno(
+                    "Sporthive Manual Import",
+                    "This Sporthive race cannot be imported directly via API.\n\n"
+                    "Switch to manual page-paste mode for this race?",
+                    parent=self,
+                )
+                if use_manual:
+                    self._run_manual_sporthive_import_dashboard(
+                        race_url=race_url,
+                        input_dir=input_dir,
+                        race_number=race_number,
+                        race_name=race_name,
+                    )
+                return
+
+            if status == "error":
+                messagebox.showerror("Race Roster import failed", str(payload), parent=self)
+                return
+
+            output_path, count, history_path = payload
+            messagebox.showinfo(
+                "Import Complete",
+                f"Imported {count} rows to:\n{output_path}\n\n"
+                f"Import history:\n{history_path}",
+                parent=self,
+            )
+
+        self.after(120, _poll_result)
+
+    def _ask_multiline_page_text_dashboard(self, title: str, prompt: str) -> str | None:
+        dialog = tk.Toplevel(self)
+        dialog.title(title)
+        dialog.transient(self)
+        dialog.grab_set()
+        dialog.geometry("760x520")
+        dialog.configure(bg=WRRL_LIGHT)
+
+        tk.Label(dialog, text=prompt, bg=WRRL_LIGHT, fg=WRRL_NAVY, justify="left", anchor="w").pack(
+            fill="x", padx=12, pady=(12, 6)
+        )
+
+        text_box = scrolledtext.ScrolledText(dialog, wrap="word", font=("Consolas", 10), height=22)
+        text_box.pack(fill="both", expand=True, padx=12, pady=6)
+
+        result = {"value": None}
+        button_row = tk.Frame(dialog, bg=WRRL_LIGHT)
+        button_row.pack(fill="x", padx=12, pady=(0, 12))
+
+        def _ok() -> None:
+            result["value"] = text_box.get("1.0", "end").strip()
+            dialog.destroy()
+
+        def _cancel() -> None:
+            result["value"] = None
+            dialog.destroy()
+
+        tk.Button(button_row, text="Cancel", command=_cancel, bg="#dbe1e8", fg=WRRL_NAVY, relief="flat", padx=10, pady=4).pack(side="right")
+        tk.Button(button_row, text="Use This Page", command=_ok, bg=WRRL_GREEN, fg=WRRL_WHITE, relief="flat", padx=12, pady=4).pack(side="right", padx=(0, 8))
+
+        dialog.wait_window()
+        return result["value"]
+
+    def _run_manual_sporthive_import_dashboard(
+        self,
+        race_url: str,
+        input_dir: Path,
+        race_number: int,
+        race_name: str | None,
+    ) -> None:
+        pages: list[str] = []
+        page_no = 1
+
+        while True:
+            text = self._ask_multiline_page_text_dashboard(
+                title=f"Sporthive Page {page_no}",
+                prompt=(
+                    f"Paste results table text for Sporthive page {page_no}.\n"
+                    "Copy the rows shown on screen (including pipe-delimited lines) and click 'Use This Page'."
+                ),
+            )
+            if text is None:
+                return
+            if not text.strip():
+                messagebox.showwarning("No content", "No rows detected. Paste the page content and try again.", parent=self)
+                continue
+            pages.append(text)
+
+            more = messagebox.askyesno(
+                "Add Another Page?",
+                "Add another Sporthive results page?\n\nChoose No when all pages are pasted.",
+                parent=self,
+            )
+            if not more:
+                break
+            page_no += 1
+
+        try:
+            output_path, count, history_path = import_sporthive_manual_pages(
+                race_url=race_url,
+                pages_text=pages,
+                input_dir=input_dir,
+                league_race_number=race_number,
+                race_name_override=race_name,
+            )
+        except Exception as exc:
+            messagebox.showerror("Sporthive manual import failed", str(exc), parent=self)
+            return
+
+        messagebox.showinfo(
+            "Import Complete",
+            f"Imported {count} rows to:\n{output_path}\n\n"
+            f"Import history:\n{history_path}",
+            parent=self,
+        )
 
 
 # ── entry point ───────────────────────────────────────────────────────────────

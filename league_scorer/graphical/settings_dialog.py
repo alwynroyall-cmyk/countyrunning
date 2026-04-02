@@ -99,11 +99,12 @@ class SettingsPanel(tk.Frame):
 
         row += 1
         btn_frame = tk.Frame(frm, bg=WRRL_LIGHT)
-        btn_frame.grid(row=row, column=0, columnspan=2, sticky="w", pady=(18,0))
+        btn_frame.grid(row=row, column=0, columnspan=2, sticky="ew", pady=(18,0))
+        btn_frame.grid_columnconfigure(1, weight=1)
         save_btn = ttk.Button(btn_frame, text="Save", command=self._on_save)
-        save_btn.pack(side="left", padx=(0,10))
-        close_btn = ttk.Button(btn_frame, text="Close", command=self._on_close_clicked)
-        close_btn.pack(side="left")
+        save_btn.grid(row=0, column=0, sticky="w", padx=(0, 10))
+        close_btn = ttk.Button(btn_frame, text="\u25c4 Dashboard", command=self._on_close_clicked)
+        close_btn.grid(row=0, column=2, sticky="e")
 
     def _build_info_panel(self, parent):
         title = tk.Label(

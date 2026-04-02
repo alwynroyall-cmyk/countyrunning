@@ -99,6 +99,7 @@ class LeagueAuditor:
         row_df = self._build_row_audit_df(race_meta)
         runner_df = self._build_runner_audit_df(race_meta)
         club_df, unrec_df = self._build_club_audit_dfs()
+        ea_candidates_df, ea_checked_df = self._build_ea_review_dfs(race_meta)
         race_df = self._build_race_summary_df(race_meta, row_df, runner_df, club_df)
         return {
             "Race Audit Summary": race_df,
@@ -106,6 +107,8 @@ class LeagueAuditor:
             "Runner Audit": runner_df,
             "Club Audit": club_df,
             "Unrecognised Club Summary": unrec_df,
+            "Candidates To Check": ea_candidates_df,
+            "EA Checked": ea_checked_df,
         }
 
     def _build_race_metadata(self) -> Dict[int, dict]:
@@ -188,6 +191,30 @@ class LeagueAuditor:
                             runner=runner,
                         )
                     )
+
+            for runner in runners:
+                ea_candidate = _build_ea_candidate_row(runner, race_num, race_file)
+                if ea_candidate is None:
+                    continue
+                issue = RaceIssue(
+                    "warning",
+                    ea_candidate["Reason"],
+                    source_row=runner.source_row,
+                    code="AUD-ROW-011",
+                    runner_name=runner.name,
+                    raw_club=runner.raw_club,
+                    gender=runner.gender,
+                    raw_category=runner.raw_category,
+                    time_str=runner.time_str,
+                )
+                rows.append(
+                    _build_row_entry(
+                        race_num=race_num,
+                        race_file=race_file,
+                        issue=issue,
+                        runner=runner,
+                    )
+                )
 
         return pd.DataFrame(rows, columns=_ROW_AUDIT_COLUMNS)
 
@@ -359,6 +386,37 @@ class LeagueAuditor:
         summary_df = pd.DataFrame(summary_rows, columns=_UNREC_COLUMNS)
         return club_df, summary_df
 
+    def _build_ea_review_dfs(self, race_meta: Dict[int, dict]) -> Tuple[pd.DataFrame, pd.DataFrame]:
+        candidate_rows: List[dict] = []
+        checked_rows: List[dict] = []
+
+        for race_num, meta in sorted(race_meta.items()):
+            race_file = meta["file"].name
+            for runner in self.all_race_runners.get(race_num, []):
+                candidate = _build_ea_candidate_row(runner, race_num, race_file)
+                if candidate is None:
+                    continue
+
+                candidate_rows.append(candidate)
+                checked_rows.append(
+                    {
+                        "Name": candidate["Name"],
+                        "Club": candidate["Club"],
+                        "Race": candidate["Race"],
+                        "Race File": candidate["Race File"],
+                        "Source Category": candidate["Source Category"],
+                        "Normalised Category": candidate["Normalised Category"],
+                        "EA Category": "",
+                        "League Category": "",
+                        "Checked On": "",
+                        "Notes": "",
+                    }
+                )
+
+        candidates_df = pd.DataFrame(candidate_rows, columns=_EA_CANDIDATE_COLUMNS)
+        checked_df = pd.DataFrame(checked_rows, columns=_EA_CHECKED_COLUMNS)
+        return candidates_df, checked_df
+
     def _build_race_summary_df(
         self,
         race_meta: Dict[int, dict],
@@ -498,6 +556,30 @@ _UNREC_COLUMNS = [
     "Message",
 ]
 
+_EA_CANDIDATE_COLUMNS = [
+    "Name",
+    "Club",
+    "Race",
+    "Race File",
+    "Source Category",
+    "Normalised Category",
+    "Gender",
+    "Reason",
+]
+
+_EA_CHECKED_COLUMNS = [
+    "Name",
+    "Club",
+    "Race",
+    "Race File",
+    "Source Category",
+    "Normalised Category",
+    "EA Category",
+    "League Category",
+    "Checked On",
+    "Notes",
+]
+
 
 def _build_row_entry(race_num: int, race_file: str, issue: RaceIssue, runner: Optional[RunnerRaceEntry]) -> dict:
     severity, status, depends_on, next_step = _status_for_code(issue.code)
@@ -559,6 +641,7 @@ def _status_for_code(code: str) -> Tuple[str, str, str, str]:
         "AUD-ROW-006": ("warning", "Open", "Club Lookup", "Review the club suggestion and decide whether to add a club lookup conversion."),
         "AUD-ROW-008": ("warning", "Open", "None", "Review kept and discarded rows if traceability is needed."),
         "AUD-ROW-010": ("error", "Manual Review", "Duplicate Conflict Review", "Check conflicting club, sex, or category values in the source rows."),
+        "AUD-ROW-011": ("warning", "Manual Review", "External Category Check", "Check the EA category workbook and confirm the league category for this female veteran row."),
     }
     return mapping.get(code, ("warning", "Open", "None", "Review the source data."))
 
@@ -726,6 +809,117 @@ def _display_club(runner: Optional[RunnerRaceEntry]) -> str:
     if runner is None:
         return ""
     return runner.preferred_club or runner.raw_club
+
+
+def _build_ea_candidate_row(
+    runner: RunnerRaceEntry,
+    race_num: int,
+    race_file: str,
+) -> Optional[dict]:
+    if runner.gender != "F":
+        return None
+
+    candidate = _classify_ea_review_category(runner.raw_category)
+    if candidate is None:
+        return None
+
+    return {
+        "Name": runner.name,
+        "Club": _display_club(runner),
+        "Race": race_num,
+        "Race File": race_file,
+        "Source Category": runner.raw_category,
+        "Normalised Category": candidate["normalised_category"],
+        "Gender": runner.gender,
+        "Reason": candidate["reason"],
+    }
+
+
+def _classify_ea_review_category(raw_category: str) -> Optional[dict]:
+    stripped = _strip_category_sex_prefix(raw_category)
+    stripped_lower = str(stripped).strip().lower()
+    compact = _compact_category(stripped)
+    if not compact:
+        return None
+
+    if _is_precise_ea_veteran_band(compact):
+        return None
+
+    ambiguous_reason = _ambiguous_veteran_reason(stripped_lower, compact)
+    if ambiguous_reason:
+        return {
+            "normalised_category": _format_candidate_category(stripped),
+            "reason": ambiguous_reason,
+        }
+
+    return None
+
+
+def _strip_category_sex_prefix(raw_category: str) -> str:
+    if not raw_category:
+        return ""
+
+    category = str(raw_category).strip()
+    match = re.match(r"^([mfwlu])(?:\s*[-_ ]*)?(.*)$", category, flags=re.IGNORECASE)
+    if not match:
+        return category
+
+    remainder = match.group(2).strip()
+    if not remainder:
+        return category
+
+    lowered = remainder.lower()
+    if lowered.startswith(("v", "vet", "u", "jun", "sen", "senior")) or re.match(r"^\d", lowered):
+        return remainder
+    return category
+
+
+def _compact_category(value: str) -> str:
+    return re.sub(r"[\s_\-.]", "", str(value).strip().lower())
+
+
+def _is_precise_ea_veteran_band(compact: str) -> bool:
+    prefixed_match = re.fullmatch(r"(?:v|vet)(\d{2})(\+)?", compact)
+    if prefixed_match:
+        return int(prefixed_match.group(1)) >= 35
+
+    bare_age_match = re.fullmatch(r"(\d{2})", compact)
+    if bare_age_match:
+        return int(bare_age_match.group(1)) >= 35
+
+    return False
+
+
+def _ambiguous_veteran_reason(raw_lower: str, compact: str) -> str:
+    if "vet" in compact or "veteran" in compact:
+        if not _is_precise_ea_veteran_band(compact):
+            return "Ambiguous veteran-style female category needs EA review."
+
+    range_match = re.search(r"(\d{2})\s*(?:to|[-/])\s*(\d{2})", raw_lower)
+    if range_match:
+        low_age = int(range_match.group(1))
+        high_age = int(range_match.group(2))
+        if high_age - low_age == 9 and low_age >= 35:
+            if low_age % 10 == 0 and high_age % 10 == 9:
+                return ""
+            return "Female veteran category uses a 5-4 boundary and needs EA review."
+        if low_age >= 35 or high_age >= 35:
+            return "Ambiguous veteran-style female category needs EA review."
+
+    plus_match = re.search(r"(\d{2})\s*\+", raw_lower) or re.fullmatch(r"(\d{2})\+", compact)
+    if plus_match:
+        age = int(plus_match.group(1))
+        if age >= 35:
+            if age % 10 == 0:
+                return ""
+            return "Female veteran category uses a 5+ boundary and needs EA review."
+
+    return ""
+
+
+def _format_candidate_category(value: str) -> str:
+    text = str(value).strip()
+    return re.sub(r"\s+", " ", text)
 
 
 def _max_severity(severities: List[str]) -> str:

@@ -9,6 +9,7 @@ Per race:
 """
 
 import logging
+from collections import defaultdict
 from pathlib import Path
 from typing import Dict, List
 
@@ -28,8 +29,6 @@ from openpyxl.utils import get_column_letter
 log = logging.getLogger(__name__)
 
 from .settings import settings
-
-MAX_RACES = settings.get("MAX_RACES")
 _HEADER_FILL = PatternFill("solid", fgColor="4472C4")
 _HEADER_FONT = Font(color="FFFFFF", bold=True)
 _AGG_FILL    = PatternFill("solid", fgColor="D9E1F2")   # light blue tint for aggregate columns
@@ -92,7 +91,13 @@ def _write_df(df: pd.DataFrame, filepath: Path, sheet_name: str = "Data") -> Non
             _style_and_width(writer.sheets[sheet_name], df)
         log.debug("Written: %s", filepath.name)
     except Exception as exc:
-        log.error("Failed to write '%s': %s", filepath, exc)
+        msg = (
+            f"Failed to write output file '{filepath}'. "
+            "Please close the workbook if it is open and try again. "
+            f"Original error: {exc}"
+        )
+        log.error(msg)
+        raise RuntimeError(msg) from exc
 
 
 # ─────────────────────────────────────────────────────── individual table ────
@@ -109,7 +114,8 @@ def write_results_workbook(
     race_issues: Dict[int, List[RaceIssue]],
     filepath: Path,
 ) -> None:
-    """Write Race Summary, Div 1, Div 2, Male, Female, and Race N sheets."""
+    """Write Race Summary, Div 1, Div 2, Male, Female, Category Review, and Race N sheets."""
+    max_races = settings.get("MAX_RACES")
 
     def _format_issue(issue: RaceIssue) -> str:
         if issue.source_row is not None:
@@ -131,7 +137,7 @@ def write_results_workbook(
                 "Club":     rec.preferred_club,
                 "Category": rec.category,
             }
-            for n in range(1, MAX_RACES + 1):
+            for n in range(1, max_races + 1):
                 row[f"Race {n} Points"] = rec.race_points.get(n, "")
             row["Total Points"] = rec.total_points
             rows.append(row)
@@ -145,7 +151,7 @@ def write_results_workbook(
                 "Position": team.position,
                 "Club":     team.display_name,
             }
-            for n in range(1, MAX_RACES + 1):
+            for n in range(1, max_races + 1):
                 rr = team.race_results.get(n)
                 row[f"Race {n} Men Score"]   = rr.men_score   if rr else ""
                 row[f"Race {n} Women Score"] = rr.women_score if rr else ""
@@ -233,6 +239,80 @@ def write_results_workbook(
             ],
         )
 
+    def _is_unknown_raw_category(raw_category: str) -> bool:
+        compact = "".join(ch for ch in str(raw_category).strip().lower() if ch.isalnum())
+        return compact in {"", "unknown", "qry", "na", "nacat", "uncategorised", "uncategorized"}
+
+    def _category_review_df() -> pd.DataFrame:
+        grouped: Dict[tuple, List[RunnerRaceEntry]] = defaultdict(list)
+        for race_num, runners in all_race_runners.items():
+            for runner in runners:
+                key = (
+                    runner.name.strip().lower(),
+                    (runner.preferred_club or runner.raw_club or "").strip().lower(),
+                    runner.gender,
+                )
+                grouped[key].append(runner)
+
+        rows = []
+        for grouped_rows in grouped.values():
+            unknown_rows = [r for r in grouped_rows if _is_unknown_raw_category(r.raw_category)]
+            if not unknown_rows:
+                continue
+
+            sample = sorted(grouped_rows, key=lambda r: r.race_number)[0]
+            known_rows = [r for r in grouped_rows if not _is_unknown_raw_category(r.raw_category)]
+
+            unknown_races = ", ".join(str(r.race_number) for r in sorted(unknown_rows, key=lambda r: r.race_number))
+            unknown_values = ", ".join(
+                sorted({str(r.raw_category).strip() or "(blank)" for r in unknown_rows})
+            )
+
+            if known_rows:
+                evidence_parts = []
+                for race_row in sorted(known_rows, key=lambda r: r.race_number):
+                    evidence_parts.append(
+                        f"R{race_row.race_number}: raw '{race_row.raw_category}' -> {race_row.normalised_category}"
+                    )
+                suggested = sorted({r.normalised_category for r in known_rows if r.normalised_category})
+                suggested_text = ", ".join(suggested)
+                status = "Review Suggested"
+                next_step = "Check race sheets listed in Evidence and confirm category for unknown races."
+            else:
+                evidence_parts = []
+                suggested_text = ""
+                status = "No Evidence"
+                next_step = "No known category found in other races yet; leave unresolved until more results exist."
+
+            rows.append(
+                {
+                    "Name": sample.name,
+                    "Club": sample.preferred_club or sample.raw_club,
+                    "Gender": sample.gender,
+                    "Unknown Races": unknown_races,
+                    "Unknown Source Categories": unknown_values,
+                    "Suggested Category": suggested_text,
+                    "Evidence": "\n".join(evidence_parts),
+                    "Status": status,
+                    "Next Step": next_step,
+                }
+            )
+
+        return pd.DataFrame(
+            rows,
+            columns=[
+                "Name",
+                "Club",
+                "Gender",
+                "Unknown Races",
+                "Unknown Source Categories",
+                "Suggested Category",
+                "Evidence",
+                "Status",
+                "Next Step",
+            ],
+        )
+
     try:
         with pd.ExcelWriter(filepath, engine="openpyxl") as writer:
             for df, sheet in [
@@ -241,6 +321,7 @@ def write_results_workbook(
                 (_club_df(div2_teams),    "Div 2"),
                 (_ind_df(male_records),   "Male"),
                 (_ind_df(female_records), "Female"),
+                (_category_review_df(),   "Category Review"),
             ]:
                 df.to_excel(writer, index=False, sheet_name=sheet)
                 _style_and_width(writer.sheets[sheet], df)
@@ -252,7 +333,13 @@ def write_results_workbook(
                 _style_and_width(writer.sheets[sheet_name], race_df)
         log.debug("Written: %s", filepath.name)
     except Exception as exc:
-        log.error("Failed to write results workbook '%s': %s", filepath, exc)
+        msg = (
+            f"Failed to write results workbook '{filepath}'. "
+            "Please close the workbook if it is open and try again. "
+            f"Original error: {exc}"
+        )
+        log.error(msg)
+        raise RuntimeError(msg) from exc
 
 
 def write_unrecognised_clubs(

@@ -46,7 +46,7 @@ class LeagueAuditApp(LeagueScorerApp):
                 command=self._on_back,
                 activebackground=GREEN_H,
                 activeforeground=WHITE,
-            ).pack(side="left", padx=(8, 0), pady=10)
+            ).pack(side="right", padx=(0, 8), pady=10)
 
         tk.Label(
             bar,
@@ -110,6 +110,21 @@ class LeagueAuditApp(LeagueScorerApp):
             activebackground=GREEN_H,
             activeforeground=WHITE,
         ).pack(side="right", padx=8, pady=8)
+
+        tk.Button(
+            row,
+            text="Import URL…",
+            command=self._on_import_raceroster_for_audit,
+            font=("Segoe UI", 9, "bold"),
+            bg=GREEN,
+            fg=WHITE,
+            relief="flat",
+            padx=14,
+            pady=6,
+            cursor="hand2",
+            activebackground=GREEN_H,
+            activeforeground=WHITE,
+        ).pack(side="right", padx=(0, 0), pady=8)
 
         tk.Label(
             outer,
@@ -238,6 +253,19 @@ class LeagueAuditApp(LeagueScorerApp):
                     "The consolidated workbook is now selected for audit.",
                 ]
             ),
+            parent=self,
+        )
+
+    def _on_import_raceroster_for_audit(self) -> None:
+        imported = self._prompt_raceroster_import()
+        if imported is None:
+            return
+
+        self._selected_race_file = imported
+        self._selected_race_var.set(imported.name)
+        messagebox.showinfo(
+            "Import Complete",
+            f"Imported race file selected for audit:\n{imported}",
             parent=self,
         )
 
