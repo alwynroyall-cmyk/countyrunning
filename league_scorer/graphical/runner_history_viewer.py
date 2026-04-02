@@ -5,11 +5,14 @@ from tkinter import messagebox, ttk
 import openpyxl
 import pandas as pd
 
+from ..common_files import race_discovery_exclusions
 from ..manual_data_audit import log_manual_data_changes
+from ..manual_edit_service import resolve_runner_field_across_files
 from ..race_processor import extract_race_number
 from ..session_config import config as session_config
 from ..source_loader import discover_race_files
 from .dashboard import WRRL_GREEN, WRRL_LIGHT, WRRL_NAVY, WRRL_WHITE
+from .results_workbook import find_latest_results_workbook, sorted_race_sheet_names
 
 
 class RunnerHistoryPanel(tk.Frame):
@@ -207,23 +210,7 @@ class RunnerHistoryPanel(tk.Frame):
         self._tree.tag_configure("even", background="#eef3f8")
 
     def _find_results_workbook(self):
-        out_dir = session_config.output_dir
-        if not out_dir or not out_dir.exists():
-            return None
-
-        candidates = []
-        for path in out_dir.glob("*.xlsx"):
-            if not path.name.lower().endswith("-- results.xlsx"):
-                continue
-            race_number = extract_race_number(path.stem)
-            if race_number is None:
-                continue
-            candidates.append((race_number, path))
-
-        if not candidates:
-            return None
-
-        return max(candidates, key=lambda item: item[0])[1]
+        return find_latest_results_workbook(session_config.output_dir)
 
     def _load_runner_options(self):
         workbook = self._find_results_workbook()
@@ -237,10 +224,7 @@ class RunnerHistoryPanel(tk.Frame):
 
         try:
             xl = pd.ExcelFile(workbook)
-            race_sheets = sorted(
-                [name for name in xl.sheet_names if name.startswith("Race ")],
-                key=lambda s: extract_race_number(s) or 0,
-            )
+            race_sheets = sorted_race_sheet_names(xl)
             names = {}
             for sheet in race_sheets:
                 df = xl.parse(sheet)
@@ -296,10 +280,7 @@ class RunnerHistoryPanel(tk.Frame):
 
         try:
             xl = pd.ExcelFile(workbook)
-            race_sheets = sorted(
-                [name for name in xl.sheet_names if name.startswith("Race ")],
-                key=lambda s: extract_race_number(s) or 0,
-            )
+            race_sheets = sorted_race_sheet_names(xl)
             for sheet in race_sheets:
                 race_num = extract_race_number(sheet) or ""
                 df = xl.parse(sheet)
@@ -438,7 +419,7 @@ class RunnerHistoryPanel(tk.Frame):
 
         race_files = discover_race_files(
             input_dir,
-            excluded_names=("clubs.xlsx", "name_corrections.xlsx", "wrrl_events.xlsx"),
+            excluded_names=race_discovery_exclusions(),
         )
         if not race_files:
             messagebox.showinfo("No Race Files", "No race files found in the active input directory.", parent=self)
@@ -451,58 +432,12 @@ class RunnerHistoryPanel(tk.Frame):
         ):
             return
 
-        runner_key = selected_runner.lower()
-        updated_rows = 0
-        touched_files = 0
-        audit_changes: list[dict] = []
-        failed_files: list[str] = []
-
-        for _, path in race_files.items():
-            try:
-                wb = openpyxl.load_workbook(path)
-            except Exception as exc:
-                failed_files.append(f"{path.name}: {exc}")
-                continue
-
-            try:
-                ws = wb.active
-                name_col, field_col = self._find_columns(ws, field_type)
-                if name_col is None or field_col is None:
-                    wb.close()
-                    continue
-
-                file_changed = False
-                for row_idx in range(2, ws.max_row + 1):
-                    row_name = self._row_name_value(ws, row_idx, name_col)
-                    if row_name.lower() != runner_key:
-                        continue
-
-                    current = ws.cell(row=row_idx, column=field_col).value
-                    current_text = "" if current is None else str(current).strip()
-                    if current_text == target_value:
-                        continue
-
-                    ws.cell(row=row_idx, column=field_col).value = target_value
-                    updated_rows += 1
-                    file_changed = True
-                    audit_changes.append(
-                        {
-                            "runner": selected_runner,
-                            "field": field_type,
-                            "old_value": current_text,
-                            "new_value": target_value,
-                            "file_path": path,
-                            "row_idx": row_idx,
-                        }
-                    )
-
-                if file_changed:
-                    wb.save(path)
-                    touched_files += 1
-            except Exception as exc:
-                failed_files.append(f"{path.name}: {exc}")
-            finally:
-                wb.close()
+        updated_rows, touched_files, audit_changes, failed_files = resolve_runner_field_across_files(
+            race_files,
+            selected_runner=selected_runner,
+            field_type=field_type,
+            target_value=target_value,
+        )
 
         log_error = log_manual_data_changes(
             audit_changes,
@@ -527,39 +462,6 @@ class RunnerHistoryPanel(tk.Frame):
                 f"Updated {updated_rows} row(s) across {touched_files} file(s).",
                 parent=self,
             )
-
-    def _find_columns(self, ws, field_type: str):
-        headers = [
-            str(c.value).strip().lower() if c.value is not None else ""
-            for c in next(ws.iter_rows(min_row=1, max_row=1))
-        ]
-
-        name_col = next(
-            (i + 1 for i, h in enumerate(headers) if "name" in h and "first" not in h and "last" not in h),
-            None,
-        )
-        if name_col is None:
-            first_col = next((i + 1 for i, h in enumerate(headers) if "first" in h), None)
-            last_col = next((i + 1 for i, h in enumerate(headers) if "last" in h), None)
-            if first_col is not None and last_col is not None:
-                name_col = (first_col, last_col)
-
-        if field_type == "club":
-            field_col = next((i + 1 for i, h in enumerate(headers) if "club" in h), None)
-        else:
-            field_col = next((i + 1 for i, h in enumerate(headers) if "category" in h or h == "cat"), None)
-
-        return name_col, field_col
-
-    def _row_name_value(self, ws, row_idx: int, name_col) -> str:
-        if isinstance(name_col, tuple):
-            first_val = ws.cell(row=row_idx, column=name_col[0]).value
-            last_val = ws.cell(row=row_idx, column=name_col[1]).value
-            first = "" if first_val is None else str(first_val).strip()
-            last = "" if last_val is None else str(last_val).strip()
-            return f"{first} {last}".strip()
-        val = ws.cell(row=row_idx, column=name_col).value
-        return "" if val is None else str(val).strip()
 
     def _populate_table(self, df: pd.DataFrame):
         self._tree.delete(*self._tree.get_children())

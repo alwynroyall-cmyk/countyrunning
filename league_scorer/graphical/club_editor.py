@@ -12,6 +12,7 @@ from tkinter import messagebox, ttk
 import openpyxl
 import pandas as pd
 
+from ..common_files import race_discovery_exclusions
 from ..manual_data_audit import log_manual_data_changes
 from ..session_config import config as session_config
 from .dashboard import WRRL_GREEN, WRRL_LIGHT, WRRL_NAVY, WRRL_WHITE
@@ -75,7 +76,19 @@ class ClubEditorPanel(tk.Frame):
 
     # ── race file loading ─────────────────────────────────────────────────────
 
+    def _close_loaded_workbook(self) -> None:
+        if self._wb is None:
+            return
+        try:
+            self._wb.close()
+        except Exception:
+            pass
+        finally:
+            self._wb = None
+            self._ws = None
+
     def _load_race_file(self, path: Path) -> None:
+        self._close_loaded_workbook()
         try:
             wb = openpyxl.load_workbook(path)
         except Exception as exc:
@@ -103,11 +116,13 @@ class ClubEditorPanel(tk.Frame):
 
         if name_idx is None:
             messagebox.showerror("Format Error", "Could not find a Name column.", parent=self)
+            wb.close()
             return
 
         club_idx = next((i for i, h in enumerate(headers) if "club" in h), None)
         if club_idx is None:
             messagebox.showerror("Format Error", "Could not find a Club column.", parent=self)
+            wb.close()
             return
 
         rows: list[dict] = []
@@ -403,12 +418,12 @@ class ClubEditorPanel(tk.Frame):
     # ── file list helpers ─────────────────────────────────────────────────────
 
     def _populate_file_list(self) -> None:
-        skip = {"clubs.xlsx", "name_corrections.xlsx", "WRRL_events.xlsx"}
+        skip = set(race_discovery_exclusions())
         input_dir = session_config.input_dir
         if not input_dir or not input_dir.exists():
             return
         files = sorted(
-            [f for f in input_dir.glob("*.xlsx") if f.name not in skip],
+            [f for f in input_dir.glob("*.xlsx") if f.name.lower() not in skip],
             key=lambda f: f.stem,
         )
         self._file_paths = files
@@ -658,5 +673,6 @@ class ClubEditorPanel(tk.Frame):
                 parent=self,
             ):
                 return
+        self._close_loaded_workbook()
         if self._back_callback:
             self._back_callback()

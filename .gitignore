@@ -7,3 +7,5 @@ data/
 .mypy_cache/
 .ruff_cache/
 .cache/
+output/division-format-check/
+sporthive_event.json

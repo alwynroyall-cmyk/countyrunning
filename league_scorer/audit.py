@@ -9,6 +9,7 @@ import pandas as pd
 
 from .audit_writer import write_audit_workbook
 from .club_loader import load_clubs
+from .common_files import race_discovery_exclusions
 from .exceptions import FatalError, RaceProcessingError
 from .models import RaceIssue, RunnerRaceEntry, UnrecognisedClub
 from .race_processor import process_race_file
@@ -71,7 +72,7 @@ class LeagueAuditor:
         self.preferred_clubs = sorted(club_info)
 
     def _discover_races(self) -> Dict[int, Path]:
-        return discover_race_files(self.input_dir, excluded_names=("clubs.xlsx",))
+        return discover_race_files(self.input_dir, excluded_names=race_discovery_exclusions())
 
     def _process_race(self, race_num: int, filepath: Path) -> None:
         try:

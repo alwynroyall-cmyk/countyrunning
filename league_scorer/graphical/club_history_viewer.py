@@ -7,6 +7,7 @@ import pandas as pd
 from ..race_processor import extract_race_number
 from ..session_config import config as session_config
 from .dashboard import WRRL_GREEN, WRRL_LIGHT, WRRL_NAVY, WRRL_WHITE
+from .results_workbook import find_latest_results_workbook, sorted_race_sheet_names
 
 
 class ClubHistoryPanel(tk.Frame):
@@ -156,23 +157,7 @@ class ClubHistoryPanel(tk.Frame):
         self._details_tree.configure(yscrollcommand=detail_y.set, xscrollcommand=detail_x.set)
 
     def _find_results_workbook(self):
-        out_dir = session_config.output_dir
-        if not out_dir or not out_dir.exists():
-            return None
-
-        candidates = []
-        for path in out_dir.glob("*.xlsx"):
-            if not path.name.lower().endswith("-- results.xlsx"):
-                continue
-            race_number = extract_race_number(path.stem)
-            if race_number is None:
-                continue
-            candidates.append((race_number, path))
-
-        if not candidates:
-            return None
-
-        return max(candidates, key=lambda item: item[0])[1]
+        return find_latest_results_workbook(session_config.output_dir)
 
     def _load_club_options(self):
         workbook = self._find_results_workbook()
@@ -187,10 +172,7 @@ class ClubHistoryPanel(tk.Frame):
         clubs = {}
         try:
             xl = pd.ExcelFile(workbook)
-            race_sheets = sorted(
-                [name for name in xl.sheet_names if name.startswith("Race ")],
-                key=lambda s: extract_race_number(s) or 0,
-            )
+            race_sheets = sorted_race_sheet_names(xl)
             for sheet in race_sheets:
                 df = xl.parse(sheet)
                 if "Club" not in df.columns:
@@ -243,10 +225,7 @@ class ClubHistoryPanel(tk.Frame):
 
         try:
             xl = pd.ExcelFile(workbook)
-            race_sheets = sorted(
-                [name for name in xl.sheet_names if name.startswith("Race ")],
-                key=lambda s: extract_race_number(s) or 0,
-            )
+            race_sheets = sorted_race_sheet_names(xl)
             for sheet in race_sheets:
                 race_num = extract_race_number(sheet) or ""
                 df = xl.parse(sheet).fillna("")

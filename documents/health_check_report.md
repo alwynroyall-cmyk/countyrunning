@@ -392,6 +392,19 @@ The application is currently **Windows-only by design** (the target environment 
 
 ## 12. Recommendations
 
+### Update (April 2026)
+
+Status after the latest cleanup pass:
+
+1. ✅ Shared import/manual workflows now centralised (`graphical/import_helpers.py`) and used by both scorer and dashboard flows.
+2. ✅ Workbook lifecycle handling hardened in manual edit paths (`name_lookup.py`, `club_match_dialog.py`, `club_editor.py`).
+3. ✅ Version text is centralised through `league_scorer.__version__` and reused in report/dashboard output.
+4. ✅ `requirements.txt` stale structure block removed.
+5. ✅ Race discovery and results-workbook lookup logic are now shared helpers.
+6. ⚠️ Automated tests are still the largest outstanding gap.
+
+The remaining high-priority recommendation is adding a focused pytest suite over scoring and season aggregation logic.
+
 ### Immediate (before next season)
 
 1. **Restore `.gitignore`** — at minimum exclude `__pycache__/`, `*.pyc`, `.venv/`, `output/`, and ideally move generated output files out of the tracked tree.

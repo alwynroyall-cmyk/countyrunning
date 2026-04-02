@@ -15,7 +15,9 @@ from tkinter import messagebox, ttk
 import openpyxl
 import pandas as pd
 
+from ..common_files import race_discovery_exclusions
 from ..manual_data_audit import log_manual_data_changes
+from ..manual_edit_service import apply_club_suggestions
 from ..source_loader import discover_race_files
 from ..session_config import config as session_config
 from .dashboard import WRRL_GREEN, WRRL_LIGHT, WRRL_NAVY, WRRL_WHITE
@@ -265,7 +267,7 @@ class CheckAllRunnersPanel(tk.Frame):
         self._load_eligible_clubs()
         race_files = discover_race_files(
             input_dir,
-            excluded_names=("clubs.xlsx", "name_corrections.xlsx", "WRRL_events.xlsx"),
+            excluded_names=race_discovery_exclusions(),
         )
 
         by_name: dict[str, list[dict]] = defaultdict(list)
@@ -395,42 +397,7 @@ class CheckAllRunnersPanel(tk.Frame):
         for s in selected:
             updates_by_file[s["file"]].append(s)
 
-        applied = 0
-        audit_changes: list[dict] = []
-        failed: list[str] = []
-        for filepath, updates in updates_by_file.items():
-            try:
-                wb = openpyxl.load_workbook(filepath)
-            except Exception as exc:
-                failed.append(f"{filepath.name}: {exc}")
-                continue
-
-            try:
-                ws = wb.active
-                for u in updates:
-                    cell = ws.cell(row=u["row_idx"], column=u["club_col"])
-                    old_value = "" if cell.value is None else str(cell.value).strip()
-                    new_value = u["suggested_club"]
-                    if old_value == new_value:
-                        continue
-
-                    cell.value = new_value
-                    applied += 1
-                    audit_changes.append(
-                        {
-                            "runner": u["name"],
-                            "field": "club",
-                            "old_value": old_value,
-                            "new_value": new_value,
-                            "file_path": filepath,
-                            "row_idx": u["row_idx"],
-                        }
-                    )
-                wb.save(filepath)
-            except Exception as exc:
-                failed.append(f"{filepath.name}: {exc}")
-            finally:
-                wb.close()
+        applied, audit_changes, failed = apply_club_suggestions(updates_by_file)
 
         # Remove successfully applied suggestions from in-memory list
         if applied:

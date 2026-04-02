@@ -401,47 +401,50 @@ def _build_confirmation_text(summary: dict) -> str:
 
 def _append_club_conversions(clubs_path: Path, selected: List[ClubMatchCandidate]) -> dict:
     workbook = load_workbook(clubs_path)
-    worksheet = workbook.active
-    headers = [str(cell.value).strip() if cell.value is not None else "" for cell in worksheet[1]]
-    header_map = {name: idx + 1 for idx, name in enumerate(headers)}
+    try:
+        worksheet = workbook.active
+        headers = [str(cell.value).strip() if cell.value is not None else "" for cell in worksheet[1]]
+        header_map = {name: idx + 1 for idx, name in enumerate(headers)}
 
-    lookup_state = _read_club_lookup_state(clubs_path)
-    alias_to_preferred = lookup_state["alias_to_preferred"]
-    preferred_to_divisions = lookup_state["preferred_to_divisions"]
+        lookup_state = _read_club_lookup_state(clubs_path)
+        alias_to_preferred = lookup_state["alias_to_preferred"]
+        preferred_to_divisions = lookup_state["preferred_to_divisions"]
 
-    written = 0
-    skipped_existing = 0
-    skipped_conflicts = 0
+        written = 0
+        skipped_existing = 0
+        skipped_conflicts = 0
 
-    for item in selected:
-        existing = alias_to_preferred.get(item.current_club.lower())
-        if existing:
-            if existing == item.proposed_club:
-                skipped_existing += 1
-            else:
+        for item in selected:
+            existing = alias_to_preferred.get(item.current_club.lower())
+            if existing:
+                if existing == item.proposed_club:
+                    skipped_existing += 1
+                else:
+                    skipped_conflicts += 1
+                continue
+
+            divisions = preferred_to_divisions.get(item.proposed_club)
+            if divisions is None:
                 skipped_conflicts += 1
-            continue
+                continue
 
-        divisions = preferred_to_divisions.get(item.proposed_club)
-        if divisions is None:
-            skipped_conflicts += 1
-            continue
+            next_row = worksheet.max_row + 1
+            worksheet.cell(next_row, header_map["Club"], item.current_club)
+            worksheet.cell(next_row, header_map["Preferred name"], item.proposed_club)
+            worksheet.cell(next_row, header_map["Team A"], divisions[0])
+            worksheet.cell(next_row, header_map["Team B"], divisions[1])
+            written += 1
+            alias_to_preferred[item.current_club.lower()] = item.proposed_club
 
-        next_row = worksheet.max_row + 1
-        worksheet.cell(next_row, header_map["Club"], item.current_club)
-        worksheet.cell(next_row, header_map["Preferred name"], item.proposed_club)
-        worksheet.cell(next_row, header_map["Team A"], divisions[0])
-        worksheet.cell(next_row, header_map["Team B"], divisions[1])
-        written += 1
-        alias_to_preferred[item.current_club.lower()] = item.proposed_club
-
-    workbook.save(clubs_path)
-    return {
-        "written": written,
-        "skipped_existing": skipped_existing,
-        "skipped_conflicts": skipped_conflicts,
-        "path": clubs_path,
-    }
+        workbook.save(clubs_path)
+        return {
+            "written": written,
+            "skipped_existing": skipped_existing,
+            "skipped_conflicts": skipped_conflicts,
+            "path": clubs_path,
+        }
+    finally:
+        workbook.close()
 
 
 def _build_write_result_text(result: dict) -> str:

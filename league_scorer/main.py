@@ -17,6 +17,7 @@ import logging
 from pathlib import Path
 from typing import Dict, List
 
+from .common_files import race_discovery_exclusions
 from .club_loader import load_clubs
 from .exceptions import FatalError, RaceProcessingError
 from .individual_scoring import assign_individual_points
@@ -130,7 +131,7 @@ class LeagueScorer:
 
     def _discover_races(self) -> Dict[int, Path]:
         """Find all supported race files with a valid Race # name."""
-        races = discover_race_files(self.input_dir, excluded_names=("clubs.xlsx",))
+        races = discover_race_files(self.input_dir, excluded_names=race_discovery_exclusions())
         log.info("Discovered %d race file(s).", len(races))
         return races
 

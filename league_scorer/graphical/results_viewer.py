@@ -2,8 +2,8 @@ import tkinter as tk
 import tkinter.font as tkfont
 from tkinter import ttk
 import pandas as pd
-from ..race_processor import extract_race_number
 from ..session_config import config as session_config
+from .results_workbook import find_latest_results_workbook
 
 
 class ResultsViewerPanel(tk.Frame):
@@ -151,23 +151,7 @@ class ResultsViewerPanel(tk.Frame):
             self._show_message(f"Failed to load results: {exc}")
 
     def _find_results_workbook(self):
-        out_dir = session_config.output_dir
-        if not out_dir or not out_dir.exists():
-            return None
-
-        candidates = []
-        for path in out_dir.glob("*.xlsx"):
-            if not path.name.lower().endswith("-- results.xlsx"):
-                continue
-            race_number = extract_race_number(path.stem)
-            if race_number is None:
-                continue
-            candidates.append((race_number, path))
-
-        if not candidates:
-            return None
-
-        return max(candidates, key=lambda item: item[0])[1]
+        return find_latest_results_workbook(session_config.output_dir)
 
     def _populate_table(self, df):
         self._tree.delete(*self._tree.get_children())

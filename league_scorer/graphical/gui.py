@@ -12,16 +12,22 @@ import queue
 import threading
 import tkinter as tk
 from pathlib import Path
-from tkinter import messagebox, scrolledtext, simpledialog
+from tkinter import messagebox
 
+from ..common_files import race_discovery_exclusions
 from ..exceptions import FatalError
 from ..main import LeagueScorer
 from ..raceroster_import import (
     SporthiveRaceNotDirectlyImportableError,
     import_raceroster_results,
-    import_sporthive_manual_pages,
 )
 from ..source_loader import discover_race_files
+from .import_helpers import (
+    RaceImportRequest,
+    ask_multiline_page_text,
+    prompt_race_import_request,
+    run_manual_sporthive_import,
+)
 
 # ---------------------------------------------------------------------------
 # Brand colours (match dashboard)
@@ -122,7 +128,7 @@ class LeagueScorerApp(tk.Frame):
             return {}
         return discover_race_files(
             self._input_dir,
-            excluded_names=("clubs.xlsx", "wrrl_events.xlsx"),
+            excluded_names=race_discovery_exclusions(),
         )
 
     # -------------------------------------------------------------------------
@@ -279,48 +285,17 @@ class LeagueScorerApp(tk.Frame):
             )
             return None
 
-        race_url = simpledialog.askstring(
-            "Import From Race Roster",
-            "Paste the Race Roster race URL:",
-            parent=self,
-        )
-        if not race_url:
+        request = prompt_race_import_request(self)
+        if request is None:
             return None
-
-        race_number = simpledialog.askinteger(
-            "League Race Number",
-            "Enter the league race number for this file (for example 4):",
-            parent=self,
-            minvalue=1,
-            maxvalue=99,
-        )
-        if race_number is None:
-            return None
-
-        race_name = simpledialog.askstring(
-            "Race Name",
-            "Optional race name for the file title (for example Broad Town 5):",
-            parent=self,
-        )
-
-        sporthive_race_hint = None
-        if "sporthive.com/events/s/" in race_url.lower() and "/race/" not in race_url.lower():
-            sporthive_race_hint = simpledialog.askinteger(
-                "Sporthive Race ID",
-                "This Sporthive link is an event summary. Enter the Race ID from the 'View results' URL (the number after /race/).",
-                parent=self,
-                minvalue=1,
-            )
-            if sporthive_race_hint is None:
-                return None
 
         try:
             output_path, count, history_path = import_raceroster_results(
-                race_url=race_url,
+                race_url=request.race_url,
                 input_dir=self._input_dir,
-                league_race_number=race_number,
-                race_name_override=race_name,
-                sporthive_race_id_hint=sporthive_race_hint,
+                league_race_number=request.race_number,
+                race_name_override=request.race_name,
+                sporthive_race_id_hint=request.sporthive_race_hint,
             )
         except SporthiveRaceNotDirectlyImportableError:
             use_manual = messagebox.askyesno(
@@ -331,7 +306,7 @@ class LeagueScorerApp(tk.Frame):
             )
             if not use_manual:
                 return None
-            return self._prompt_manual_sporthive_import(race_url, race_number, race_name)
+            return self._prompt_manual_sporthive_import(request)
         except Exception as exc:
             messagebox.showerror("Race Roster import failed", str(exc), parent=self)
             return None
@@ -341,79 +316,32 @@ class LeagueScorerApp(tk.Frame):
         self._last_import_history_path = history_path
         return output_path
 
-    def _ask_multiline_page_text(self, title: str, prompt: str) -> str | None:
-        dialog = tk.Toplevel(self)
-        dialog.title(title)
-        dialog.transient(self.winfo_toplevel())
-        dialog.grab_set()
-        dialog.geometry("760x520")
-        dialog.configure(bg=LIGHT)
-
-        tk.Label(dialog, text=prompt, bg=LIGHT, fg=NAVY, justify="left", anchor="w").pack(
-            fill="x", padx=12, pady=(12, 6)
-        )
-
-        text_box = scrolledtext.ScrolledText(dialog, wrap="word", font=("Consolas", 10), height=22)
-        text_box.pack(fill="both", expand=True, padx=12, pady=6)
-
-        result = {"value": None}
-
-        button_row = tk.Frame(dialog, bg=LIGHT)
-        button_row.pack(fill="x", padx=12, pady=(0, 12))
-
-        def _ok() -> None:
-            result["value"] = text_box.get("1.0", "end").strip()
-            dialog.destroy()
-
-        def _cancel() -> None:
-            result["value"] = None
-            dialog.destroy()
-
-        tk.Button(button_row, text="Cancel", command=_cancel, bg=PANEL, fg=NAVY, relief="flat", padx=10, pady=4).pack(side="right")
-        tk.Button(button_row, text="Use This Page", command=_ok, bg=GREEN, fg=WHITE, relief="flat", padx=12, pady=4).pack(side="right", padx=(0, 8))
-
-        dialog.wait_window()
-        return result["value"]
-
-    def _prompt_manual_sporthive_import(self, race_url: str, race_number: int, race_name: str | None) -> Path | None:
-        pages: list[str] = []
-        page_no = 1
-
-        while True:
-            text = self._ask_multiline_page_text(
+    def _prompt_manual_sporthive_import(self, request: RaceImportRequest) -> Path | None:
+        def _ask_page(page_no: int) -> str | None:
+            return ask_multiline_page_text(
+                self,
                 title=f"Sporthive Page {page_no}",
                 prompt=(
                     f"Paste results table text for Sporthive page {page_no}.\n"
                     "Copy the rows shown on screen (including pipe-delimited lines) and click 'Use This Page'."
                 ),
+                bg=LIGHT,
+                fg=NAVY,
+                panel_bg=PANEL,
+                accent_bg=GREEN,
+                accent_fg=WHITE,
             )
-            if text is None:
-                return None
-            if not text.strip():
-                messagebox.showwarning("No content", "No rows detected. Paste the page content and try again.", parent=self)
-                continue
-            pages.append(text)
 
-            more = messagebox.askyesno(
-                "Add Another Page?",
-                "Add another Sporthive results page?\n\nChoose No when all pages are pasted.",
-                parent=self,
-            )
-            if not more:
-                break
-            page_no += 1
-
-        try:
-            output_path, count, history_path = import_sporthive_manual_pages(
-                race_url=race_url,
-                pages_text=pages,
-                input_dir=self._input_dir,
-                league_race_number=race_number,
-                race_name_override=race_name,
-            )
-        except Exception as exc:
-            messagebox.showerror("Sporthive manual import failed", str(exc), parent=self)
+        result = run_manual_sporthive_import(
+            self,
+            input_dir=self._input_dir,
+            request=request,
+            ask_page_text=_ask_page,
+        )
+        if result is None:
             return None
+
+        output_path, count, history_path = result
 
         self._append_log(f"INFO      Imported (manual) → {output_path.name} ({count} rows)", tag="INFO")
         self._append_log(f"INFO      History           → {history_path.name}", tag="INFO")
