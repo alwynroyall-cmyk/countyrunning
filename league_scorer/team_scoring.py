@@ -2,11 +2,11 @@
 Build A/B team scores per race and award division points.
 
 Spec §10:
-  • A Team = top-5 men + top-5 women (by individual race points).
-  • B Team = next-5 men + next-5 women (positions 6-10).
-  • Fewer than 5 of a gender → use all available.
+    • A Team = top-N men + top-N women (by individual race points), N = TEAM_SIZE.
+    • B Team = next-N men + next-N women.
+    • Fewer than N of a gender -> use all available.
   • Team Score = sum(men points) + sum(women points).
-  • Each division ranked independently: 1st = 20 pts … min 1 pt.
+    • Each division ranked independently: 1st = MAX_DIV_PTS ... min 1 pt.
   • No runners → 0 pts (not 1).
 """
 
@@ -18,9 +18,6 @@ from .models import ClubInfo, RunnerRaceEntry, TeamRaceResult
 log = logging.getLogger(__name__)
 
 from .settings import settings
-
-TEAM_SIZE = settings.get("TEAM_SIZE")
-MAX_DIV_PTS = settings.get("MAX_DIV_PTS")
 MIN_DIV_PTS = 1
 
 
@@ -35,6 +32,8 @@ def build_team_scores(
     Mutates runner.team_id ('A', 'B', or '').
     Returns (team_results, updated runners).
     """
+    team_size = settings.get("TEAM_SIZE")
+
     # Initialise empty gender groups for every club
     club_runners: Dict[str, Dict[str, List[RunnerRaceEntry]]] = {
         club: {"M": [], "F": []} for club in club_info
@@ -53,9 +52,9 @@ def build_team_scores(
 
     for preferred_club, info in club_info.items():
         for team_id, division in (("A", info.div_a), ("B", info.div_b)):
-            offset = 0 if team_id == "A" else TEAM_SIZE
-            men_slice = club_runners[preferred_club]["M"][offset: offset + TEAM_SIZE]
-            women_slice = club_runners[preferred_club]["F"][offset: offset + TEAM_SIZE]
+            offset = 0 if team_id == "A" else team_size
+            men_slice = club_runners[preferred_club]["M"][offset: offset + team_size]
+            women_slice = club_runners[preferred_club]["F"][offset: offset + team_size]
 
             # Tag runners with their team membership
             for r in men_slice:
@@ -99,6 +98,8 @@ def _assign_division_points(teams: List[TeamRaceResult], division: int) -> None:
     if not div_teams:
         return
 
+    max_div_pts = settings.get("MAX_DIV_PTS")
+
     with_runners = sorted(
         [t for t in div_teams if t.team_score > 0],
         key=lambda t: t.team_score,
@@ -114,7 +115,7 @@ def _assign_division_points(teams: List[TeamRaceResult], division: int) -> None:
         j = i + 1
         while j < n and with_runners[j].team_score == with_runners[i].team_score:
             j += 1
-        pts = max(MIN_DIV_PTS, MAX_DIV_PTS - rank + 1)
+        pts = max(MIN_DIV_PTS, max_div_pts - rank + 1)
         for k in range(i, j):
             with_runners[k].team_points = pts
         rank += j - i

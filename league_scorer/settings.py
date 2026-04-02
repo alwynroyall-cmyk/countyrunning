@@ -33,8 +33,13 @@ class LeagueSettings:
                 pass  # Ignore errors, use defaults
 
     def save(self):
-        with open(SETTINGS_FILE, "w") as f:
-            json.dump(self._settings, f, indent=2)
+        try:
+            with open(SETTINGS_FILE, "w") as f:
+                json.dump(self._settings, f, indent=2)
+        except OSError as exc:
+            raise RuntimeError(
+                f"Unable to save WRRL settings to '{SETTINGS_FILE}'. {exc}"
+            ) from exc
 
     def get(self, key: str) -> Any:
         return self._settings.get(key, DEFAULT_SETTINGS.get(key))

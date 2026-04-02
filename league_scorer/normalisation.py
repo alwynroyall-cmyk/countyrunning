@@ -1,7 +1,7 @@
 """
 All normalisation helpers:
   - Gender    : M / F
-  - Category  : Sen / V40 / V50 / V60 / V70+ / Jun
+    - Category  : Sen / V35 / V40 / V45 / V50 / V55 / V60 / V65 / V70+ / Jun
   - Time      : parse to seconds; display string
   - Columns   : Chip > Gun > first 'time' column
 """
@@ -37,7 +37,7 @@ def normalise_gender(raw) -> Optional[str]:
 
 def normalise_category(raw) -> Tuple[str, str]:
     """
-    Normalise to: Sen | V40 | V50 | V60 | V70+ | Jun
+    Normalise to: Sen | V35 | V40 | V45 | V50 | V55 | V60 | V65 | V70+ | Jun
     Returns (normalised, notes).
     """
     if raw is None or _is_nan(raw) or str(raw).strip() == "":
@@ -47,8 +47,17 @@ def normalise_category(raw) -> Tuple[str, str]:
     original = str(raw).strip()
     work = original.lower()
 
+    # Handle age ranges first (before compacting digits), e.g. "Ages 35 - 44".
+    age_range = re.search(r"(?:ages?\s*)?(\d{2})\s*(?:-|to)\s*(\d{2})", work)
+    if age_range:
+        low = int(age_range.group(1))
+        if low <= 20:
+            return "Jun", ""
+        if low >= 35:
+            return _age_to_v_category(low), ""
+
     # Remove gender prefix letter when followed by 'v' or a digit
-    # e.g. MV40 → v40, FV50 → v50, M40 → 40
+    # e.g. MV40 -> v40, FV50 -> v50, M40 -> 40
     work = re.sub(r"^[mfwlu](?=[v\d])", "", work)
     # Remove whitespace, hyphens, underscores, dots
     work = re.sub(r"[\s\-_\.]", "", work)
@@ -63,21 +72,18 @@ def normalise_category(raw) -> Tuple[str, str]:
         return "Jun", ""
 
     # ── Extract numeric age band ──
-    # Handles V40, Vet50, V 60, vet40, 70+ etc.
-    m = re.search(r"v(?:et?)?(\d+)", work)
+    # Handles V35..V70+, Vet50, V 60, FV45, F35, 70+ etc.
+    m = re.search(r"v(?:et)?(\d{2})(\+)?", work)
     if not m:
-        m = re.search(r"(\d{2,})", work)
+        m = re.search(r"(?<!\d)(\d{2})(\+)?(?!\d)", work)
 
     if m:
         age = int(m.group(1))
-        if age >= 70:
-            return "V70+", ""
-        if age >= 60:
-            return "V60", ""
-        if age >= 50:
-            return "V50", ""
-        if age >= 40:
-            return "V40", ""
+        has_plus = bool(m.group(2))
+        if age >= 35:
+            if age >= 70 and has_plus:
+                return "V70+", ""
+            return _age_to_v_category(age), ""
         if age <= 20:
             return "Jun", ""
 
@@ -86,8 +92,28 @@ def normalise_category(raw) -> Tuple[str, str]:
         return "Sen", ""
 
     # ── Unrecognised ──
-    log.warning("Unrecognised category '%s' — defaulting to Sen", original)
-    return "Sen", f"Unrecognised '{original}' — defaulted to Sen"
+    # Leave unresolved categories unchanged so we do not misclassify as Senior.
+    log.warning("Unrecognised category '%s' — preserving original", original)
+    return original, f"Unrecognised '{original}' — preserved"
+
+
+def _age_to_v_category(age: int) -> str:
+    """Map veteran age to nearest EA-style 5-year master category."""
+    if age >= 70:
+        return "V70+"
+    if age >= 65:
+        return "V65"
+    if age >= 60:
+        return "V60"
+    if age >= 55:
+        return "V55"
+    if age >= 50:
+        return "V50"
+    if age >= 45:
+        return "V45"
+    if age >= 40:
+        return "V40"
+    return "V35"
 
 
 # ───────────────────────────────────────────────────────────────── time ──────

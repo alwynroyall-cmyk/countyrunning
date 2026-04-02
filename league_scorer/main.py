@@ -17,6 +17,7 @@ import logging
 from pathlib import Path
 from typing import Dict, List
 
+from .common_files import race_discovery_exclusions
 from .club_loader import load_clubs
 from .exceptions import FatalError, RaceProcessingError
 from .individual_scoring import assign_individual_points
@@ -29,12 +30,15 @@ from .models import (
     UnrecognisedClub,
 )
 from .output_writer import (
+    write_category_mismatch_todo,
     write_results_workbook,
-    write_unrecognised_clubs,
+    write_time_qry_todo,
 )
 from .report_writer import write_combined_report, write_race_report
-from .race_processor import extract_race_number, process_race_file
+from .race_processor import process_race_file
 from .season_aggregation import build_individual_season, build_team_season
+from .source_loader import discover_race_files
+from .structured_logging import log_event
 from .team_scoring import build_team_scores
 
 log = logging.getLogger(__name__)
@@ -71,6 +75,14 @@ class LeagueScorer:
             Optional pre-selected mapping of race_number -> Path.
             If None, all race files in input_dir are discovered automatically.
         """
+        log_event(
+            "league_run_started",
+            logger=log,
+            year=self.year,
+            input_dir=self.input_dir,
+            output_dir=self.output_dir,
+        )
+
         self._validate_paths()
         self._load_clubs()
 
@@ -78,9 +90,16 @@ class LeagueScorer:
             race_files = self._discover_races()
 
         self.selected_race_files = dict(race_files)
+        log_event(
+            "league_race_selection_ready",
+            logger=log,
+            year=self.year,
+            race_count=len(race_files),
+        )
 
         if not race_files:
             log.warning("No valid race files found in '%s'.", self.input_dir)
+            log_event("league_run_no_races", level="WARNING", logger=log, year=self.year)
             return []
 
         for race_num in sorted(race_files):
@@ -88,10 +107,19 @@ class LeagueScorer:
 
         if not self.all_race_runners:
             log.warning("No races were successfully processed — no output written.")
+            log_event("league_run_no_processed_races", level="WARNING", logger=log, year=self.year)
             return []
 
         self._write_cumulative_outputs()
         log.info("Done. Results in '%s'.", self.output_dir)
+        log_event(
+            "league_run_completed",
+            logger=log,
+            year=self.year,
+            processed_races=len(self.all_race_runners),
+            warnings=len(self.run_warnings),
+            output_dir=self.output_dir,
+        )
         return list(self.run_warnings)
 
     # ───────────────────────────────────────────────────────────── private ───
@@ -128,32 +156,21 @@ class LeagueScorer:
         )
 
     def _discover_races(self) -> Dict[int, Path]:
-        """Find all xlsx files with a valid Race # name, sorted by race number."""
-        races: Dict[int, Path] = {}
-        for fp in sorted(self.input_dir.glob("*.xlsx")):
-            if fp.name.lower() == "clubs.xlsx":
-                continue
-            n = extract_race_number(fp.stem)
-            if n is None:
-                log.warning(
-                    "Ignoring '%s' — no valid race number in filename.", fp.name
-                )
-                continue
-            if n in races:
-                log.warning(
-                    "Duplicate race number %d — ignoring '%s' (keeping '%s').",
-                    n,
-                    fp.name,
-                    races[n].name,
-                )
-                continue
-            races[n] = fp
-
+        """Find all supported race files with a valid Race # name."""
+        races = discover_race_files(self.input_dir, excluded_names=race_discovery_exclusions())
         log.info("Discovered %d race file(s).", len(races))
+        log_event("race_discovery_completed", logger=log, year=self.year, race_count=len(races))
         return races
 
     def _process_race(self, race_num: int, filepath: Path, total_races: int = 1) -> None:
         """Process one race file end-to-end."""
+        log_event(
+            "race_processing_started",
+            logger=log,
+            year=self.year,
+            race_number=race_num,
+            race_file=filepath,
+        )
         try:
             runners, cat_recs, unrec, issue_notes = process_race_file(
                 filepath, race_num, self.raw_to_preferred
@@ -161,6 +178,15 @@ class LeagueScorer:
         except RaceProcessingError as exc:
             self.all_race_issues[race_num] = [RaceIssue("other", f"Race skipped: {exc}")]
             log.error("Race %d SKIPPED — %s", race_num, exc)
+            log_event(
+                "race_processing_failed",
+                level="ERROR",
+                logger=log,
+                year=self.year,
+                race_number=race_num,
+                race_file=filepath,
+                error=str(exc),
+            )
             return
 
         runners = assign_individual_points(runners)
@@ -172,17 +198,8 @@ class LeagueScorer:
         self.all_unrec_clubs[race_num] = unrec
         self.all_race_issues[race_num] = list(issue_notes)
 
-        # Write per-race exception reports immediately
-        pfx = f"Race {race_num} -- "
-        unrec_out = self.output_dir / f"{pfx}unused clubs.xlsx"
-        write_unrecognised_clubs(unrec, unrec_out)
-        if unrec:
-            log.info(
-                "Race %d: %d non-league club(s) excluded — see %s",
-                race_num, len(unrec), unrec_out.name,
-            )
-
         # Write branded per-race scoring card
+        pfx = f"Race {race_num} -- "
         images_dir = Path(__file__).parent / "images"
         pdf_warning = write_race_report(
             race_num=race_num,
@@ -197,8 +214,25 @@ class LeagueScorer:
         if pdf_warning:
             self.all_race_issues.setdefault(race_num, []).append(RaceIssue("other", pdf_warning))
             self.run_warnings.append(pdf_warning)
+            log_event(
+                "race_report_pdf_warning",
+                level="WARNING",
+                logger=log,
+                year=self.year,
+                race_number=race_num,
+                warning=pdf_warning,
+            )
 
         log.info("Race %d complete.", race_num)
+        log_event(
+            "race_processing_completed",
+            logger=log,
+            year=self.year,
+            race_number=race_num,
+            runner_rows=len(runners),
+            team_rows=len(team_results),
+            unrecognised_clubs=len(unrec),
+        )
 
     def _write_cumulative_outputs(self) -> None:
         """Aggregate all processed races and write cumulative output files."""
@@ -206,6 +240,7 @@ class LeagueScorer:
         pfx = f"Race {highest} -- "
 
         log.info("Aggregating results (highest race: %d)…", highest)
+        log_event("cumulative_write_started", logger=log, year=self.year, highest_race=highest)
 
         male_recs, female_recs = build_individual_season(self.all_race_runners)
         div1_teams, div2_teams = build_team_season(self.all_race_teams, self.club_info)
@@ -224,6 +259,16 @@ class LeagueScorer:
             filepath=self.output_dir / f"{pfx}Results.xlsx",
         )
 
+        write_category_mismatch_todo(
+            all_race_runners=self.all_race_runners,
+            filepath=self.output_dir / f"{pfx}Category Mismatch TODO.xlsx",
+        )
+
+        write_time_qry_todo(
+            all_race_runners=self.all_race_runners,
+            filepath=self.output_dir / f"{pfx}Time QRY TODO.xlsx",
+        )
+
         images_dir = Path(__file__).parent / "images"
 
         pdf_warning = write_combined_report(
@@ -239,5 +284,13 @@ class LeagueScorer:
         )
         if pdf_warning:
             self.run_warnings.append(pdf_warning)
+            log_event(
+                "combined_report_pdf_warning",
+                level="WARNING",
+                logger=log,
+                year=self.year,
+                warning=pdf_warning,
+            )
 
         log.info("Cumulative outputs written successfully.")
+        log_event("cumulative_write_completed", logger=log, year=self.year, highest_race=highest)

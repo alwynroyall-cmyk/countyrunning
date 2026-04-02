@@ -1,4 +1,5 @@
-"""python -m <your_package_name>"""
-from .graphical import launch_dashboard
+"""Entry point for launching the dashboard."""
+
+from league_scorer.graphical import launch_dashboard
 
 launch_dashboard()

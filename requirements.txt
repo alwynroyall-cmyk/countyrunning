@@ -3,20 +3,6 @@ openpyxl>=3.0.10
 Pillow>=10.0.0
 python-docx>=1.1.0
 docx2pdf>=0.1.8
+playwright>=1.50.0
 
-Project Structure
-wiltshire-league-scorer/
-├── requirements.txt
-├── main.py
-└── league_scorer/
-    ├── __init__.py
-    ├── exceptions.py
-    ├── models.py
-    ├── normalisation.py
-    ├── club_loader.py
-    ├── race_processor.py
-    ├── individual_scoring.py
-    ├── team_scoring.py
-    ├── season_aggregation.py
-    ├── output_writer.py
-    └── scorer.py
+# Note: PDF export via docx2pdf requires Microsoft Word on Windows.

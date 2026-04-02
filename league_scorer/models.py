@@ -32,6 +32,12 @@ class RaceIssue:
     kind: str                        # 'warning' or 'other'
     message: str
     source_row: Optional[int] = None
+    code: str = ""
+    runner_name: str = ""
+    raw_club: str = ""
+    gender: str = ""
+    raw_category: str = ""
+    time_str: str = ""
 
 
 @dataclass
