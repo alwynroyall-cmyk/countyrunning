@@ -34,10 +34,11 @@ SETTING_METADATA = {
 
 
 class SettingsPanel(tk.Frame):
-    def __init__(self, parent, on_close=None):
+    def __init__(self, parent, on_close=None, on_open_logs=None):
         super().__init__(parent, bg=WRRL_LIGHT)
         self._vars = {}
         self._on_close = on_close
+        self._on_open_logs = on_open_logs
         self._project_root = Path(__file__).resolve().parents[2]
         self._build_ui()
 
@@ -103,7 +104,22 @@ class SettingsPanel(tk.Frame):
         btn_frame.grid_columnconfigure(1, weight=1)
         save_btn = ttk.Button(btn_frame, text="Save", command=self._on_save)
         save_btn.grid(row=0, column=0, sticky="w", padx=(0, 10))
-        close_btn = ttk.Button(btn_frame, text="\u25c4 Dashboard", command=self._on_close_clicked)
+        logs_btn = ttk.Button(btn_frame, text="View Logs", command=self._on_open_logs_clicked)
+        logs_btn.grid(row=0, column=1, sticky="w")
+        close_btn = tk.Button(
+            btn_frame,
+            text="\u25c4 Dashboard",
+            command=self._on_close_clicked,
+            font=("Segoe UI", 10, "bold"),
+            bg="#2d7a4a",
+            fg="#ffffff",
+            relief="flat",
+            padx=10,
+            pady=4,
+            cursor="hand2",
+            activebackground="#1f5632",
+            activeforeground="#ffffff",
+        )
         close_btn.grid(row=0, column=2, sticky="e")
 
     def _build_info_panel(self, parent):
@@ -210,3 +226,7 @@ class SettingsPanel(tk.Frame):
     def _on_close_clicked(self):
         if self._on_close:
             self._on_close()
+
+    def _on_open_logs_clicked(self):
+        if self._on_open_logs:
+            self._on_open_logs()

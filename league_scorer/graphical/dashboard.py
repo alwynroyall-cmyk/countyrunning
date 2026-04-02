@@ -19,6 +19,7 @@ from ..raceroster_import import (
     import_raceroster_results,
 )
 from ..session_config import config as session_config
+from ..structured_logging import log_event
 from .import_helpers import (
     RaceImportRequest,
     ask_multiline_page_text,
@@ -509,6 +510,7 @@ class LeagueScorerDashboard(tk.Tk):
         """Show the League Management scorer panel inline within the dashboard."""
         if not self._require_configured("Run League Management"):
             return
+        log_event("dashboard_open_scorer", year=session_config.year)
         session_config.ensure_dirs()
         self._home_frame.pack_forget()
         scorer = LeagueScorerApp(
@@ -636,14 +638,54 @@ class LeagueScorerDashboard(tk.Tk):
             return
         self._home_frame.pack_forget()
         from .settings_dialog import SettingsPanel
+
         def on_close():
             if hasattr(self, "_settings_panel"):
                 self._settings_panel.destroy()
                 del self._settings_panel
             self._home_frame.pack(fill="both", expand=True)
-        panel = SettingsPanel(self._page_container, on_close=on_close)
+
+        panel = SettingsPanel(
+            self._page_container,
+            on_close=on_close,
+            on_open_logs=self._on_open_logs_from_settings,
+        )
         panel.pack(fill="both", expand=True)
         self._settings_panel = panel
+
+    def _on_open_logs_from_settings(self) -> None:
+        if not hasattr(self, "_settings_panel"):
+            return
+        self._settings_panel.pack_forget()
+        try:
+            from .log_viewer import LogViewerPanel
+
+            panel = LogViewerPanel(
+                self._page_container,
+                back_callback=self._on_logs_back_to_settings,
+                dashboard_callback=self._on_logs_back_to_dashboard,
+            )
+            panel.pack(fill="both", expand=True)
+            self._log_viewer_panel = panel
+        except Exception as exc:
+            self._settings_panel.pack(fill="both", expand=True)
+            messagebox.showerror("Log Viewer Error", str(exc), parent=self)
+
+    def _on_logs_back_to_settings(self) -> None:
+        if hasattr(self, "_log_viewer_panel"):
+            self._log_viewer_panel.destroy()
+            del self._log_viewer_panel
+        if hasattr(self, "_settings_panel"):
+            self._settings_panel.pack(fill="both", expand=True)
+
+    def _on_logs_back_to_dashboard(self) -> None:
+        if hasattr(self, "_log_viewer_panel"):
+            self._log_viewer_panel.destroy()
+            del self._log_viewer_panel
+        if hasattr(self, "_settings_panel"):
+            self._settings_panel.destroy()
+            del self._settings_panel
+        self._home_frame.pack(fill="both", expand=True)
 
     def _on_audit_runners(self) -> None:
         """Show the audit runner panel inline within the dashboard."""
@@ -831,6 +873,14 @@ class LeagueScorerDashboard(tk.Tk):
         if request is None:
             return
 
+        log_event(
+            "dashboard_import_raceroster_requested",
+            year=session_config.year,
+            race_number=request.race_number,
+            race_url=request.race_url,
+            has_sporthive_hint=request.sporthive_race_hint is not None,
+        )
+
         self._run_raceroster_import_async(
             request=request,
             input_dir=input_dir,
@@ -915,6 +965,13 @@ class LeagueScorerDashboard(tk.Tk):
             progress.destroy()
 
             if status == "manual":
+                log_event(
+                    "dashboard_import_raceroster_manual_required",
+                    level="WARNING",
+                    year=session_config.year,
+                    race_number=request.race_number,
+                    race_url=request.race_url,
+                )
                 use_manual = messagebox.askyesno(
                     "Sporthive Manual Import",
                     "This Sporthive race cannot be imported directly via API.\n\n"
@@ -929,10 +986,26 @@ class LeagueScorerDashboard(tk.Tk):
                 return
 
             if status == "error":
+                log_event(
+                    "dashboard_import_raceroster_failed",
+                    level="ERROR",
+                    year=session_config.year,
+                    race_number=request.race_number,
+                    race_url=request.race_url,
+                    error=str(payload),
+                )
                 messagebox.showerror("Race Roster import failed", str(payload), parent=self)
                 return
 
             output_path, count, history_path = payload
+            log_event(
+                "dashboard_import_raceroster_completed",
+                year=session_config.year,
+                race_number=request.race_number,
+                imported_rows=count,
+                output_path=output_path,
+                history_path=history_path,
+            )
             messagebox.showinfo(
                 "Import Complete",
                 f"Imported {count} rows to:\n{output_path}\n\n"
@@ -969,9 +1042,23 @@ class LeagueScorerDashboard(tk.Tk):
             ask_page_text=_ask_page,
         )
         if result is None:
+            log_event(
+                "dashboard_import_sporthive_manual_cancelled",
+                level="WARNING",
+                year=session_config.year,
+                race_number=request.race_number,
+            )
             return
 
         output_path, count, history_path = result
+        log_event(
+            "dashboard_import_sporthive_manual_completed",
+            year=session_config.year,
+            race_number=request.race_number,
+            imported_rows=count,
+            output_path=output_path,
+            history_path=history_path,
+        )
 
         messagebox.showinfo(
             "Import Complete",

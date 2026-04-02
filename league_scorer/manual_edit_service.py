@@ -2,9 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 import openpyxl
+
+from .structured_logging import log_event
+
+log = logging.getLogger(__name__)
 
 
 def apply_club_suggestions(updates_by_file: dict[Path, list[dict]]) -> tuple[int, list[dict], list[str]]:
@@ -15,16 +20,31 @@ def apply_club_suggestions(updates_by_file: dict[Path, list[dict]]) -> tuple[int
     applied = 0
     audit_changes: list[dict] = []
     failed: list[str] = []
+    total_updates = sum(len(items) for items in updates_by_file.values())
+    log_event(
+        "manual_bulk_club_update_started",
+        logger=log,
+        file_count=len(updates_by_file),
+        candidate_updates=total_updates,
+    )
 
     for filepath, updates in updates_by_file.items():
         try:
             wb = openpyxl.load_workbook(filepath)
         except Exception as exc:
             failed.append(f"{filepath.name}: {exc}")
+            log_event(
+                "manual_bulk_club_update_open_failed",
+                level="WARNING",
+                logger=log,
+                file_path=filepath,
+                error=str(exc),
+            )
             continue
 
         try:
             ws = wb.active
+            file_applied = 0
             for update in updates:
                 cell = ws.cell(row=update["row_idx"], column=update["club_col"])
                 old_value = "" if cell.value is None else str(cell.value).strip()
@@ -34,6 +54,7 @@ def apply_club_suggestions(updates_by_file: dict[Path, list[dict]]) -> tuple[int
 
                 cell.value = new_value
                 applied += 1
+                file_applied += 1
                 audit_changes.append(
                     {
                         "runner": update["name"],
@@ -45,11 +66,31 @@ def apply_club_suggestions(updates_by_file: dict[Path, list[dict]]) -> tuple[int
                     }
                 )
             wb.save(filepath)
+            log_event(
+                "manual_bulk_club_update_file_saved",
+                logger=log,
+                file_path=filepath,
+                applied=file_applied,
+            )
         except Exception as exc:
             failed.append(f"{filepath.name}: {exc}")
+            log_event(
+                "manual_bulk_club_update_file_failed",
+                level="ERROR",
+                logger=log,
+                file_path=filepath,
+                error=str(exc),
+            )
         finally:
             wb.close()
 
+    log_event(
+        "manual_bulk_club_update_completed",
+        logger=log,
+        applied=applied,
+        audit_rows=len(audit_changes),
+        failed_files=len(failed),
+    )
     return applied, audit_changes, failed
 
 
@@ -69,12 +110,28 @@ def resolve_runner_field_across_files(
     touched_files = 0
     audit_changes: list[dict] = []
     failed_files: list[str] = []
+    log_event(
+        "manual_runner_field_resolve_started",
+        logger=log,
+        runner=selected_runner,
+        field_type=field_type,
+        target_value=target_value,
+        file_count=len(race_files),
+    )
 
     for _, path in race_files.items():
         try:
             wb = openpyxl.load_workbook(path)
         except Exception as exc:
             failed_files.append(f"{path.name}: {exc}")
+            log_event(
+                "manual_runner_field_resolve_open_failed",
+                level="WARNING",
+                logger=log,
+                runner=selected_runner,
+                file_path=path,
+                error=str(exc),
+            )
             continue
 
         try:
@@ -111,11 +168,36 @@ def resolve_runner_field_across_files(
             if file_changed:
                 wb.save(path)
                 touched_files += 1
+                log_event(
+                    "manual_runner_field_resolve_file_saved",
+                    logger=log,
+                    runner=selected_runner,
+                    field_type=field_type,
+                    file_path=path,
+                )
         except Exception as exc:
             failed_files.append(f"{path.name}: {exc}")
+            log_event(
+                "manual_runner_field_resolve_file_failed",
+                level="ERROR",
+                logger=log,
+                runner=selected_runner,
+                field_type=field_type,
+                file_path=path,
+                error=str(exc),
+            )
         finally:
             wb.close()
 
+    log_event(
+        "manual_runner_field_resolve_completed",
+        logger=log,
+        runner=selected_runner,
+        field_type=field_type,
+        updated_rows=updated_rows,
+        touched_files=touched_files,
+        failed_files=len(failed_files),
+    )
     return updated_rows, touched_files, audit_changes, failed_files
 
 
