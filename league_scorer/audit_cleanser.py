@@ -101,7 +101,7 @@ def _build_output_frames(
     preferred_clubs: list[str],
     name_corrections: Dict[str, str],
     prefer_excel_time_format: bool = False,
-) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     race_rows = []
     club_suggestions: Dict[str, dict] = {}
     name_suggestions: Dict[str, dict] = {}

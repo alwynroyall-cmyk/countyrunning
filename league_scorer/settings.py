@@ -29,8 +29,8 @@ class LeagueSettings:
                 with open(SETTINGS_FILE, "r") as f:
                     data = json.load(f)
                 self._settings.update({k: data[k] for k in DEFAULT_SETTINGS if k in data})
-            except Exception:
-                pass  # Ignore errors, use defaults
+            except Exception as exc:
+                logging.getLogger(__name__).warning("WRRL settings could not be loaded from %s: %s", SETTINGS_FILE, exc)
 
     def save(self):
         try:

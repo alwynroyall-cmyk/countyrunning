@@ -10,6 +10,7 @@ import queue
 import subprocess
 import sys
 import threading
+from collections.abc import Callable
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 from PIL import Image, ImageTk
@@ -52,7 +53,7 @@ WRRL_WHITE = "#ffffff"     # Pure white for text
 class _AutopilotProgressDialog(tk.Toplevel):
     """Modern animated progress dialog: stage timeline + race chip grid."""
 
-    _STAGE_LABELS = ["Audit", "Safe Fixes", "Quality Checks"]
+    _DEFAULT_STAGE_LABELS = ["Audit", "Safe Fixes", "Quality Checks"]
 
     # Node colours
     _C_PEND      = "#d9e2ec"
@@ -71,9 +72,18 @@ class _AutopilotProgressDialog(tk.Toplevel):
     _C_CHIP_DONE    = "#2d7a4a"
     _C_CHIP_DONE_FG = "#ffffff"
 
-    def __init__(self, parent: tk.Tk, year: int) -> None:
+    def __init__(
+        self,
+        parent: tk.Tk,
+        year: int,
+        *,
+        window_title: str = "Autopilot - WRRL League AI",
+        header_text: str = "WRRL League AI Autopilot",
+        stage_labels: list[str] | None = None,
+        initial_status: str = "Initialising autopilot...",
+    ) -> None:
         super().__init__(parent)
-        self.title("Autopilot — WRRL League AI")
+        self.title(window_title)
         self.transient(parent)
         self.grab_set()
         self.resizable(False, False)
@@ -82,12 +92,14 @@ class _AutopilotProgressDialog(tk.Toplevel):
         self.protocol("WM_DELETE_WINDOW", self._on_close_attempt)
 
         self._year = year
+        self._header_text = header_text
+        self._stage_labels = stage_labels or list(self._DEFAULT_STAGE_LABELS)
         self._current_stage = 0
         self._stages_done: set[int] = set()
         self._race_chips: list[tk.Label] = []
         self._pulse_on = True
         self._animating = True
-        self._status_var = tk.StringVar(value="Initialising autopilot…")
+        self._status_var = tk.StringVar(value=initial_status)
         self._substep_var = tk.StringVar(value="")
 
         self._build()
@@ -99,7 +111,7 @@ class _AutopilotProgressDialog(tk.Toplevel):
         header = tk.Frame(self, bg=WRRL_NAVY, padx=16, pady=12)
         header.pack(fill="x")
         tk.Label(
-            header, text="⚡  WRRL League AI Autopilot",
+            header, text=f"⚡  {self._header_text}",
             font=("Segoe UI", 13, "bold"), bg=WRRL_NAVY, fg=WRRL_WHITE,
         ).pack(side="left")
         tk.Label(
@@ -165,7 +177,7 @@ class _AutopilotProgressDialog(tk.Toplevel):
                 width=3, capstyle="round",
             )
 
-        for i, label in enumerate(self._STAGE_LABELS):
+        for i, label in enumerate(self._stage_labels):
             sn, x = i + 1, cx[i]
             if sn in self._stages_done:
                 fill, txt, txt_c, lbl_c = self._C_DONE_NODE, "✓", "white", self._C_DONE_NODE
@@ -467,17 +479,24 @@ class LeagueScorerDashboard(tk.Tk):
         view_lbl.grid(row=0, column=1, sticky="w", padx=10, pady=(0, 2))
 
         buttons = [
-            ("📅 Load Events", "Load season events spreadsheet", self._on_load_events, 1, 0, "secondary"),
-            ("📋 View Events", "Browse loaded events schedule", self._on_view_events, 1, 1, "secondary"),
+            ("📋 View Events", "Browse loaded events schedule", self._on_view_events, 1, 0, "secondary"),
 
             ("Run Autopilot", "Run audit, safe auto-fixes, and staged checks", self._on_run_autopilot, 2, 0, "primary"),
-            ("📝 View Autopilot Report", "Open latest autopilot summary report", self._on_view_autopilot_report, 2, 1, "secondary"),
+            ("Publish Results", "Publish final results from audited files (includes PDF packs)", self._on_publish_results, 2, 1, "primary"),
 
-            ("▶ Run Classic Scorer", "Run the classic scoring pipeline manually", self._on_run_scorer, 3, 0, "secondary"),
-            ("📊 View Results", "Open generated standings and reports", self._on_view_results, 3, 1, "secondary"),
+            ("Publish Provisional Results", "Skip audit and publish current results immediately", self._on_run_provisional_fast_track, 3, 0, "secondary"),
+            ("✏️ Manual Corrections", "Review club and name matching suggestions", self._on_review_manual_corrections, 3, 1, "secondary"),
 
-            ("⚙️ Settings", "League scoring and report options", self._on_settings, 4, 1, "secondary"),
-            ("⬇ Fetch Race Results", "Download results from Race Roster into this season", self._on_import_raceroster, 4, 0, "primary"),
+            ("📊 View Results", "Open generated standings and reports", self._on_view_results, 4, 1, "secondary"),
+            ("🔎 Runner/Club Enquiry", "Search published results by runner or club", self._on_view_runner_history, 4, 0, "secondary"),
+
+            ("📝 View Autopilot Report", "Open latest autopilot summary report", self._on_view_autopilot_report, 5, 1, "secondary"),
+            ("▶ Run Classic Scorer", "Run the classic scoring pipeline manually", self._on_run_scorer, 5, 0, "secondary"),
+
+            ("Compare Raw vs Archive", "Inspect line-by-line changes against the raw-data archive", self._on_compare_raw_archive, 6, 1, "secondary"),
+            ("⬇ Fetch Race Results", "Download results from Race Roster into this season", self._on_import_raceroster, 6, 0, "primary"),
+
+            ("⚙️ Settings", "League scoring and report options", self._on_settings, 7, 1, "secondary"),
         ]
 
         for text, subtitle, cmd, row, col, tone in buttons:
@@ -759,29 +778,173 @@ class LeagueScorerDashboard(tk.Tk):
         if session_config.output_dir:
             sort_existing_output_files(session_config.output_dir)
 
-        result_queue: queue.Queue = queue.Queue()
+        output_paths = ensure_output_subdirs(session_config.output_dir)
         dlg = _AutopilotProgressDialog(self, year=session_config.year)
 
+        def _show_result(code: int, stdout_text: str, stderr_text: str) -> None:
+            if dlg.winfo_exists():
+                dlg.grab_release()
+                dlg.destroy()
+            report_path = self._resolve_autopilot_report_path()
+            staged_report_path = self._resolve_staged_checks_report_path()
+            review_path = None
+            if report_path is not None and report_path.exists():
+                review_path = report_path
+            elif staged_report_path is not None and staged_report_path.exists():
+                review_path = staged_report_path
+            self._show_autopilot_result_dialog(success=(code == 0), review_path=review_path)
+
+        self._run_workflow(
+            script_name="run_full_autopilot.py",
+            dlg=dlg,
+            extra_cmd_args=[
+                "--mode", "apply-safe-fixes",
+                "--staged-report-dir", str(output_paths.quality_staged_checks_dir),
+                "--data-quality-output-dir", str(output_paths.quality_data_dir),
+            ],
+            error_title="Autopilot Failed",
+            show_result_fn=_show_result,
+            handle_substep=True,
+            finish_delay_ms=1400,
+        )
+
+    def _on_run_provisional_fast_track(self) -> None:
+        """Publish provisional results without the full audit and staged checks."""
+        if not self._require_configured("Publish Provisional Results"):
+            return
+        if session_config.data_root is None:
+            messagebox.showerror("Data Root Missing", "Set Data Root before publishing provisional results.", parent=self)
+            return
+        if not messagebox.askyesno(
+            "Publish Provisional Results",
+            "This fast track skips audit review and quality checks.\n\nUse it only when you want a provisional publish from the current raw data. Continue?",
+            parent=self,
+        ):
+            return
+
+        session_config.ensure_dirs()
+        if session_config.output_dir:
+            sort_existing_output_files(session_config.output_dir)
+
+        dlg = _AutopilotProgressDialog(
+            self,
+            year=session_config.year,
+            window_title="Provisional Fast Track",
+            header_text="WRRL Provisional Fast Track",
+            stage_labels=["Refresh Audited", "Publish Results", "Write Summary"],
+            initial_status="Initialising provisional publish...",
+        )
+
+        def _show_result(code: int, stdout_text: str, stderr_text: str) -> None:
+            if dlg.winfo_exists():
+                dlg.grab_release()
+                dlg.destroy()
+            review_path = self._resolve_provisional_fast_track_report_path()
+            self._show_workflow_result_dialog(
+                title="Provisional Results Complete",
+                success=(code == 0),
+                review_path=review_path if review_path is not None and review_path.exists() else None,
+                success_headline="Provisional publish complete",
+                failure_headline="Provisional publish stopped",
+                success_body="The current raw data has been turned into published provisional results.\nReview the summary if you want the details.",
+                failure_body="The provisional fast track did not finish cleanly.\nReview the summary for the failure details before retrying.",
+                review_button_text="Review Summary",
+            )
+
+        self._run_workflow(
+            script_name="run_provisional_fast_track.py",
+            dlg=dlg,
+            extra_cmd_args=[],
+            error_title="Provisional Fast Track Failed",
+            show_result_fn=_show_result,
+        )
+
+    def _on_publish_results(self) -> None:
+        """Publish final results from audited files (PDF generation enabled)."""
+        if not self._require_configured("Publish Results"):
+            return
+        if session_config.data_root is None:
+            messagebox.showerror("Data Root Missing", "Set Data Root before publishing results.", parent=self)
+            return
+        if not messagebox.askyesno(
+            "Publish Results",
+            "Publish final results from audited files now?\n\nThis run writes the full publish pack including PDF outputs.",
+            parent=self,
+        ):
+            return
+
+        session_config.ensure_dirs()
+        if session_config.output_dir:
+            sort_existing_output_files(session_config.output_dir)
+
+        dlg = _AutopilotProgressDialog(
+            self,
+            year=session_config.year,
+            window_title="Publish Results",
+            header_text="WRRL Final Publish",
+            stage_labels=["Load Audited", "Publish Results", "Write Summary"],
+            initial_status="Initialising final publish...",
+        )
+
+        def _show_result(code: int, stdout_text: str, stderr_text: str) -> None:
+            if dlg.winfo_exists():
+                dlg.grab_release()
+                dlg.destroy()
+            review_path = self._resolve_publish_results_report_path()
+            self._show_workflow_result_dialog(
+                title="Publish Results Complete",
+                success=(code == 0),
+                review_path=review_path if review_path is not None and review_path.exists() else None,
+                success_headline="Final publish complete",
+                failure_headline="Final publish stopped",
+                success_body="Published final results from audited files, including PDF outputs.",
+                failure_body="The final publish did not finish cleanly.\nReview the summary for details before retrying.",
+                review_button_text="Review Summary",
+            )
+
+        self._run_workflow(
+            script_name="run_publish_results.py",
+            dlg=dlg,
+            extra_cmd_args=[],
+            error_title="Publish Results Failed",
+            show_result_fn=_show_result,
+        )
+
+    def _run_workflow(
+        self,
+        *,
+        script_name: str,
+        dlg: "_AutopilotProgressDialog",
+        extra_cmd_args: list[str],
+        error_title: str,
+        show_result_fn: Callable[[int, str, str], None],
+        handle_substep: bool = False,
+        finish_delay_ms: int = 1200,
+    ) -> None:
+        """Shared subprocess runner for all three workflow handlers."""
+        result_queue: queue.Queue = queue.Queue()
+
         def _worker() -> None:
-            script_path = str(Path(__file__).resolve().parents[2] / "scripts" / "run_full_autopilot.py")
+            script_path = str(Path(__file__).resolve().parents[2] / "scripts" / script_name)
             output_paths = ensure_output_subdirs(session_config.output_dir)
             report_base = output_paths.autopilot_runs_dir
-            staged_base = output_paths.quality_staged_checks_dir
-            dq_base = output_paths.quality_data_dir
             cmd = [
                 sys.executable, "-u", script_path,
                 "--year", str(session_config.year),
                 "--data-root", str(session_config.data_root),
-                "--mode", "apply-safe-fixes",
                 "--report-dir", str(report_base),
-                "--staged-report-dir", str(staged_base),
-                "--data-quality-output-dir", str(dq_base),
+                *extra_cmd_args,
             ]
+            # Build a clean env snapshot so GUI-specific env mutations don't
+            # bleed into the worker process, and exclude interpreter startup
+            # hooks that are irrelevant in a non-interactive subprocess.
+            _child_env = {k: v for k, v in os.environ.items() if k != "PYTHONSTARTUP"}
             try:
                 proc = subprocess.Popen(
                     cmd,
                     stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                     text=True, encoding="utf-8", errors="replace",
+                    env=_child_env,
                 )
                 stderr_lines: list[str] = []
 
@@ -835,7 +998,7 @@ class LeagueScorerDashboard(tk.Tk):
                     except (ValueError, IndexError):
                         return
                     dlg.stage_done(sn)
-                elif kind == "SUBSTEP":
+                elif handle_substep and kind == "SUBSTEP":
                     try:
                         sn = int(rest[0])
                     except (ValueError, IndexError):
@@ -844,19 +1007,6 @@ class LeagueScorerDashboard(tk.Tk):
                         dlg.set_substep(f"• {rest[1] if len(rest) > 1 else ''}")
             except tk.TclError:
                 return
-
-        def _show_result(code: int, stdout_text: str, stderr_text: str) -> None:
-            if dlg.winfo_exists():
-                dlg.grab_release()
-                dlg.destroy()
-            report_path = self._resolve_autopilot_report_path()
-            staged_report_path = self._resolve_staged_checks_report_path()
-            review_path = None
-            if report_path is not None and report_path.exists():
-                review_path = report_path
-            elif staged_report_path is not None and staged_report_path.exists():
-                review_path = staged_report_path
-            self._show_autopilot_result_dialog(success=(code == 0), review_path=review_path)
 
         def _poll() -> None:
             if not dlg.winfo_exists():
@@ -872,13 +1022,13 @@ class LeagueScorerDashboard(tk.Tk):
                 elif payload[0] == "done":
                     _, code, stdout_text, stderr_text = payload
                     dlg.finish(code == 0)
-                    self.after(1400, lambda c=code, o=stdout_text, e=stderr_text: _show_result(c, o, e))
+                    self.after(finish_delay_ms, lambda c=code, o=stdout_text, e=stderr_text: show_result_fn(c, o, e))
                     return
                 elif payload[0] == "error":
                     if dlg.winfo_exists():
                         dlg.grab_release()
                         dlg.destroy()
-                    messagebox.showerror("Autopilot Failed", payload[1], parent=self)
+                    messagebox.showerror(error_title, payload[1], parent=self)
                     return
                 else:
                     continue
@@ -902,10 +1052,41 @@ class LeagueScorerDashboard(tk.Tk):
             return None
         return build_output_paths(session_config.output_dir).quality_staged_checks_dir / "staged_checks_report.md"
 
-    def _show_autopilot_result_dialog(self, *, success: bool, review_path: Path | None) -> None:
-        """Show a friendly autopilot completion dialog with optional review action."""
+    def _resolve_provisional_fast_track_report_path(self) -> Path | None:
+        if session_config.output_dir is None:
+            return None
+        return (
+            build_output_paths(session_config.output_dir)
+            .autopilot_runs_dir
+            / f"year-{session_config.year}"
+            / "provisional_fast_track.md"
+        )
+
+    def _resolve_publish_results_report_path(self) -> Path | None:
+        if session_config.output_dir is None:
+            return None
+        return (
+            build_output_paths(session_config.output_dir)
+            .autopilot_runs_dir
+            / f"year-{session_config.year}"
+            / "publish_results.md"
+        )
+
+    def _show_workflow_result_dialog(
+        self,
+        *,
+        title: str,
+        success: bool,
+        review_path: Path | None,
+        success_headline: str,
+        failure_headline: str,
+        success_body: str,
+        failure_body: str,
+        review_button_text: str = "Review Messages",
+    ) -> None:
+        """Show a friendly completion dialog with an optional review action."""
         dialog = tk.Toplevel(self)
-        dialog.title("Autopilot Complete")
+        dialog.title(title)
         dialog.transient(self)
         dialog.grab_set()
         dialog.resizable(False, False)
@@ -914,14 +1095,8 @@ class LeagueScorerDashboard(tk.Tk):
         frame = tk.Frame(dialog, bg=WRRL_LIGHT, padx=18, pady=16)
         frame.pack(fill="both", expand=True)
 
-        headline = "All done" if success else "Autopilot finished"
-        body = (
-            "Everything ran successfully.\n"
-            "You can review the messages if you want a summary."
-            if success
-            else "Some items need your attention.\n"
-            "Please review messages for a clear summary of what to do next."
-        )
+        headline = success_headline if success else failure_headline
+        body = success_body if success else failure_body
         if review_path is None:
             body += "\n\nNo message file is available yet."
 
@@ -958,7 +1133,7 @@ class LeagueScorerDashboard(tk.Tk):
 
         review_btn = tk.Button(
             btn_row,
-            text="Review Messages",
+            text=review_button_text,
             command=_on_review_messages,
             font=("Segoe UI", 10, "bold"),
             bg="#2d7a4a",
@@ -976,9 +1151,23 @@ class LeagueScorerDashboard(tk.Tk):
         close_btn = ttk.Button(btn_row, text="Close", command=dialog.destroy)
         close_btn.pack(side="right")
 
+    def _show_autopilot_result_dialog(self, *, success: bool, review_path: Path | None) -> None:
+        """Show a friendly autopilot completion dialog with optional review action."""
+        self._show_workflow_result_dialog(
+            title="Autopilot Complete",
+            success=success,
+            review_path=review_path,
+            success_headline="All done",
+            failure_headline="Autopilot finished",
+            success_body="Everything ran successfully.\nYou can review the messages if you want a summary.",
+            failure_body="Some items need your attention.\nPlease review messages for a clear summary of what to do next.",
+        )
+
     def _open_file_in_system(self, path: Path) -> None:
-        if hasattr(os, "startfile"):
+        if sys.platform == "win32":
             os.startfile(str(path))
+        elif sys.platform == "darwin":
+            subprocess.run(["open", str(path)], check=False)
         else:
             subprocess.run(["xdg-open", str(path)], check=False)
 
@@ -1042,6 +1231,18 @@ class LeagueScorerDashboard(tk.Tk):
     def _restore_events_schedule(self) -> bool:
         """Restore the remembered events file for the active season if possible."""
         events_path = session_config.events_path
+        if (not events_path or not events_path.exists()) and session_config.control_dir is not None:
+            control_dir = session_config.control_dir
+            default_path = control_dir / "wrrl_events.xlsx"
+            if default_path.exists():
+                events_path = default_path
+                session_config.events_path = default_path
+            else:
+                candidates = sorted(control_dir.glob("*event*.xlsx"), key=lambda p: p.name.lower())
+                if candidates:
+                    events_path = candidates[0]
+                    session_config.events_path = events_path
+
         if not events_path or not events_path.exists():
             self._events_schedule = None
             self._refresh_config_panel()
@@ -1062,12 +1263,12 @@ class LeagueScorerDashboard(tk.Tk):
         if not self._require_configured("View Events"):
             return
         if self._events_schedule is None:
-            if messagebox.askyesno(
-                "No Events Loaded",
-                "No events spreadsheet is currently loaded.\nWould you like to load one now?",
-            ):
-                self._on_load_events()
-            if self._events_schedule is None:
+            if not self._restore_events_schedule():
+                messagebox.showwarning(
+                    "Events Not Found",
+                    "No events spreadsheet could be found in inputs/control.\nExpected default: wrrl_events.xlsx",
+                    parent=self,
+                )
                 return
         images_dir = Path(__file__).parent.parent / "images"
         EventsViewerWindow(
@@ -1110,6 +1311,64 @@ class LeagueScorerDashboard(tk.Tk):
             activeforeground=WRRL_WHITE,
         )
         close_btn.place(relx=1.0, x=-12, y=10, anchor="ne")
+
+    def _on_review_manual_corrections(self) -> None:
+        """Open the manual review panel for club and name suggestions."""
+        from ..audit_data_service import find_latest_manual_review_workbook, load_club_review_suggestions, load_name_review_suggestions
+        from .manual_review_panel import ManualReviewPanel
+        from ..session_config import config as session_config
+        from ..input_layout import build_input_paths
+
+        workbook = find_latest_manual_review_workbook()
+        if workbook is None:
+            messagebox.showwarning(
+                "No Audit Workbook",
+                "No audit workbook found. Run the audit first to generate club and name suggestions.",
+                parent=self,
+            )
+            return
+
+        club_df = load_club_review_suggestions(workbook)
+        name_df = load_name_review_suggestions(workbook)
+
+        if club_df.empty and name_df.empty:
+            messagebox.showinfo(
+                "No Suggestions",
+                "No club or name suggestions found in the latest audit workbook.",
+                parent=self,
+            )
+            return
+
+        input_dir = session_config.input_dir
+        if input_dir is None:
+            messagebox.showwarning(
+                "Inputs Not Configured",
+                "Set the active season data root before reviewing manual corrections.",
+                parent=self,
+            )
+            return
+
+        input_paths = build_input_paths(input_dir)
+        clubs_path = input_paths.clubs_path
+        names_path = input_paths.name_corrections_path
+
+        self._home_frame.pack_forget()
+        panel = ManualReviewPanel(
+            self._page_container,
+            club_df=club_df if not club_df.empty else None,
+            clubs_path=clubs_path if clubs_path.exists() else None,
+            name_df=name_df if not name_df.empty else None,
+            names_path=names_path,
+            back_callback=self._on_manual_review_back,
+        )
+        panel.pack(fill="both", expand=True)
+        self._manual_review_panel = panel
+
+    def _on_manual_review_back(self) -> None:
+        if hasattr(self, "_manual_review_panel"):
+            self._manual_review_panel.destroy()
+            del self._manual_review_panel
+        self._home_frame.pack(fill="both", expand=True)
 
     def _on_settings(self) -> None:
         """Show the settings panel inline within the dashboard."""
@@ -1239,6 +1498,38 @@ class LeagueScorerDashboard(tk.Tk):
             del self._runner_history_panel
         self._home_frame.pack(fill="both", expand=True)
 
+    def _on_compare_raw_archive_back(self) -> None:
+        if hasattr(self, "_raw_archive_diff_panel"):
+            self._raw_archive_diff_panel.destroy()
+            del self._raw_archive_diff_panel
+        self._home_frame.pack(fill="both", expand=True)
+
+    def _on_view_runner_history(self) -> None:
+        if not self._require_configured("Runner/Club Enquiry"):
+            return
+        self._home_frame.pack_forget()
+        from .runner_history_viewer import RunnerHistoryPanel
+
+        panel = RunnerHistoryPanel(
+            self._page_container,
+            back_callback=self._on_view_runner_history_back,
+        )
+        panel.pack(fill="both", expand=True)
+        self._runner_history_panel = panel
+
+    def _on_compare_raw_archive(self) -> None:
+        if not self._require_configured("Compare Raw vs Archive"):
+            return
+        self._home_frame.pack_forget()
+        from .raw_archive_diff_viewer import RawArchiveDiffPanel
+
+        panel = RawArchiveDiffPanel(
+            self._page_container,
+            back_callback=self._on_compare_raw_archive_back,
+        )
+        panel.pack(fill="both", expand=True)
+        self._raw_archive_diff_panel = panel
+
     def _on_issue_review(self) -> None:
         """Show the Issue Review panel inline within the dashboard."""
         if not self._require_configured("Review Issues"):
@@ -1288,12 +1579,13 @@ class LeagueScorerDashboard(tk.Tk):
             "  Set your Data Root once; folders are created as: {root}/{year}/inputs and {root}/{year}/outputs\n"
             "  Inputs are structured as: raw_data, series, control, audited, raw_data_archive\n\n"
             "• Season: Select the current league year.\n\n"
-            "• Load Events: Select the events XLSX from inputs/control.\n"
-            "  The filename is remembered and reused for the active season folder on later runs.\n"
+            "• Events are auto-loaded from inputs/control (default filename: wrrl_events.xlsx).\n"
             "• View Events: Browse the loaded events schedule.\n\n"
             "• Import Race Roster: Paste a Race Roster URL and save results directly\n"
             "  into inputs/raw_data.\n\n"
             "• Run Autopilot: Execute audit, safe auto-fixes, and staged checks.\n"
+            "  Autopilot suppresses PDF generation to keep turnaround fast.\n"
+            "• Publish Results: Build final publish outputs from audited files (includes PDFs).\n"
             "• View Autopilot Report: Open the latest automation summary.\n"
             "• Run WRRL League AI: Execute the classic scoring pipeline manually.\n"
             "• View Results: Browse generated results.\n\n"

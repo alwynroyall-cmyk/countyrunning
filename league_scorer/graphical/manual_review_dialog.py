@@ -250,6 +250,22 @@ class ManualReviewDialog(tk.Toplevel):
             )
             return
 
+        if selected_clubs and self._clubs_path is None:
+            messagebox.showerror(
+                "Club Lookup Missing",
+                "clubs.xlsx could not be resolved from the control folder, so club corrections cannot be written yet.",
+                parent=self,
+            )
+            return
+
+        if selected_names and self._names_path is None:
+            messagebox.showerror(
+                "Name Corrections Path Missing",
+                "name_corrections.xlsx could not be resolved from the control folder, so name corrections cannot be written yet.",
+                parent=self,
+            )
+            return
+
         club_summary = None
         if selected_clubs and self._clubs_path is not None:
             club_summary = _summarise_selection(selected_clubs, _read_club_lookup_state(self._clubs_path))

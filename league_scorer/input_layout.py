@@ -29,6 +29,10 @@ class InputPaths:
     def clubs_path(self) -> Path:
         return self.control_dir / "clubs.xlsx"
 
+    @property
+    def name_corrections_path(self) -> Path:
+        return self.control_dir / "name_corrections.xlsx"
+
 
 @dataclass(frozen=True)
 class InputSortResult:

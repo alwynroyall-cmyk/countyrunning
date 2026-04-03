@@ -29,6 +29,20 @@ _HEADER_FONT = Font(color="FFFFFF", bold=True)
 _AGG_FILL    = PatternFill("solid", fgColor="D9E1F2")   # light blue tint for aggregate columns
 _ALT_ROW_FILL = PatternFill("solid", fgColor="EEF3F8")
 
+# Characters that trigger formula execution in spreadsheet clients
+_FORMULA_PREFIXES = frozenset(("=", "+", "-", "@"))
+
+
+def _sanitise_df_for_export(df: pd.DataFrame) -> pd.DataFrame:
+    """Prefix formula-start characters in text cells to prevent spreadsheet injection."""
+    df = df.copy()
+    for col in df.columns:
+        if df[col].dtype == object:
+            df[col] = df[col].map(
+                lambda v: ("'" + v) if isinstance(v, str) and v and v[0] in _FORMULA_PREFIXES else v
+            )
+    return df
+
 
 # ──────────────────────────────────────────────────────────────── helpers ────
 
@@ -40,45 +54,38 @@ def _style_and_width(ws, df: pd.DataFrame, excel_time_columns: tuple[str, ...] =
         cell.fill = _HEADER_FILL
         cell.alignment = Alignment(horizontal="center")
 
-    # Light-shade every Aggregate data column so it stands out at a glance
-    agg_col_indices = [
+    # Build column-index sets once, then traverse data rows in a single pass.
+    agg_col_indices = {
         col_idx
         for col_idx, col_name in enumerate(df.columns, start=1)
         if "Aggregate" in str(col_name)
-    ]
-    for row in ws.iter_rows(min_row=2, max_row=ws.max_row):
-        for cell in row:
-            if cell.column in agg_col_indices:
-                cell.fill = _AGG_FILL
-
-    if ws.title == "Race Summary":
-        for row_idx, row in enumerate(ws.iter_rows(min_row=2, max_row=ws.max_row), start=0):
-            use_alt_fill = row_idx % 2 == 1
-            for cell in row:
-                cell.alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
-                if use_alt_fill:
-                    cell.fill = _ALT_ROW_FILL
-
-    issue_col_indices = [
+    }
+    issue_col_indices = {
         col_idx
         for col_idx, col_name in enumerate(df.columns, start=1)
         if str(col_name) in {"Warnings", "Other Issues"}
-    ]
-    for row in ws.iter_rows(min_row=2, max_row=ws.max_row):
+    }
+    time_col_indices = {
+        col_idx
+        for col_idx, col_name in enumerate(df.columns, start=1)
+        if str(col_name) in set(excel_time_columns)
+    } if excel_time_columns else set()
+    is_race_summary = ws.title == "Race Summary"
+    _wrap = Alignment(horizontal="left", vertical="center", wrap_text=True)
+    for row_idx, row in enumerate(ws.iter_rows(min_row=2, max_row=ws.max_row), start=0):
+        use_alt = is_race_summary and row_idx % 2 == 1
         for cell in row:
-            if cell.column in issue_col_indices:
-                cell.alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
-
-    if excel_time_columns:
-        time_col_indices = {
-            col_idx
-            for col_idx, col_name in enumerate(df.columns, start=1)
-            if str(col_name) in set(excel_time_columns)
-        }
-        for row in ws.iter_rows(min_row=2, max_row=ws.max_row):
-            for cell in row:
-                if cell.column in time_col_indices and isinstance(cell.value, (int, float)):
-                    cell.number_format = "h:mm:ss.0"
+            col = cell.column
+            if col in agg_col_indices:
+                cell.fill = _AGG_FILL
+            if is_race_summary:
+                cell.alignment = _wrap
+                if use_alt:
+                    cell.fill = _ALT_ROW_FILL
+            if col in issue_col_indices:
+                cell.alignment = _wrap
+            if col in time_col_indices and isinstance(cell.value, (int, float)):
+                cell.number_format = "h:mm:ss.0"
 
     # Auto-width
     for col_idx, col_name in enumerate(df.columns, start=1):
@@ -92,6 +99,7 @@ def _style_and_width(ws, df: pd.DataFrame, excel_time_columns: tuple[str, ...] =
 
 def _write_df(df: pd.DataFrame, filepath: Path, sheet_name: str = "Data") -> None:
     try:
+        df = _sanitise_df_for_export(df)
         with pd.ExcelWriter(filepath, engine="openpyxl") as writer:
             df.to_excel(writer, index=False, sheet_name=sheet_name)
             _style_and_width(writer.sheets[sheet_name], df)

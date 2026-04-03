@@ -45,9 +45,9 @@ def log_event(event: str, *, level: str = "INFO", logger: logging.Logger | None 
         path = structured_log_path()
         with path.open("a", encoding="utf-8") as fh:
             fh.write(json.dumps(payload, ensure_ascii=True) + "\n")
-    except Exception:
+    except Exception as exc:
         # Never allow structured logging failures to impact app workflows.
-        pass
+        logging.getLogger(__name__).debug("Structured log write failed: %s", exc)
 
     log_target = logger or logging.getLogger(__name__)
     level_no = getattr(logging, payload["level"], logging.INFO)

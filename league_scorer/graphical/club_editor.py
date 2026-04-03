@@ -14,6 +14,7 @@ import pandas as pd
 
 from ..common_files import race_discovery_exclusions
 from ..manual_data_audit import log_manual_data_changes
+from ..manual_edit_service import _atomic_save
 from ..session_config import config as session_config
 from .dashboard import WRRL_GREEN, WRRL_LIGHT, WRRL_NAVY, WRRL_WHITE
 
@@ -633,7 +634,7 @@ class ClubEditorPanel(tk.Frame):
         for row_idx, new_club in self._pending_changes.items():
             self._ws.cell(row=row_idx, column=excel_col).value = new_club
         try:
-            self._wb.save(self._current_file)
+            _atomic_save(self._wb, self._current_file)
         except Exception as exc:
             messagebox.showerror("Save Error", f"Could not save workbook:\n{exc}", parent=self)
             return

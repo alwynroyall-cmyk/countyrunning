@@ -20,8 +20,11 @@ from __future__ import annotations
 
 import datetime
 import json
+import logging
 from pathlib import Path
 from typing import Optional
+
+log = logging.getLogger(__name__)
 
 from .input_layout import build_input_paths
 from .output_layout import ensure_output_subdirs
@@ -170,8 +173,8 @@ class SessionConfig:
             prefs["events_path"] = str(self._events_path)
         try:
             _PREFS_FILE.write_text(json.dumps(prefs, indent=2), encoding="utf-8")
-        except OSError:
-            pass  # non-fatal; preferences just won't persist
+        except OSError as exc:
+            log.warning("WRRL preferences could not be saved to %s: %s", _PREFS_FILE, exc)
 
     def load(self) -> None:
         """Restore year and data_root from the preferences file (if it exists)."""
@@ -190,8 +193,8 @@ class SessionConfig:
             elif "events_path" in prefs:
                 self._events_filename = Path(prefs["events_path"]).name
             self._sync_events_path()
-        except (OSError, json.JSONDecodeError, ValueError):
-            pass  # corrupt file; start fresh
+        except (OSError, json.JSONDecodeError, ValueError) as exc:
+            log.warning("WRRL preferences could not be loaded from %s: %s", _PREFS_FILE, exc)
 
     # ── available years ───────────────────────────────────────────────────────
 

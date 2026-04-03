@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import logging
+import os
+import tempfile
 from pathlib import Path
 
 import openpyxl
@@ -10,6 +12,25 @@ import openpyxl
 from .structured_logging import log_event
 
 log = logging.getLogger(__name__)
+
+
+def _atomic_save(wb, filepath: Path) -> None:
+    """Save *wb* to a temp file then atomically replace *filepath*.
+
+    A crash mid-write leaves *filepath* intact; only a completed save replaces it.
+    """
+    tmp_fd, tmp_path_str = tempfile.mkstemp(dir=filepath.parent, suffix=".tmp")
+    tmp_path = Path(tmp_path_str)
+    try:
+        os.close(tmp_fd)
+        wb.save(tmp_path)
+        os.replace(tmp_path, filepath)
+    except Exception:
+        try:
+            tmp_path.unlink()
+        except OSError:
+            pass
+        raise
 
 
 def apply_club_suggestions(updates_by_file: dict[Path, list[dict]]) -> tuple[int, list[dict], list[str]]:
@@ -47,9 +68,19 @@ def apply_club_suggestions(updates_by_file: dict[Path, list[dict]]) -> tuple[int
 
         try:
             ws = wb.active
+            # Resolve the club column by header at apply time rather than trusting
+            # the positional index stored when the UI built the update list.
+            _headers = [
+                str(c.value).strip().lower() if c.value is not None else ""
+                for c in next(ws.iter_rows(min_row=1, max_row=1))
+            ]
+            live_club_col = next((i + 1 for i, h in enumerate(_headers) if "club" in h), None)
+            if live_club_col is None:
+                failed.append(f"{filepath.name}: could not locate club column by header name")
+                continue
             file_applied = 0
             for update in updates:
-                cell = ws.cell(row=update["row_idx"], column=update["club_col"])
+                cell = ws.cell(row=update["row_idx"], column=live_club_col)
                 old_value = "" if cell.value is None else str(cell.value).strip()
                 new_value = update["suggested_club"]
                 if old_value == new_value:
@@ -68,7 +99,7 @@ def apply_club_suggestions(updates_by_file: dict[Path, list[dict]]) -> tuple[int
                         "row_idx": update["row_idx"],
                     }
                 )
-            wb.save(filepath)
+            _atomic_save(wb, filepath)
             log_event(
                 "manual_bulk_club_update_file_saved",
                 logger=log,
@@ -172,7 +203,7 @@ def resolve_runner_field_across_files(
                 )
 
             if file_changed:
-                wb.save(path)
+                _atomic_save(wb, path)
                 touched_files += 1
                 log_event(
                     "manual_runner_field_resolve_file_saved",

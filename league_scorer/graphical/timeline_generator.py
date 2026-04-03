@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import calendar
 import datetime
+import os
 import re
 from pathlib import Path
 from typing import Optional
@@ -68,8 +69,32 @@ LEGEND_Y     = 570          # top of legend row
 
 def _fonts() -> dict:
     """Return a dict of ImageFont instances; fall back to default if unavailable."""
-    _bold_paths    = ["C:/Windows/Fonts/segoeuib.ttf",  "C:/Windows/Fonts/arialbd.ttf"]
-    _regular_paths = ["C:/Windows/Fonts/segoeui.ttf",   "C:/Windows/Fonts/arial.ttf"]
+    import sys
+    if sys.platform == "win32":
+        _fonts_dir = Path(os.environ.get("SystemRoot", r"C:\Windows")) / "Fonts"
+        _bold_paths    = [str(_fonts_dir / "segoeuib.ttf"),  str(_fonts_dir / "arialbd.ttf")]
+        _regular_paths = [str(_fonts_dir / "segoeui.ttf"),   str(_fonts_dir / "arial.ttf")]
+    elif sys.platform == "darwin":
+        _bold_paths    = [
+            "/Library/Fonts/Arial Bold.ttf",
+            "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
+        ]
+        _regular_paths = [
+            "/Library/Fonts/Arial.ttf",
+            "/System/Library/Fonts/Supplemental/Arial.ttf",
+            "/System/Library/Fonts/Helvetica.ttc",
+        ]
+    else:
+        _bold_paths    = [
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+            "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+            "/usr/share/fonts/dejavu/DejaVuSans-Bold.ttf",
+        ]
+        _regular_paths = [
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+            "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+            "/usr/share/fonts/dejavu/DejaVuSans.ttf",
+        ]
 
     def _f(paths, size):
         for p in paths:

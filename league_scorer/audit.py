@@ -405,8 +405,55 @@ class LeagueAuditor:
         return pd.DataFrame(rows, columns=_RUNNER_AUDIT_COLUMNS)
 
     def _build_club_audit_dfs(self) -> Tuple[pd.DataFrame, pd.DataFrame]:
-        club_df = pd.DataFrame(columns=_CLUB_AUDIT_COLUMNS)
-        summary_df = pd.DataFrame(columns=_UNREC_COLUMNS)
+        # Structural issues in clubs.xlsx (duplicate aliases, inconsistent divisions)
+        clubs_xlsx = self.input_paths.control_dir / "clubs.xlsx"
+        club_rows = _inspect_club_lookup_file(clubs_xlsx)
+        club_df = (
+            pd.DataFrame(club_rows, columns=_CLUB_AUDIT_COLUMNS)
+            if club_rows
+            else pd.DataFrame(columns=_CLUB_AUDIT_COLUMNS)
+        )
+
+        # Aggregate unrecognised raw club names seen across all processed races
+        aggregated: Dict[str, Dict] = {}
+        for race_num, unrec_list in self.all_unrec_clubs.items():
+            for unrec in unrec_list:
+                key = unrec.raw_club_name.strip()
+                if not key:
+                    continue
+                if key not in aggregated:
+                    aggregated[key] = {"occurrences": 0, "races": set()}
+                aggregated[key]["occurrences"] += unrec.occurrences
+                aggregated[key]["races"].add(race_num)
+
+        unrec_rows: List[dict] = []
+        for raw_club, stats in sorted(aggregated.items(), key=lambda item: item[0].lower()):
+            best_match, confidence = _best_club_match(raw_club, self.preferred_clubs)
+            races_seen = ", ".join(str(r) for r in sorted(stats["races"]))
+            if best_match:
+                message = (
+                    f"Raw club '{raw_club}' is not in clubs.xlsx. "
+                    f"Best match: '{best_match}' ({confidence}%)."
+                )
+            else:
+                message = f"Raw club '{raw_club}' is not in clubs.xlsx and has no close match."
+            unrec_rows.append(
+                {
+                    "Raw Club": raw_club,
+                    "Best Match": best_match,
+                    "Confidence": confidence if best_match else "",
+                    "Occurrences": stats["occurrences"],
+                    "Races Seen": races_seen,
+                    "Status": "Manual Review",
+                    "Message": message,
+                }
+            )
+
+        summary_df = (
+            pd.DataFrame(unrec_rows, columns=_UNREC_COLUMNS)
+            if unrec_rows
+            else pd.DataFrame(columns=_UNREC_COLUMNS)
+        )
         return club_df, summary_df
 
     def _build_ea_review_dfs(self, race_meta: Dict[int, dict]) -> Tuple[pd.DataFrame, pd.DataFrame]:

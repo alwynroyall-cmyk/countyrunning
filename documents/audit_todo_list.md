@@ -22,8 +22,11 @@ Design decisions:
 
 ### Remaining TODO items
 
-- **raw_data_diff**: comparison routine to detect post-archive modifications to raw_data files (raw vs archive mtime/hash)
 - **reconcile_archive routine**: manual utility to allow deliberate overwrite of an archived file when the raw_data source has been intentionally corrected; requires explicit confirmation
+
+### Completed items
+
+- **raw_data_diff**: comparison routine to detect post-archive modifications to raw_data files (raw vs archive mtime/hash)
 
 ## Deferred Workflow Items
 
@@ -32,3 +35,8 @@ Design decisions:
 - Keep all selections manual and approval-based.
 - Do not allow automatic merge or automatic source-data correction.
 - Decide whether approved name-variant resolutions should write to a maintained alias/identity lookup in a future release.
+
+## GUI Workflow Follow-Up Placeholder
+
+- Review manual name-correction behaviour against live season data before broadening automation.
+- Keep a short placeholder here for any dashboard/view-results follow-up items discovered during operator testing.

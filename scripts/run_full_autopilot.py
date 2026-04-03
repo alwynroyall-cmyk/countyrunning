@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
@@ -351,8 +352,6 @@ def _to_markdown(payload: dict[str, Any]) -> str:
         f"- Skipped (requires input): {fixes['skipped_requires_input']}",
         f"- Failed: {fixes['failed']}",
         "",
-        "## Staged Checks",
-        "",
     ]
 
     error = payload.get("error")
@@ -364,6 +363,11 @@ def _to_markdown(payload: dict[str, Any]) -> str:
             f"- Message: {error.get('message', '')}",
             "",
         ])
+
+    lines.extend([
+        "## Staged Checks",
+        "",
+    ])
 
     for stage in payload["staged_checks"]["results"]:
         lines.append(f"- Stage {stage['stage']} {stage['name']}: {stage['status']} - {stage['message']}")
@@ -558,10 +562,18 @@ def main() -> int:
 
     print("PROGRESS:STAGE:3:Running quality checks and scoring regression", flush=True)
     stage_args = _build_stage_args(args, data_root)
-    staged_success, staged_results = staged_checks.run_checks(
-        stage_args,
-        progress_cb=lambda msg: print(f"PROGRESS:SUBSTEP:3:{msg}", flush=True),
-    )
+    previous_disable_pdf = os.environ.get("WRRL_DISABLE_PDF")
+    os.environ["WRRL_DISABLE_PDF"] = "1"
+    try:
+        staged_success, staged_results = staged_checks.run_checks(
+            stage_args,
+            progress_cb=lambda msg: print(f"PROGRESS:SUBSTEP:3:{msg}", flush=True),
+        )
+    finally:
+        if previous_disable_pdf is None:
+            os.environ.pop("WRRL_DISABLE_PDF", None)
+        else:
+            os.environ["WRRL_DISABLE_PDF"] = previous_disable_pdf
     staged_checks.write_report(staged_results, args.staged_report_dir, staged_success)
     print("PROGRESS:STAGE_DONE:3", flush=True)
 

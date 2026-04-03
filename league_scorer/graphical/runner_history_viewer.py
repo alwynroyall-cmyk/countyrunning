@@ -1,6 +1,8 @@
 import tkinter as tk
 import tkinter.font as tkfont
-from tkinter import messagebox, ttk
+from tkinter import filedialog, messagebox, ttk
+
+from pathlib import Path
 
 import openpyxl
 import pandas as pd
@@ -15,6 +17,19 @@ from ..source_loader import discover_race_files
 from .dashboard import WRRL_GREEN, WRRL_LIGHT, WRRL_NAVY, WRRL_WHITE
 from .results_workbook import find_latest_results_workbook, sorted_race_sheet_names
 
+_FORMULA_PREFIXES = frozenset(("=", "+", "-", "@"))
+
+
+def _sanitise_df_for_export(df: pd.DataFrame) -> pd.DataFrame:
+    """Prefix formula-start characters in text cells to prevent spreadsheet injection."""
+    df = df.copy()
+    for col in df.columns:
+        if df[col].dtype == object:
+            df[col] = df[col].map(
+                lambda v: ("'" + v) if isinstance(v, str) and v and v[0] in _FORMULA_PREFIXES else v
+            )
+    return df
+
 
 class RunnerHistoryPanel(tk.Frame):
     """View one runner's results across all race sheets in the latest results workbook."""
@@ -26,7 +41,11 @@ class RunnerHistoryPanel(tk.Frame):
         self._style = ttk.Style(self)
         self._runner_name_map = {}
         self._all_runner_names: list[str] = []
+        self._club_map = {}
+        self._all_clubs: list[str] = []
         self._latest_df: pd.DataFrame | None = None
+        self._lookup_mode = "runner"  # "runner" or "club"
+        self._wb_cache: dict = {}
         self._configure_styles()
         self._build_ui()
         self._load_runner_options()
@@ -85,13 +104,38 @@ class RunnerHistoryPanel(tk.Frame):
         controls = tk.Frame(self, bg=WRRL_LIGHT, padx=14, pady=10)
         controls.pack(fill="x")
 
+        # Mode selector
+        mode_frame = tk.Frame(controls, bg=WRRL_LIGHT)
+        mode_frame.pack(side="left", padx=(0, 16))
+        
         tk.Label(
-            controls,
-            text="Runner:",
+            mode_frame,
+            text="Search by:",
             font=("Segoe UI", 10, "bold"),
             bg=WRRL_LIGHT,
             fg=WRRL_NAVY,
         ).pack(side="left", padx=(0, 8))
+        
+        self._mode_var = tk.StringVar(value="runner")
+        tk.Radiobutton(
+            mode_frame,
+            text="Runner",
+            variable=self._mode_var,
+            value="runner",
+            command=self._on_mode_change,
+            bg=WRRL_LIGHT,
+            fg=WRRL_NAVY,
+        ).pack(side="left", padx=(0, 12))
+        
+        tk.Radiobutton(
+            mode_frame,
+            text="Club",
+            variable=self._mode_var,
+            value="club",
+            command=self._on_mode_change,
+            bg=WRRL_LIGHT,
+            fg=WRRL_NAVY,
+        ).pack(side="left")
 
         self._runner_var = tk.StringVar()
         self._runner_combo = ttk.Combobox(
@@ -104,6 +148,39 @@ class RunnerHistoryPanel(tk.Frame):
         self._runner_combo.bind("<<ComboboxSelected>>", lambda _e: self._load_runner_history())
         self._runner_combo.bind("<KeyRelease>", self._on_runner_typed)
         self._runner_combo.bind("<Return>", self._on_runner_enter)
+        self._runner_combo_label = tk.Label(
+            controls,
+            text="Runner:",
+            font=("Segoe UI", 10, "bold"),
+            bg=WRRL_LIGHT,
+            fg=WRRL_NAVY,
+        )
+        self._runner_combo_label.pack(side="left", padx=(0, 8), before=self._runner_combo)
+
+        # Club combobox (hidden by default)
+        club_frame = tk.Frame(controls, bg=WRRL_LIGHT)
+        self._club_frame = club_frame
+        
+        self._club_label = tk.Label(
+            club_frame,
+            text="Club:",
+            font=("Segoe UI", 10, "bold"),
+            bg=WRRL_LIGHT,
+            fg=WRRL_NAVY,
+        )
+        self._club_label.pack(side="left", padx=(0, 8))
+
+        self._club_var = tk.StringVar()
+        self._club_combo = ttk.Combobox(
+            club_frame,
+            textvariable=self._club_var,
+            state="normal",
+            width=48,
+        )
+        self._club_combo.pack(side="left")
+        self._club_combo.bind("<<ComboboxSelected>>", lambda _e: self._load_club_results())
+        self._club_combo.bind("<KeyRelease>", self._on_club_typed)
+        self._club_combo.bind("<Return>", self._on_club_enter)
 
         tk.Button(
             controls,
@@ -127,6 +204,48 @@ class RunnerHistoryPanel(tk.Frame):
             fg="#666666",
             anchor="w",
         ).pack(fill="x", padx=14, pady=(0, 6))
+
+        export_bar = tk.Frame(self, bg=WRRL_LIGHT, padx=14, pady=0)
+        export_bar.pack(fill="x", padx=0, pady=(0, 8))
+
+        tk.Button(
+            export_bar,
+            text="Copy Results",
+            font=("Segoe UI", 9),
+            bg="#dbe1e8",
+            fg=WRRL_NAVY,
+            relief="flat",
+            padx=10,
+            pady=4,
+            cursor="hand2",
+            command=self._copy_results,
+        ).pack(side="left")
+
+        tk.Button(
+            export_bar,
+            text="Export CSV",
+            font=("Segoe UI", 9),
+            bg="#dbe1e8",
+            fg=WRRL_NAVY,
+            relief="flat",
+            padx=10,
+            pady=4,
+            cursor="hand2",
+            command=self._export_results_csv,
+        ).pack(side="left", padx=(8, 0))
+
+        tk.Button(
+            export_bar,
+            text="Export Excel",
+            font=("Segoe UI", 9),
+            bg="#dbe1e8",
+            fg=WRRL_NAVY,
+            relief="flat",
+            padx=10,
+            pady=4,
+            cursor="hand2",
+            command=self._export_results_excel,
+        ).pack(side="left", padx=(8, 0))
 
         # Resolve controls (shown only when conflicting values exist)
         self._resolve_frame = tk.Frame(self, bg=WRRL_LIGHT, padx=14, pady=6)
@@ -279,45 +398,121 @@ class RunnerHistoryPanel(tk.Frame):
         self._tree.tag_configure("odd", background="#ffffff")
         self._tree.tag_configure("even", background="#eef3f8")
 
+    def select_runner(self, runner_name: str) -> bool:
+        """Select a runner in runner mode and load their history.
+
+        Returns True when the runner was found (exact or prefix match), else False.
+        """
+        target_text = str(runner_name or "").strip()
+        if not target_text:
+            return False
+
+        self._mode_var.set("runner")
+        self._on_mode_change()
+
+        exact = next((n for n in self._all_runner_names if n.lower() == target_text.lower()), None)
+        if exact is None:
+            exact = next((n for n in self._all_runner_names if n.lower().startswith(target_text.lower())), None)
+        if exact is None:
+            return False
+
+        self._runner_var.set(exact)
+        self._load_runner_history()
+        return True
+
     def _find_results_workbook(self):
         return find_latest_results_workbook(session_config.output_dir)
 
-    def _load_runner_options(self):
+    def _ensure_workbook_cache(self, *, force: bool = False) -> bool:
+        """Parse and cache all race sheet DataFrames from the latest results workbook.
+
+        Returns True if data is available, False if no workbook was found.
+        Raises RuntimeError on I/O failure.
+        """
         workbook = self._find_results_workbook()
         if workbook is None:
+            self._wb_cache = {}
+            return False
+        try:
+            mtime = workbook.stat().st_mtime
+        except OSError:
+            self._wb_cache = {}
+            return False
+        if not force and (
+            self._wb_cache.get("path") == workbook
+            and abs(self._wb_cache.get("mtime", -1) - mtime) < 0.01
+        ):
+            return True  # cache is still current
+        try:
+            xl = pd.ExcelFile(workbook)
+            try:
+                race_sheets = sorted_race_sheet_names(xl)
+                sheets: dict[str, pd.DataFrame] = {}
+                name_map: dict[str, str] = {}
+                club_map: dict[str, str] = {}
+                for sheet in race_sheets:
+                    df = xl.parse(sheet)
+                    sheets[sheet] = df
+                    if "Name" in df.columns:
+                        for value in df["Name"].dropna():
+                            name = str(value).strip()
+                            if name:
+                                name_map.setdefault(name.lower(), name)
+                    if "Club" in df.columns:
+                        for value in df["Club"].dropna():
+                            club = str(value).strip()
+                            if club:
+                                club_map.setdefault(club.lower(), club)
+            finally:
+                xl.close()
+        except Exception as exc:
+            self._wb_cache = {}
+            raise RuntimeError(f"Failed reading results workbook: {exc}") from exc
+        self._wb_cache = {
+            "path": workbook,
+            "mtime": mtime,
+            "race_sheets": race_sheets,
+            "sheets": sheets,
+            "name_map": name_map,
+            "club_map": club_map,
+        }
+        return True
+
+    def _load_runner_options(self):
+        # Force-rebuild cache so an explicit Refresh always re-reads the file.
+        self._wb_cache = {}
+        try:
+            available = self._ensure_workbook_cache(force=True)
+        except RuntimeError as exc:
             self._runner_combo["values"] = []
+            self._club_combo["values"] = []
             self._runner_var.set("")
+            self._club_var.set("")
+            self._show_message(str(exc))
+            self._summary_var.set("")
+            self._refresh_resolve_controls(None)
+            return
+
+        if not available:
+            self._runner_combo["values"] = []
+            self._club_combo["values"] = []
+            self._runner_var.set("")
+            self._club_var.set("")
             self._show_message("No results workbook found in the active output folder.")
             self._summary_var.set("")
             self._refresh_resolve_controls(None)
             return
 
-        try:
-            xl = pd.ExcelFile(workbook)
-            race_sheets = sorted_race_sheet_names(xl)
-            names = {}
-            for sheet in race_sheets:
-                df = xl.parse(sheet)
-                if "Name" not in df.columns:
-                    continue
-                for value in df["Name"].dropna().tolist():
-                    name = str(value).strip()
-                    if name:
-                        key = name.lower()
-                        if key not in names:
-                            names[key] = name
-        except Exception as exc:
-            self._runner_combo["values"] = []
-            self._runner_var.set("")
-            self._show_message(f"Failed reading results workbook: {exc}")
-            self._summary_var.set("")
-            self._refresh_resolve_controls(None)
-            return
-
+        names = self._wb_cache["name_map"]
+        clubs = self._wb_cache["club_map"]
         self._runner_name_map = names
+        self._club_map = clubs
         sorted_names = sorted(names.values(), key=lambda n: n.lower())
+        sorted_clubs = sorted(clubs.values(), key=lambda c: c.lower())
         self._all_runner_names = sorted_names
+        self._all_clubs = sorted_clubs
         self._runner_combo["values"] = sorted_names
+        self._club_combo["values"] = sorted_clubs
 
         if sorted_names:
             current = self._runner_var.get()
@@ -336,12 +531,98 @@ class RunnerHistoryPanel(tk.Frame):
                         self._runner_var.set(sorted_names[0])
             elif current not in sorted_names:
                 self._runner_var.set(sorted_names[0])
-            self._load_runner_history()
+            if self._lookup_mode == "runner":
+                self._load_runner_history()
         else:
             self._runner_var.set("")
             self._show_message("No runner names found in race sheets.")
             self._summary_var.set("")
             self._refresh_resolve_controls(None)
+
+        if sorted_clubs and not self._club_var.get():
+            self._club_var.set(sorted_clubs[0])
+
+    def _on_mode_change(self):
+        self._lookup_mode = self._mode_var.get()
+        is_runner = self._lookup_mode == "runner"
+
+        if is_runner:
+            self._club_frame.pack_forget()
+            self._runner_combo_label.pack(side="left", padx=(0, 8), before=self._runner_combo)
+            self._runner_combo.pack(side="left")
+            self._load_runner_history()
+        else:
+            self._runner_combo.pack_forget()
+            self._runner_combo_label.pack_forget()
+            self._club_frame.pack(side="left")
+            self._load_club_results()
+
+    def _load_club_results(self):
+        selected = self._club_var.get().strip()
+        if not selected:
+            self._show_message("No club selected.")
+            self._summary_var.set("")
+            self._refresh_resolve_controls(None)
+            return
+
+        try:
+            available = self._ensure_workbook_cache()
+        except RuntimeError as exc:
+            self._show_message(str(exc))
+            self._summary_var.set("")
+            self._refresh_resolve_controls(None)
+            return
+
+        if not available:
+            self._show_message("No results workbook found.")
+            self._summary_var.set("")
+            self._refresh_resolve_controls(None)
+            return
+
+        club_key = selected.lower()
+        rows = []
+
+        try:
+            for sheet in self._wb_cache["race_sheets"]:
+                race_num = extract_race_number(sheet) or ""
+                df = self._wb_cache["sheets"][sheet].fillna("")
+                if "Club" not in df.columns:
+                    continue
+                for _, row in df.iterrows():
+                    club = str(row.get("Club", "")).strip()
+                    if not club or club.lower() != club_key:
+                        continue
+                    rows.append(
+                        {
+                            "Race": race_num,
+                            "Name": str(row.get("Name", "")).strip(),
+                            "Gender": str(row.get("Gender", "")).strip(),
+                            "Category": str(row.get("Category", "")).strip(),
+                            "Time": str(row.get("Time", "")).strip(),
+                            "Points": str(row.get("Points", "")).strip(),
+                            "Team": str(row.get("Team", "")).strip(),
+                        }
+                    )
+        except Exception as exc:
+            self._show_message(f"Failed loading club results: {exc}")
+            self._summary_var.set("")
+            self._refresh_resolve_controls(None)
+            return
+
+        if not rows:
+            self._show_message("Club not found in race sheets.")
+            self._summary_var.set("No race rows for selected club.")
+            self._refresh_resolve_controls(None)
+            return
+
+        df = pd.DataFrame(rows)
+        self._latest_df = df.copy()
+        runner_count = df["Name"].nunique() if "Name" in df.columns else 0
+        self._summary_var.set(
+            f"{selected}: {len(df)} race row(s), {runner_count} runner(s)."
+        )
+        self._populate_table(df)
+        self._refresh_resolve_controls(None)
 
     def _load_runner_history(self):
         selected = self._runner_var.get().strip()
@@ -351,8 +632,15 @@ class RunnerHistoryPanel(tk.Frame):
             self._refresh_resolve_controls(None)
             return
 
-        workbook = self._find_results_workbook()
-        if workbook is None:
+        try:
+            available = self._ensure_workbook_cache()
+        except RuntimeError as exc:
+            self._show_message(str(exc))
+            self._summary_var.set("")
+            self._refresh_resolve_controls(None)
+            return
+
+        if not available:
             self._show_message("No results workbook found.")
             self._summary_var.set("")
             self._refresh_resolve_controls(None)
@@ -362,14 +650,11 @@ class RunnerHistoryPanel(tk.Frame):
         rows = []
 
         try:
-            xl = pd.ExcelFile(workbook)
-            race_sheets = sorted_race_sheet_names(xl)
-            for sheet in race_sheets:
+            for sheet in self._wb_cache["race_sheets"]:
                 race_num = extract_race_number(sheet) or ""
-                df = xl.parse(sheet)
+                df = self._wb_cache["sheets"][sheet].fillna("")
                 if "Name" not in df.columns:
                     continue
-                df = df.fillna("")
                 for _, row in df.iterrows():
                     name = str(row.get("Name", "")).strip()
                     if not name or name.lower() != runner_key:
@@ -420,7 +705,8 @@ class RunnerHistoryPanel(tk.Frame):
         else:
             needle = typed.lower()
             starts = [n for n in self._all_runner_names if n.lower().startswith(needle)]
-            contains = [n for n in self._all_runner_names if needle in n.lower() and n.lower() not in {s.lower() for s in starts}]
+            starts_lower = {s.lower() for s in starts}
+            contains = [n for n in self._all_runner_names if needle in n.lower() and n.lower() not in starts_lower]
             filtered = starts + contains
 
         self._runner_combo["values"] = filtered[:300]
@@ -441,6 +727,38 @@ class RunnerHistoryPanel(tk.Frame):
         if prefix:
             self._runner_var.set(prefix)
             self._load_runner_history()
+
+    def _on_club_typed(self, _event=None):
+        typed = self._club_var.get().strip()
+        if not self._all_clubs:
+            return
+
+        if not typed:
+            filtered = self._all_clubs
+        else:
+            needle = typed.lower()
+            starts = [c for c in self._all_clubs if c.lower().startswith(needle)]
+            starts_lower = {s.lower() for s in starts}
+            contains = [c for c in self._all_clubs if needle in c.lower() and c.lower() not in starts_lower]
+            filtered = starts + contains
+
+        self._club_combo["values"] = filtered[:300]
+
+    def _on_club_enter(self, _event=None):
+        typed = self._club_var.get().strip()
+        if not typed:
+            return
+
+        exact = next((c for c in self._all_clubs if c.lower() == typed.lower()), None)
+        if exact:
+            self._club_var.set(exact)
+            self._load_club_results()
+            return
+
+        prefix = next((c for c in self._all_clubs if c.lower().startswith(typed.lower())), None)
+        if prefix:
+            self._club_var.set(prefix)
+            self._load_club_results()
 
     def _refresh_resolve_controls(self, df: pd.DataFrame | None) -> None:
         """Show/hide club/category resolve controls based on conflicting values."""
@@ -529,6 +847,56 @@ class RunnerHistoryPanel(tk.Frame):
         normalised = f"{hours:02d}:{minutes:02d}:{secs:02d}"
         self._resolve_field_across_inputs(field_type="time", target_value=normalised)
 
+    def _copy_results(self) -> None:
+        if self._latest_df is None or self._latest_df.empty:
+            messagebox.showwarning("No Data", "No enquiry results to copy.", parent=self)
+            return
+
+        try:
+            payload = self._latest_df.to_csv(sep="\t", index=False)
+            self.clipboard_clear()
+            self.clipboard_append(payload)
+            self.update()
+            messagebox.showinfo("Copied", f"Copied {len(self._latest_df)} row(s) to the clipboard.", parent=self)
+        except Exception as exc:
+            messagebox.showerror("Copy Failed", f"Could not copy results: {exc}", parent=self)
+
+    def _export_results_csv(self) -> None:
+        self._export_results_file("csv")
+
+    def _export_results_excel(self) -> None:
+        self._export_results_file("xlsx")
+
+    def _export_results_file(self, file_type: str) -> None:
+        if self._latest_df is None or self._latest_df.empty:
+            messagebox.showwarning("No Data", "No enquiry results to export.", parent=self)
+            return
+
+        mode = self._lookup_mode
+        selected = self._runner_var.get().strip() if mode == "runner" else self._club_var.get().strip()
+        slug = "_".join(part for part in selected.replace("/", " ").split() if part) or mode
+        default_name = f"{mode}_enquiry_{slug}.{file_type}"
+        filetypes = [("CSV files", "*.csv")] if file_type == "csv" else [("Excel files", "*.xlsx")]
+
+        filename = filedialog.asksaveasfilename(
+            parent=self,
+            defaultextension=f".{file_type}",
+            filetypes=filetypes + [("All files", "*.*")],
+            initialfile=default_name,
+        )
+        if not filename:
+            return
+
+        try:
+            safe_df = _sanitise_df_for_export(self._latest_df)
+            if file_type == "csv":
+                safe_df.to_csv(filename, index=False)
+            else:
+                safe_df.to_excel(filename, sheet_name="Enquiry", index=False)
+            messagebox.showinfo("Exported", f"Saved {len(self._latest_df)} row(s) to {Path(filename).name}.", parent=self)
+        except Exception as exc:
+            messagebox.showerror("Export Failed", f"Could not export results: {exc}", parent=self)
+
     def _resolve_field_across_inputs(self, field_type: str, target_value: str) -> None:
         selected_runner = self._runner_var.get().strip()
         if not selected_runner:
@@ -609,6 +977,7 @@ class RunnerHistoryPanel(tk.Frame):
             self._tree.insert("", "end", values=list(row), tags=(tag,))
 
     def _show_message(self, msg: str):
+        self._latest_df = None
         self._tree.delete(*self._tree.get_children())
         self._tree["columns"] = ["Message"]
         self._tree.heading("Message", text="Message", anchor="w")

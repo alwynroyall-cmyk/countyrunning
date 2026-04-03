@@ -63,13 +63,48 @@ def find_latest_audit_workbook() -> Path | None:
     return candidates[0]
 
 
+def find_latest_manual_review_workbook() -> Path | None:
+    """Find the newest workbook containing manual review suggestions.
+
+    Prefers workbooks where either Club Review or Name Review has at least one row.
+    Falls back to the first workbook that contains either review sheet.
+    """
+    candidates = list(list_audit_workbooks().values())
+    if not candidates:
+        return None
+
+    fallback_with_sheet: Path | None = None
+    for path in candidates:
+        try:
+            with pd.ExcelFile(path) as xl:
+                has_club = "Club Review" in xl.sheet_names
+                has_name = "Name Review" in xl.sheet_names
+                if not has_club and not has_name:
+                    continue
+
+                if fallback_with_sheet is None:
+                    fallback_with_sheet = path
+
+                if has_club:
+                    club_df = xl.parse("Club Review", dtype=str).fillna("")
+                    if not club_df.empty:
+                        return path
+                if has_name:
+                    name_df = xl.parse("Name Review", dtype=str).fillna("")
+                    if not name_df.empty:
+                        return path
+        except Exception:
+            continue
+
+    return fallback_with_sheet
+
+
 def load_actionable_issues(workbook: Path) -> pd.DataFrame:
     """Load the Actionable Issues sheet as a normalized DataFrame."""
-    xl = pd.ExcelFile(workbook)
-    if ACTIONABLE_SHEET not in xl.sheet_names:
-        return pd.DataFrame(columns=ACTIONABLE_COLUMNS)
-
-    df = xl.parse(ACTIONABLE_SHEET, dtype=str).fillna("")
+    with pd.ExcelFile(workbook) as xl:
+        if ACTIONABLE_SHEET not in xl.sheet_names:
+            return pd.DataFrame(columns=ACTIONABLE_COLUMNS)
+        df = xl.parse(ACTIONABLE_SHEET, dtype=str).fillna("")
     for col in ACTIONABLE_COLUMNS:
         if col not in df.columns:
             df[col] = ""
@@ -82,6 +117,22 @@ def load_actionable_issues(workbook: Path) -> pd.DataFrame:
     return df
 
 
+def load_club_review_suggestions(workbook: Path) -> pd.DataFrame:
+    """Load the Club Review sheet with club matching suggestions."""
+    with pd.ExcelFile(workbook) as xl:
+        if "Club Review" not in xl.sheet_names:
+            return pd.DataFrame()
+        return xl.parse("Club Review", dtype=str).fillna("")
+
+
+def load_name_review_suggestions(workbook: Path) -> pd.DataFrame:
+    """Load the Name Review sheet with name matching suggestions."""
+    with pd.ExcelFile(workbook) as xl:
+        if "Name Review" not in xl.sheet_names:
+            return pd.DataFrame()
+        return xl.parse("Name Review", dtype=str).fillna("")
+
+
 def _load_recently_resolved_issue_keys(workbook: Path) -> set[str]:
     manual_audit_path = workbook.parent.parent / "manual-changes" / "Manual_Data_Audit.xlsx"
     if not manual_audit_path.exists():
@@ -89,9 +140,9 @@ def _load_recently_resolved_issue_keys(workbook: Path) -> set[str]:
 
     workbook_mtime = datetime.fromtimestamp(workbook.stat().st_mtime)
     try:
-        xls = pd.ExcelFile(manual_audit_path)
-        sheet_name = "Manual Changes" if "Manual Changes" in xls.sheet_names else xls.sheet_names[0]
-        df = pd.read_excel(manual_audit_path, sheet_name=sheet_name, dtype=str).fillna("")
+        with pd.ExcelFile(manual_audit_path) as xls:
+            sheet_name = "Manual Changes" if "Manual Changes" in xls.sheet_names else xls.sheet_names[0]
+            df = xls.parse(sheet_name, dtype=str).fillna("")
     except Exception:
         return set()
 

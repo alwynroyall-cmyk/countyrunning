@@ -1,7 +1,10 @@
+import subprocess
+import sys
 import tkinter as tk
 import tkinter.font as tkfont
-from tkinter import ttk
+from tkinter import ttk, messagebox, filedialog
 import pandas as pd
+from pathlib import Path
 from ..session_config import config as session_config
 from .results_workbook import find_latest_results_workbook
 
@@ -10,8 +13,35 @@ class ResultsViewerPanel(tk.Frame):
     def __init__(self, parent):
         super().__init__(parent, bg="#f5f5f5")
         self._style = ttk.Style(self)
+        self._current_df = None
+        self._current_option = "overall"
+        self._current_results_path = None
+        self._status_var = tk.StringVar(value="")
+        self._xl_cache: tuple[pd.ExcelFile | None, Path | None, float] = (None, None, 0.0)
         self._configure_styles()
         self._build_ui()
+
+    def _get_xl(self, results_path: Path) -> pd.ExcelFile | None:
+        """Return a cached pd.ExcelFile for *results_path*, re-opening only when the file changes."""
+        cached_xl, cached_path, cached_mtime = self._xl_cache
+        try:
+            mtime = results_path.stat().st_mtime
+        except OSError:
+            return None
+        if cached_xl is not None and cached_path == results_path and cached_mtime == mtime:
+            return cached_xl
+        if cached_xl is not None:
+            try:
+                cached_xl.close()
+            except Exception:
+                pass
+        try:
+            xl = pd.ExcelFile(results_path)
+            self._xl_cache = (xl, results_path, mtime)
+            return xl
+        except Exception:
+            self._xl_cache = (None, None, 0.0)
+            return None
 
     def _configure_styles(self):
         self._style.configure(
@@ -39,6 +69,82 @@ class ResultsViewerPanel(tk.Frame):
     def _build_ui(self):
         title = tk.Label(self, text="View League Results", font=("Segoe UI", 16, "bold"), bg="#f5f5f5", fg="#3a4658")
         title.pack(pady=(10, 8))
+
+        utility_frame = tk.Frame(self, bg="#f5f5f5")
+        utility_frame.pack(fill="x", padx=10, pady=(0, 6))
+
+        tk.Button(
+            utility_frame,
+            text="Refresh Workbook",
+            command=self._refresh_results,
+            font=("Segoe UI", 9),
+            bg="#dbe1e8",
+            fg="#22313f",
+            relief="flat",
+            padx=10,
+            pady=4,
+        ).pack(side="left")
+
+        tk.Button(
+            utility_frame,
+            text="Open Workbook",
+            command=self._open_results_workbook,
+            font=("Segoe UI", 9),
+            bg="#dbe1e8",
+            fg="#22313f",
+            relief="flat",
+            padx=10,
+            pady=4,
+        ).pack(side="left", padx=(8, 0))
+
+        tk.Label(
+            utility_frame,
+            textvariable=self._status_var,
+            font=("Segoe UI", 9),
+            bg="#f5f5f5",
+            fg="#66707c",
+            anchor="e",
+        ).pack(side="right")
+
+        # Export buttons
+        export_frame = tk.Frame(self, bg="#f5f5f5")
+        export_frame.pack(pady=(0, 10))
+        
+        tk.Button(
+            export_frame,
+            text="📋 Copy to Clipboard",
+            command=self._export_to_clipboard,
+            font=("Segoe UI", 9),
+            bg="#e8f0f7",
+            fg="#22313f",
+            relief="flat",
+            padx=10,
+            pady=4,
+        ).pack(side="left", padx=4)
+        
+        tk.Button(
+            export_frame,
+            text="💾 Export CSV",
+            command=self._export_to_csv,
+            font=("Segoe UI", 9),
+            bg="#e8f0f7",
+            fg="#22313f",
+            relief="flat",
+            padx=10,
+            pady=4,
+        ).pack(side="left", padx=4)
+        
+        tk.Button(
+            export_frame,
+            text="📊 Export Excel",
+            command=self._export_to_excel,
+            font=("Segoe UI", 9),
+            bg="#e8f0f7",
+            fg="#22313f",
+            relief="flat",
+            padx=10,
+            pady=4,
+        ).pack(side="left", padx=4)
 
         # Dropdowns for race/overall/individual
         options = [
@@ -98,20 +204,24 @@ class ResultsViewerPanel(tk.Frame):
 
     def _load_race_options(self):
         results_path = self._find_results_workbook()
+        self._current_results_path = results_path
         if results_path is None:
+            self._status_var.set("No standings workbook found")
             self._race_dropdown["values"] = []
             self._race_var.set("")
             return
-        try:
-            xl = pd.ExcelFile(results_path)
-            races = [s for s in xl.sheet_names if s.startswith("Race ")]
-            self._race_dropdown["values"] = races
-            if races and self._race_var.get() not in races:
-                self._race_var.set(races[0])
-            elif not races:
-                self._race_var.set("")
-        except Exception:
+        xl = self._get_xl(results_path)
+        if xl is None:
+            self._status_var.set(f"Failed to read workbook: {results_path.name}")
             self._race_dropdown["values"] = []
+            self._race_var.set("")
+            return
+        self._status_var.set(f"Workbook: {results_path.name}")
+        races = [s for s in xl.sheet_names if s.startswith("Race ")]
+        self._race_dropdown["values"] = races
+        if races and self._race_var.get() not in races:
+            self._race_var.set(races[0])
+        elif not races:
             self._race_var.set("")
 
     def _load_results(self):
@@ -120,12 +230,18 @@ class ResultsViewerPanel(tk.Frame):
             self._show_message("No output directory set.")
             return
         results_path = self._find_results_workbook()
+        self._current_results_path = results_path
         if results_path is None:
             self._show_message("No standings workbook found in outputs/publish/xlsx/standings.")
             return
+        xl = self._get_xl(results_path)
+        if xl is None:
+            self._show_message(f"Failed to open workbook: {results_path.name}")
+            return
         try:
-            xl = pd.ExcelFile(results_path)
+            self._status_var.set(f"Workbook: {results_path.name}")
             opt = self._option_var.get()
+            self._current_option = opt
             if opt == "overall":
                 df = xl.parse("Summary")
             elif opt == "div1":
@@ -146,9 +262,30 @@ class ResultsViewerPanel(tk.Frame):
             else:
                 self._show_message("Unknown results view selected.")
                 return
+            self._current_df = df
             self._populate_table(df)
         except Exception as exc:
             self._show_message(f"Failed to load results: {exc}")
+
+    def _refresh_results(self):
+        self._load_race_options()
+        self._update_race_selector_state()
+        self._load_results()
+
+    def _open_results_workbook(self):
+        if self._current_results_path is None or not self._current_results_path.exists():
+            messagebox.showwarning("Workbook Missing", "No standings workbook is available to open.", parent=self)
+            return
+        try:
+            import os
+            if sys.platform == "win32":
+                os.startfile(str(self._current_results_path))
+            elif sys.platform == "darwin":
+                subprocess.run(["open", str(self._current_results_path)], check=False)
+            else:
+                subprocess.run(["xdg-open", str(self._current_results_path)], check=False)
+        except OSError as exc:
+            messagebox.showerror("Open Failed", f"Could not open workbook: {exc}", parent=self)
 
     def _find_results_workbook(self):
         return find_latest_results_workbook(session_config.output_dir)
@@ -172,6 +309,9 @@ class ResultsViewerPanel(tk.Frame):
             self._tree.insert("", "end", values=list(row), tags=(tag,))
 
     def _show_message(self, msg):
+        self._current_df = None
+        if not self._status_var.get():
+            self._status_var.set("No workbook loaded")
         self._tree.delete(*self._tree.get_children())
         self._tree["columns"] = ["Message"]
         self._tree.heading("Message", text="Message", anchor="w")
@@ -215,3 +355,64 @@ class ResultsViewerPanel(tk.Frame):
         if "race" in column.lower() or "points" in column.lower() or "score" in column.lower() or column.lower() == "position":
             return min(max(max_text_width + 24, 72), 110)
         return min(max(max_text_width + 24, 90), 180)
+
+    def _export_to_clipboard(self):
+        """Copy the current table to clipboard as tab-separated values."""
+        if self._current_df is None or self._current_df.empty:
+            messagebox.showwarning("No Data", "No results to copy.", parent=self)
+            return
+        
+        try:
+            # Convert to tab-separated values
+            tsv_data = self._current_df.to_csv(sep='\t', index=False)
+            # Copy to clipboard
+            self.clipboard_clear()
+            self.clipboard_append(tsv_data)
+            self.update()
+            messagebox.showinfo("Success", f"Copied {len(self._current_df)} rows to clipboard.", parent=self)
+        except Exception as exc:
+            messagebox.showerror("Export Error", f"Failed to copy to clipboard: {exc}", parent=self)
+
+    def _export_to_csv(self):
+        """Export the current table to CSV file."""
+        if self._current_df is None or self._current_df.empty:
+            messagebox.showwarning("No Data", "No results to export.", parent=self)
+            return
+        
+        filename = filedialog.asksaveasfilename(
+            parent=self,
+            defaultextension=".csv",
+            filetypes=[("CSV files", "*.csv"), ("All files", "*.*")],
+            initialfile=f"results_{self._current_option}.csv"
+        )
+        
+        if not filename:
+            return
+        
+        try:
+            self._current_df.to_csv(filename, index=False)
+            messagebox.showinfo("Success", f"Exported {len(self._current_df)} rows to {Path(filename).name}", parent=self)
+        except Exception as exc:
+            messagebox.showerror("Export Error", f"Failed to export CSV: {exc}", parent=self)
+
+    def _export_to_excel(self):
+        """Export the current table to Excel file."""
+        if self._current_df is None or self._current_df.empty:
+            messagebox.showwarning("No Data", "No results to export.", parent=self)
+            return
+        
+        filename = filedialog.asksaveasfilename(
+            parent=self,
+            defaultextension=".xlsx",
+            filetypes=[("Excel files", "*.xlsx"), ("All files", "*.*")],
+            initialfile=f"results_{self._current_option}.xlsx"
+        )
+        
+        if not filename:
+            return
+        
+        try:
+            self._current_df.to_excel(filename, sheet_name="Results", index=False)
+            messagebox.showinfo("Success", f"Exported {len(self._current_df)} rows to {Path(filename).name}", parent=self)
+        except Exception as exc:
+            messagebox.showerror("Export Error", f"Failed to export Excel: {exc}", parent=self)

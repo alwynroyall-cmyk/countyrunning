@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+import sys
 import tkinter as tk
 from pathlib import Path
 from tkinter import messagebox, simpledialog, ttk
@@ -526,9 +527,14 @@ class IssueReviewPanel(tk.Frame):
             messagebox.showerror("File Not Found", f"Source file not found:\n{path}")
             return
         try:
-            os.startfile(str(path))  # Windows
-        except AttributeError:
-            subprocess.run(["open" if os.name == "posix" else "xdg-open", str(path)], check=False)
+            if sys.platform == "win32":
+                os.startfile(str(path))
+            elif sys.platform == "darwin":
+                subprocess.run(["open", str(path)], check=False)
+            else:
+                subprocess.run(["xdg-open", str(path)], check=False)
+        except OSError as exc:
+            messagebox.showerror("Open Failed", f"Could not open file: {exc}", parent=self)
 
     def _go_to_runner_history(self) -> None:
         if not hasattr(self, "_selected_row"):
