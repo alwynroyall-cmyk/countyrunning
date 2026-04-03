@@ -35,7 +35,7 @@ def test_run_checks_baseline_write_and_compare(monkeypatch, tmp_path):
     year_root = data_root / "1999"
     input_dir = year_root / "inputs"
     output_dir = year_root / "outputs"
-    raw_dir = input_dir / "Raw Data"
+    raw_dir = input_dir / "raw_data"
 
     raw_dir.mkdir(parents=True, exist_ok=True)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -46,7 +46,8 @@ def test_run_checks_baseline_write_and_compare(monkeypatch, tmp_path):
     audited_file = input_dir / "Race 1 - audited.xlsx"
     audited_file.write_text("placeholder", encoding="utf-8")
 
-    results_path = output_dir / "Race 8 -- Results.xlsx"
+    results_path = output_dir / "publish" / "xlsx" / "standings" / "Season Standings R08 1999.xlsx"
+    results_path.parent.mkdir(parents=True, exist_ok=True)
     wb = Workbook()
     ws = wb.active
     ws.title = "Race Summary"
@@ -91,7 +92,7 @@ def test_run_checks_baseline_write_and_compare(monkeypatch, tmp_path):
             self.all_race_issues = {1: [RaceIssue("warning", "sample")]} 
 
         def run(self, race_files=None):
-            audit_path = self.output_dir / "audit" / "Season Audit.xlsx"
+            audit_path = self.output_dir / "audit" / "workbooks" / "Season Audit.xlsx"
             audit_path.parent.mkdir(parents=True, exist_ok=True)
             wb = Workbook()
             wb.save(audit_path)
@@ -166,7 +167,7 @@ def test_run_checks_baseline_write_and_compare(monkeypatch, tmp_path):
 def test_run_checks_stage2_quality_gate_blocks(monkeypatch, tmp_path):
     data_root = tmp_path / "data"
     input_dir = data_root / "1999" / "inputs"
-    raw_dir = input_dir / "Raw Data"
+    raw_dir = input_dir / "raw_data"
     raw_dir.mkdir(parents=True, exist_ok=True)
 
     raw_file = raw_dir / "Race 1 - raw.xlsx"

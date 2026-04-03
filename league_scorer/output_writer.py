@@ -1,11 +1,5 @@
 """
-Write all output Excel files.
-
-Cumulative (single workbook per run):
-    Race N -- Results.xlsx   — sheets: Race Summary | Div 1 | Div 2 | Male | Female | Race N
-
-Per race:
-  Race # -- unused clubs.xlsx
+Write output Excel files for publish/review packs.
 """
 
 import logging

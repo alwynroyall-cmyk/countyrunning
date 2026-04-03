@@ -1,11 +1,14 @@
 """
-dashboard.py — Main dashboard for the Wiltshire Road and Running League Management.
+dashboard.py — Main dashboard for WRRL League AI.
 
 Provides a professional console with branded header and execution options.
 """
 
 import tkinter as tk
+import os
 import queue
+import subprocess
+import sys
 import threading
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
@@ -14,11 +17,15 @@ from PIL import Image, ImageTk
 from .gui import LeagueScorerApp
 from .events_viewer import EventsViewerWindow
 from ..events_loader import load_events
+from ..common_files import race_discovery_exclusions
 from ..raceroster_import import (
     SporthiveRaceNotDirectlyImportableError,
     import_raceroster_results,
 )
+from ..input_layout import sort_existing_input_files
+from ..output_layout import build_output_paths, ensure_output_subdirs, sort_existing_output_files
 from ..session_config import config as session_config
+from ..source_loader import discover_race_files
 from ..structured_logging import log_event
 from .import_helpers import (
     RaceImportRequest,
@@ -39,15 +46,254 @@ WRRL_WHITE = "#ffffff"     # Pure white for text
 
 
 # ──────────────────────────────────────────────────────────────────────────────
+# Autopilot progress dialog
+# ──────────────────────────────────────────────────────────────────────────────
+
+class _AutopilotProgressDialog(tk.Toplevel):
+    """Modern animated progress dialog: stage timeline + race chip grid."""
+
+    _STAGE_LABELS = ["Audit", "Safe Fixes", "Quality Checks"]
+
+    # Node colours
+    _C_PEND      = "#d9e2ec"
+    _C_PEND_TXT  = "#8a9aaa"
+    _C_ACTIVE_A  = "#2d7a4a"   # dim pulse
+    _C_ACTIVE_B  = "#4bbf74"   # bright pulse
+    _C_DONE_NODE = "#1aaa60"
+    _C_DONE_LINE = "#1aaa60"
+    _C_LINE_IDLE = "#d0dae6"
+
+    # Race chip colours
+    _C_CHIP_PEND    = "#dce3ea"
+    _C_CHIP_PEND_FG = "#5a6878"
+    _C_CHIP_ACT     = "#4bbf74"
+    _C_CHIP_ACT_FG  = "#ffffff"
+    _C_CHIP_DONE    = "#2d7a4a"
+    _C_CHIP_DONE_FG = "#ffffff"
+
+    def __init__(self, parent: tk.Tk, year: int) -> None:
+        super().__init__(parent)
+        self.title("Autopilot — WRRL League AI")
+        self.transient(parent)
+        self.grab_set()
+        self.resizable(False, False)
+        self.configure(bg=WRRL_LIGHT)
+        self.geometry("600x380")
+        self.protocol("WM_DELETE_WINDOW", self._on_close_attempt)
+
+        self._year = year
+        self._current_stage = 0
+        self._stages_done: set[int] = set()
+        self._race_chips: list[tk.Label] = []
+        self._pulse_on = True
+        self._animating = True
+        self._status_var = tk.StringVar(value="Initialising autopilot…")
+        self._substep_var = tk.StringVar(value="")
+
+        self._build()
+        self._pulse()
+
+    # ── layout ────────────────────────────────────────────────────────────────
+
+    def _build(self) -> None:
+        header = tk.Frame(self, bg=WRRL_NAVY, padx=16, pady=12)
+        header.pack(fill="x")
+        tk.Label(
+            header, text="⚡  WRRL League AI Autopilot",
+            font=("Segoe UI", 13, "bold"), bg=WRRL_NAVY, fg=WRRL_WHITE,
+        ).pack(side="left")
+        tk.Label(
+            header, text=f"Season {self._year}",
+            font=("Segoe UI", 10), bg=WRRL_NAVY, fg="#a0b0c0",
+        ).pack(side="right", padx=(0, 4))
+
+        tk.Frame(self, bg=WRRL_GREEN, height=3).pack(fill="x")
+
+        body = tk.Frame(self, bg=WRRL_LIGHT, padx=24, pady=14)
+        body.pack(fill="both", expand=True)
+
+        tk.Label(
+            body, text="STAGE PROGRESS",
+            font=("Segoe UI", 8, "bold"), bg=WRRL_LIGHT, fg="#8a9aaa",
+        ).pack(anchor="w")
+
+        self._canvas = tk.Canvas(
+            body, width=548, height=86, bg=WRRL_LIGHT, highlightthickness=0,
+        )
+        self._canvas.pack(pady=(4, 14), anchor="w")
+        self._redraw_timeline()
+
+        tk.Label(
+            body, text="RACES",
+            font=("Segoe UI", 8, "bold"), bg=WRRL_LIGHT, fg="#8a9aaa",
+        ).pack(anchor="w")
+
+        self._chips_container = tk.Frame(body, bg=WRRL_LIGHT)
+        self._chips_container.pack(fill="x", pady=(4, 14), anchor="w", ipady=2)
+        tk.Label(
+            self._chips_container, text="Discovering race files…",
+            font=("Segoe UI", 9, "italic"), bg=WRRL_LIGHT, fg="#aaaaaa",
+        ).pack(anchor="w")
+
+        tk.Frame(body, bg="#d0d8e0", height=1).pack(fill="x", pady=(0, 10))
+
+        tk.Label(
+            body, textvariable=self._status_var,
+            font=("Segoe UI", 9), bg=WRRL_LIGHT, fg=WRRL_NAVY,
+            anchor="w", wraplength=548,
+        ).pack(anchor="w")
+
+        tk.Label(
+            body, textvariable=self._substep_var,
+            font=("Segoe UI", 9, "italic"), bg=WRRL_LIGHT, fg="#5d6e82",
+            anchor="w", wraplength=548,
+        ).pack(anchor="w", pady=(4, 0))
+
+    # ── timeline canvas ───────────────────────────────────────────────────────
+
+    def _redraw_timeline(self) -> None:
+        c = self._canvas
+        c.delete("all")
+        cx = [90, 274, 458]
+        cy, r = 36, 20
+
+        for i in range(2):
+            done = (i + 1) in self._stages_done
+            c.create_line(
+                cx[i] + r + 2, cy, cx[i + 1] - r - 2, cy,
+                fill=self._C_DONE_LINE if done else self._C_LINE_IDLE,
+                width=3, capstyle="round",
+            )
+
+        for i, label in enumerate(self._STAGE_LABELS):
+            sn, x = i + 1, cx[i]
+            if sn in self._stages_done:
+                fill, txt, txt_c, lbl_c = self._C_DONE_NODE, "✓", "white", self._C_DONE_NODE
+            elif sn == self._current_stage:
+                fill  = self._C_ACTIVE_B if self._pulse_on else self._C_ACTIVE_A
+                txt, txt_c, lbl_c = str(sn), "white", WRRL_NAVY
+            else:
+                fill, txt, txt_c, lbl_c = self._C_PEND, str(sn), self._C_PEND_TXT, self._C_PEND_TXT
+
+            c.create_oval(x - r, cy - r, x + r, cy + r, fill=fill, outline="", width=0)
+            c.create_text(x, cy, text=txt, font=("Segoe UI", 12, "bold"), fill=txt_c)
+            c.create_text(x, cy + r + 14, text=label, font=("Segoe UI", 9), fill=lbl_c)
+
+    # ── pulse animation ───────────────────────────────────────────────────────
+
+    def _pulse(self) -> None:
+        if not self._animating:
+            return
+        self._pulse_on = not self._pulse_on
+        self._redraw_timeline()
+        self.after(540, self._pulse)
+
+    # ── public update API ─────────────────────────────────────────────────────
+
+    def set_races(self, race_names: list[str]) -> None:
+        """Populate the race chip grid."""
+        for w in self._chips_container.winfo_children():
+            w.destroy()
+        self._race_chips = []
+        if not race_names:
+            tk.Label(
+                self._chips_container, text="No race files found.",
+                font=("Segoe UI", 9, "italic"), bg=WRRL_LIGHT, fg="#aaaaaa",
+            ).pack(anchor="w")
+            return
+        row_f: tk.Frame | None = None
+        for i, name in enumerate(race_names):
+            if i % 10 == 0:
+                row_f = tk.Frame(self._chips_container, bg=WRRL_LIGHT)
+                row_f.pack(anchor="w", pady=(0, 4))
+            chip = tk.Label(
+                row_f, text=f"R{i + 1}",
+                font=("Segoe UI", 8, "bold"),
+                bg=self._C_CHIP_PEND, fg=self._C_CHIP_PEND_FG,
+                padx=7, pady=4, relief="flat",
+            )
+            chip.pack(side="left", padx=(0, 5))
+            chip.bind("<Enter>", lambda e, n=name, k=i: self._status_var.set(f"Race {k + 1}: {n}"))
+            self._race_chips.append(chip)
+
+    def set_stage(self, stage_num: int, label: str = "") -> None:
+        """Advance to a new stage."""
+        if 0 < self._current_stage < stage_num:
+            self._stages_done.add(self._current_stage)
+        self._current_stage = stage_num
+        self._redraw_timeline()
+        self._status_var.set(f"Stage {stage_num}: {label}" if label else f"Stage {stage_num}")
+        if stage_num != 3:
+            self._substep_var.set("")
+        if stage_num == 1 and self._race_chips:
+            self._animate_chips(0)
+
+    def stage_done(self, stage_num: int) -> None:
+        """Mark a stage as completed."""
+        self._stages_done.add(stage_num)
+        if stage_num == 1:
+            self._mark_all_chips_done()
+        self._redraw_timeline()
+
+    def set_status(self, text: str) -> None:
+        self._status_var.set(text)
+
+    def set_substep(self, text: str) -> None:
+        self._substep_var.set(text)
+
+    def finish(self, success: bool) -> None:
+        """Freeze animation and show final state."""
+        self._animating = False
+        for s in (1, 2, 3):
+            self._stages_done.add(s)
+        self._current_stage = 0
+        self._mark_all_chips_done()
+        self._redraw_timeline()
+        icon = "✓" if success else "⚠"
+        msg  = "Autopilot completed successfully." if success else "Autopilot completed with issues."
+        self._status_var.set(f"{icon}  {msg}")
+        self._substep_var.set("")
+
+    # ── chip helpers ──────────────────────────────────────────────────────────
+
+    def _animate_chips(self, idx: int) -> None:
+        if not self._animating or not self._race_chips:
+            return
+        n = len(self._race_chips)
+        interval = max(280, 5500 // max(n, 1))
+        if idx > 0:
+            prev = self._race_chips[idx - 1]
+            if prev.winfo_exists():
+                prev.config(bg=self._C_CHIP_DONE, fg=self._C_CHIP_DONE_FG)
+        if idx < n:
+            chip = self._race_chips[idx]
+            if chip.winfo_exists():
+                chip.config(bg=self._C_CHIP_ACT, fg=self._C_CHIP_ACT_FG)
+            self.after(interval, lambda: self._animate_chips(idx + 1))
+
+    def _mark_all_chips_done(self) -> None:
+        for chip in self._race_chips:
+            if chip.winfo_exists():
+                chip.config(bg=self._C_CHIP_DONE, fg=self._C_CHIP_DONE_FG)
+
+    def _on_close_attempt(self) -> None:
+        messagebox.showinfo(
+            "Autopilot Running",
+            "Autopilot is still running. Please wait for it to complete.",
+            parent=self,
+        )
+
+
+# ──────────────────────────────────────────────────────────────────────────────
 # Main dashboard window
 # ──────────────────────────────────────────────────────────────────────────────
 
 class LeagueScorerDashboard(tk.Tk):
-    """Professional dashboard for the Wiltshire League Management."""
+    """Professional dashboard for WRRL League AI."""
 
     def __init__(self) -> None:
         super().__init__()
-        self.title("WRRL League Management")
+        self.title("WRRL League AI")
         self.geometry("900x700")
         self.minsize(800, 600)
         self.resizable(True, True)
@@ -145,7 +391,7 @@ class LeagueScorerDashboard(tk.Tk):
 
         title = tk.Label(
             title_frame,
-            text="WRRL League Management",
+            text="WRRL League AI",
             font=("Segoe UI", 32, "bold"),
             bg=WRRL_NAVY,
             fg=WRRL_WHITE,
@@ -154,7 +400,7 @@ class LeagueScorerDashboard(tk.Tk):
 
         subtitle = tk.Label(
             title_frame,
-            text="Wiltshire Road and Running League Management System",
+            text="WRRL League AI for Wiltshire Road and Running League operations",
             font=("Segoe UI", 11),
             bg=WRRL_NAVY,
             fg="#a0b0c0",
@@ -224,16 +470,14 @@ class LeagueScorerDashboard(tk.Tk):
             ("📅 Load Events", "Load season events spreadsheet", self._on_load_events, 1, 0, "secondary"),
             ("📋 View Events", "Browse loaded events schedule", self._on_view_events, 1, 1, "secondary"),
 
-            ("🧪 Audit Races", "Audit and standardise race workbook names", self._on_audit_runners, 2, 0, "secondary"),
-            ("🔎 View Audit", "Review latest audit workbook", self._on_view_audit, 2, 1, "secondary"),
+            ("Run Autopilot", "Run audit, safe auto-fixes, and staged checks", self._on_run_autopilot, 2, 0, "primary"),
+            ("📝 View Autopilot Report", "Open latest autopilot summary report", self._on_view_autopilot_report, 2, 1, "secondary"),
 
-            ("▶ Create League Results", "Run scoring and generate outputs", self._on_run_scorer, 3, 0, "primary"),
+            ("▶ Run Classic Scorer", "Run the classic scoring pipeline manually", self._on_run_scorer, 3, 0, "secondary"),
             ("📊 View Results", "Open generated standings and reports", self._on_view_results, 3, 1, "secondary"),
 
-            ("🔧 Review Issues", "Examine and resolve audit issues at source", self._on_issue_review, 4, 0, "primary"),
             ("⚙️ Settings", "League scoring and report options", self._on_settings, 4, 1, "secondary"),
-
-            ("🌐 Import Race Roster", "Pull race results into this season", self._on_import_raceroster, 5, 0, "primary"),
+            ("⬇ Fetch Race Results", "Download results from Race Roster into this season", self._on_import_raceroster, 4, 0, "primary"),
         ]
 
         for text, subtitle, cmd, row, col, tone in buttons:
@@ -242,18 +486,13 @@ class LeagueScorerDashboard(tk.Tk):
     # ── config panel ──────────────────────────────────────────────────────────
 
     def _build_config_panel(self, parent: tk.Frame) -> None:
-        """Build the season / path configuration panel."""
+        """Build the season configuration panel."""
         panel = tk.Frame(parent, bg=WRRL_NAVY, padx=12, pady=10)
         panel.pack(fill="x", pady=(0, 4))
 
-        # Two-column layout: season picker (left) | data-root (right)
-        cols = tk.Frame(panel, bg=WRRL_NAVY)
-        cols.pack(fill="x")
-        cols.columnconfigure(1, weight=1)
-
         # ── Season picker ────────────────────────────────────────────────────
-        season_frame = tk.Frame(cols, bg=WRRL_NAVY)
-        season_frame.grid(row=0, column=0, padx=(0, 24), sticky="ns")
+        season_frame = tk.Frame(panel, bg=WRRL_NAVY)
+        season_frame.pack(anchor="w")
 
         tk.Label(
             season_frame, text="Season",
@@ -283,79 +522,67 @@ class LeagueScorerDashboard(tk.Tk):
 
         tk.Button(picker, text="\u25ba", command=self._on_year_next, **btn_cfg).pack(side="left")
 
-        # ── Data Root ────────────────────────────────────────────────────────
-        root_frame = tk.Frame(cols, bg=WRRL_NAVY)
-        root_frame.grid(row=0, column=1, sticky="nsew")
-
-        tk.Label(root_frame, text="Data Root:", font=("Segoe UI", 10, "bold"),
-                 bg=WRRL_NAVY, fg="#a0b0c0").pack(anchor="w")
-
-        root_row = tk.Frame(root_frame, bg=WRRL_NAVY)
-        root_row.pack(fill="x", pady=(2, 0))
-
-        self._root_label = tk.Label(
-            root_row,
-            text=str(session_config.data_root) if session_config.data_root else "Not set",
+        freshness = tk.Frame(panel, bg=WRRL_NAVY)
+        freshness.pack(anchor="w", pady=(8, 0))
+        self._freshness_light = tk.Canvas(
+            freshness,
+            width=16,
+            height=16,
+            bg=WRRL_NAVY,
+            highlightthickness=0,
+            bd=0,
+        )
+        self._freshness_light.pack(side="left")
+        self._freshness_dot = self._freshness_light.create_oval(2, 2, 14, 14, fill="#cc4444", outline="")
+        self._freshness_var = tk.StringVar(value="Data status unknown")
+        tk.Label(
+            freshness,
+            textvariable=self._freshness_var,
             font=("Segoe UI", 9),
             bg=WRRL_NAVY,
-            fg="#ffcc44" if not session_config.data_root else "#90ee90",
+            fg="#d7dfeb",
             anchor="w",
-        )
-        self._root_label.pack(side="left", fill="x", expand=True, padx=(0, 10))
+        ).pack(side="left", padx=(6, 0))
 
-        tk.Button(
-            root_row, text="Set Root\u2026",
-            font=("Segoe UI", 9, "bold"),
-            bg=WRRL_GREEN, fg=WRRL_WHITE,
-            relief="flat", padx=8, pady=2, cursor="hand2",
-            command=self._on_set_data_root,
-            activebackground="#1f5632", activeforeground=WRRL_WHITE,
-        ).pack(side="right")
-
-        # ── Status row (input / output / events) ────────────────────────────
-        row2 = tk.Frame(panel, bg=WRRL_NAVY)
-        row2.pack(fill="x", pady=(8, 0))
-
-        self._input_status  = self._make_status_label(row2, "Input:",  "left")
-        self._output_status = self._make_status_label(row2, "Output:", "left")
-        self._events_status = self._make_status_label(row2, "Events:", "left")
         self._refresh_config_panel()
-
-    def _make_status_label(self, parent: tk.Frame, prefix: str, side: str) -> tk.Label:
-        tk.Label(parent, text=prefix, font=("Segoe UI", 9, "bold"),
-                 bg=WRRL_NAVY, fg=WRRL_WHITE).pack(side=side, padx=(0, 4))
-        lbl = tk.Label(parent, text="—", font=("Segoe UI", 9),
-                       bg=WRRL_NAVY, fg="#ffcc44", anchor="w")
-        lbl.pack(side=side, padx=(0, 16))
-        return lbl
 
     def _refresh_config_panel(self) -> None:
         """Update config bar indicators to reflect current session_config state."""
-        if not hasattr(self, "_root_label"):
-            return
         if hasattr(self, "_year_label"):
             self._year_label.config(text=str(session_config.year))
-        if session_config.data_root:
-            self._root_label.config(text=str(session_config.data_root), fg="#90ee90")
-        else:
-            self._root_label.config(text="Not set", fg="#ffcc44")
+        if hasattr(self, "_freshness_var") and hasattr(self, "_freshness_light"):
+            is_current, detail = self._compute_data_freshness()
+            colour = WRRL_GREEN if is_current else "#d94f4f"
+            self._freshness_light.itemconfig(self._freshness_dot, fill=colour)
+            self._freshness_var.set(detail)
 
-        in_path  = session_config.input_dir
-        out_path = session_config.output_dir
-        ev_path  = session_config.events_path
+    def _compute_data_freshness(self) -> tuple[bool, str]:
+        if not session_config.input_dir:
+            return False, "No input folder configured"
 
-        self._input_status.config(
-            text=str(in_path) if in_path else "—",
-            fg="#90ee90" if (in_path and in_path.exists()) else "#ffcc44",
-        )
-        self._output_status.config(
-            text=str(out_path) if out_path else "—",
-            fg="#90ee90" if (out_path and out_path.exists()) else "#ffcc44",
-        )
-        self._events_status.config(
-            text=ev_path.name if ev_path else "—",
-            fg="#90ee90" if (ev_path and ev_path.exists()) else "#ffcc44",
-        )
+        raw_data_dir = session_config.raw_data_dir
+        audited_dir = session_config.audited_dir
+        if not raw_data_dir or not audited_dir:
+            return False, "Input folders are not available"
+
+        raw_files = discover_race_files(raw_data_dir, excluded_names=race_discovery_exclusions())
+        audited_files = discover_race_files(audited_dir, excluded_names=race_discovery_exclusions())
+
+        if not raw_files:
+            return True, "No raw race files yet"
+
+        stale: list[int] = []
+        for race_num, raw_path in raw_files.items():
+            audited_path = audited_files.get(race_num)
+            if audited_path is None:
+                stale.append(race_num)
+                continue
+            if raw_path.stat().st_mtime > audited_path.stat().st_mtime:
+                stale.append(race_num)
+
+        if stale:
+            return False, f"Audit required for race(s): {', '.join(str(num) for num in stale[:6])}"
+        return True, "All audited files are current"
 
     def _on_year_prev(self) -> None:
         """Step the season year back by one."""
@@ -373,17 +600,7 @@ class LeagueScorerDashboard(tk.Tk):
             session_config.year = years[idx + 1]
             self._restore_events_schedule()
 
-    def _on_set_data_root(self) -> None:
-        """Browse for and set the data root folder."""
-        initial = str(session_config.data_root) if session_config.data_root else "/"
-        folder = filedialog.askdirectory(
-            title="Select Data Root Folder (parent of all year folders)",
-            initialdir=initial,
-        )
-        if folder:
-            session_config.data_root = Path(folder)
-            session_config.ensure_dirs()
-            self._restore_events_schedule()
+
 
     # ── action buttons ──────────────────────────────────────────────────────
 
@@ -478,7 +695,7 @@ class LeagueScorerDashboard(tk.Tk):
         from .. import __version__
         footer_text = tk.Label(
             footer,
-            text=f"© 2026 Wiltshire Athletics Assoc. | Wiltshire League Scorer v{__version__}",
+            text=f"© 2026 Wiltshire Athletics Assoc. | WRRL League AI v{__version__}",
             font=("Segoe UI", 9),
             bg=WRRL_NAVY,
             fg="#707080",
@@ -495,7 +712,7 @@ class LeagueScorerDashboard(tk.Tk):
             messagebox.showwarning(
                 "Not Configured",
                 f"Please set a Data Root folder before using {action}.\n\n"
-                "Use the 'Set Root…' button in the configuration panel above.",
+                "Use Settings (⚙️) to configure your data paths.",
             )
             return False
         return True
@@ -503,11 +720,15 @@ class LeagueScorerDashboard(tk.Tk):
     # ── action handlers ────────────────────────────────────────────────────
 
     def _on_run_scorer(self) -> None:
-        """Show the League Management scorer panel inline within the dashboard."""
-        if not self._require_configured("Run League Management"):
+        """Show the WRRL League AI scorer panel inline within the dashboard."""
+        if not self._require_configured("Run WRRL League AI"):
             return
         log_event("dashboard_open_scorer", year=session_config.year)
         session_config.ensure_dirs()
+        if session_config.input_dir:
+            sort_existing_input_files(session_config.input_dir)
+        if session_config.output_dir:
+            sort_existing_output_files(session_config.output_dir)
         self._home_frame.pack_forget()
         scorer = LeagueScorerApp(
             self._page_container,
@@ -526,15 +747,275 @@ class LeagueScorerDashboard(tk.Tk):
             del self._scorer_frame
         self._home_frame.pack(fill="both", expand=True)
 
+    def _on_run_autopilot(self) -> None:
+        """Run full automation pipeline in background and report outcome."""
+        if not self._require_configured("Run Autopilot"):
+            return
+        if session_config.data_root is None:
+            messagebox.showerror("Data Root Missing", "Set Data Root before running autopilot.", parent=self)
+            return
+
+        session_config.ensure_dirs()
+        if session_config.output_dir:
+            sort_existing_output_files(session_config.output_dir)
+
+        result_queue: queue.Queue = queue.Queue()
+        dlg = _AutopilotProgressDialog(self, year=session_config.year)
+
+        def _worker() -> None:
+            script_path = str(Path(__file__).resolve().parents[2] / "scripts" / "run_full_autopilot.py")
+            output_paths = ensure_output_subdirs(session_config.output_dir)
+            report_base = output_paths.autopilot_runs_dir
+            staged_base = output_paths.quality_staged_checks_dir
+            dq_base = output_paths.quality_data_dir
+            cmd = [
+                sys.executable, "-u", script_path,
+                "--year", str(session_config.year),
+                "--data-root", str(session_config.data_root),
+                "--mode", "apply-safe-fixes",
+                "--report-dir", str(report_base),
+                "--staged-report-dir", str(staged_base),
+                "--data-quality-output-dir", str(dq_base),
+            ]
+            try:
+                proc = subprocess.Popen(
+                    cmd,
+                    stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                    text=True, encoding="utf-8", errors="replace",
+                )
+                stderr_lines: list[str] = []
+
+                def _drain_stderr() -> None:
+                    if proc.stderr is None:
+                        return
+                    for ln in proc.stderr:
+                        stderr_lines.append(ln)
+
+                threading.Thread(target=_drain_stderr, daemon=True).start()
+
+                stdout_lines: list[str] = []
+                if proc.stdout is not None:
+                    for raw in proc.stdout:
+                        line = raw.rstrip("\n")
+                        stdout_lines.append(line)
+                        if line.startswith("PROGRESS:"):
+                            result_queue.put(("progress", line))
+
+                proc.wait()
+                result_queue.put((
+                    "done", proc.returncode,
+                    "\n".join(stdout_lines),
+                    "".join(stderr_lines),
+                ))
+            except Exception as exc:
+                result_queue.put(("error", str(exc)))
+
+        threading.Thread(target=_worker, daemon=True).start()
+
+        def _handle_progress(line: str) -> None:
+            try:
+                parts = line.split(":", 3)
+                if len(parts) < 3 or not dlg.winfo_exists():
+                    return
+                kind = parts[1]
+                rest = parts[2:]
+                if kind == "RACES":
+                    names = [n for n in rest[0].split("|") if n]
+                    dlg.set_races(names)
+                    dlg.set_status(f"Discovered {len(names)} race file{'s' if len(names) != 1 else ''}")
+                elif kind == "STAGE":
+                    try:
+                        sn = int(rest[0])
+                    except (ValueError, IndexError):
+                        return
+                    dlg.set_stage(sn, rest[1] if len(rest) > 1 else "")
+                elif kind == "STAGE_DONE":
+                    try:
+                        sn = int(rest[0])
+                    except (ValueError, IndexError):
+                        return
+                    dlg.stage_done(sn)
+                elif kind == "SUBSTEP":
+                    try:
+                        sn = int(rest[0])
+                    except (ValueError, IndexError):
+                        return
+                    if sn == 3:
+                        dlg.set_substep(f"• {rest[1] if len(rest) > 1 else ''}")
+            except tk.TclError:
+                return
+
+        def _show_result(code: int, stdout_text: str, stderr_text: str) -> None:
+            if dlg.winfo_exists():
+                dlg.grab_release()
+                dlg.destroy()
+            report_path = self._resolve_autopilot_report_path()
+            staged_report_path = self._resolve_staged_checks_report_path()
+            review_path = None
+            if report_path is not None and report_path.exists():
+                review_path = report_path
+            elif staged_report_path is not None and staged_report_path.exists():
+                review_path = staged_report_path
+            self._show_autopilot_result_dialog(success=(code == 0), review_path=review_path)
+
+        def _poll() -> None:
+            if not dlg.winfo_exists():
+                return
+            while True:
+                try:
+                    payload = result_queue.get_nowait()
+                except queue.Empty:
+                    self.after(80, _poll)
+                    return
+                if payload[0] == "progress":
+                    _handle_progress(payload[1])
+                elif payload[0] == "done":
+                    _, code, stdout_text, stderr_text = payload
+                    dlg.finish(code == 0)
+                    self.after(1400, lambda c=code, o=stdout_text, e=stderr_text: _show_result(c, o, e))
+                    return
+                elif payload[0] == "error":
+                    if dlg.winfo_exists():
+                        dlg.grab_release()
+                        dlg.destroy()
+                    messagebox.showerror("Autopilot Failed", payload[1], parent=self)
+                    return
+                else:
+                    continue
+
+        self.after(80, _poll)
+
+    def _resolve_autopilot_report_path(self) -> Path | None:
+        """Resolve autopilot report location in outputs/autopilot/runs."""
+        if session_config.output_dir is None:
+            return None
+        return (
+            build_output_paths(session_config.output_dir)
+            .autopilot_runs_dir
+            / f"year-{session_config.year}"
+            / "autopilot_report.md"
+        )
+
+    def _resolve_staged_checks_report_path(self) -> Path | None:
+        """Resolve staged-check markdown report in outputs/quality/staged-checks."""
+        if session_config.output_dir is None:
+            return None
+        return build_output_paths(session_config.output_dir).quality_staged_checks_dir / "staged_checks_report.md"
+
+    def _show_autopilot_result_dialog(self, *, success: bool, review_path: Path | None) -> None:
+        """Show a friendly autopilot completion dialog with optional review action."""
+        dialog = tk.Toplevel(self)
+        dialog.title("Autopilot Complete")
+        dialog.transient(self)
+        dialog.grab_set()
+        dialog.resizable(False, False)
+        dialog.configure(bg=WRRL_LIGHT)
+
+        frame = tk.Frame(dialog, bg=WRRL_LIGHT, padx=18, pady=16)
+        frame.pack(fill="both", expand=True)
+
+        headline = "All done" if success else "Autopilot finished"
+        body = (
+            "Everything ran successfully.\n"
+            "You can review the messages if you want a summary."
+            if success
+            else "Some items need your attention.\n"
+            "Please review messages for a clear summary of what to do next."
+        )
+        if review_path is None:
+            body += "\n\nNo message file is available yet."
+
+        tk.Label(
+            frame,
+            text=headline,
+            font=("Segoe UI", 13, "bold"),
+            bg=WRRL_LIGHT,
+            fg=WRRL_NAVY,
+            anchor="w",
+        ).pack(anchor="w")
+
+        tk.Label(
+            frame,
+            text=body,
+            font=("Segoe UI", 10),
+            bg=WRRL_LIGHT,
+            fg=WRRL_NAVY,
+            justify="left",
+            anchor="w",
+            wraplength=430,
+        ).pack(anchor="w", pady=(8, 14))
+
+        btn_row = tk.Frame(frame, bg=WRRL_LIGHT)
+        btn_row.pack(fill="x")
+
+        def _on_review_messages() -> None:
+            if review_path is None:
+                return
+            try:
+                self._open_file_in_system(review_path)
+            except Exception as exc:
+                messagebox.showerror("Open Failed", str(exc), parent=dialog)
+
+        review_btn = tk.Button(
+            btn_row,
+            text="Review Messages",
+            command=_on_review_messages,
+            font=("Segoe UI", 10, "bold"),
+            bg="#2d7a4a",
+            fg="#ffffff",
+            relief="flat",
+            padx=12,
+            pady=4,
+            cursor="hand2",
+            activebackground="#1f5632",
+            activeforeground="#ffffff",
+            state="normal" if review_path is not None else "disabled",
+        )
+        review_btn.pack(side="left")
+
+        close_btn = ttk.Button(btn_row, text="Close", command=dialog.destroy)
+        close_btn.pack(side="right")
+
+    def _open_file_in_system(self, path: Path) -> None:
+        if hasattr(os, "startfile"):
+            os.startfile(str(path))
+        else:
+            subprocess.run(["xdg-open", str(path)], check=False)
+
+    def _on_view_autopilot_report(self) -> None:
+        """Open the latest autopilot markdown report in the default editor/app."""
+        if not self._require_configured("View Autopilot Report"):
+            return
+        if session_config.output_dir is None:
+            messagebox.showerror("Output Not Configured", "Output folder is not configured.", parent=self)
+            return
+
+        report_path = self._resolve_autopilot_report_path()
+        if report_path is None or not report_path.exists():
+            messagebox.showwarning(
+                "Report Not Found",
+                f"No autopilot report found for season {session_config.year}.\nRun Autopilot first.",
+                parent=self,
+            )
+            return
+
+        try:
+            self._open_file_in_system(report_path)
+        except Exception as exc:
+            messagebox.showerror("Open Failed", str(exc), parent=self)
+
     def _on_load_events(self) -> None:
         """Browse for and load an events XLSX file."""
         if not self._require_configured("Load Events"):
             return
+        session_config.ensure_dirs()
+        if session_config.input_dir:
+            sort_existing_input_files(session_config.input_dir)
         initial_path = session_config.events_path
         if initial_path and initial_path.parent.exists():
             initial_dir = str(initial_path.parent)
         else:
-            initial_dir = str(session_config.input_dir) if session_config.input_dir else "/"
+            initial_dir = str(session_config.control_dir) if session_config.control_dir else "/"
         path_str = filedialog.askopenfilename(
             title="Select Events Spreadsheet",
             initialdir=initial_dir,
@@ -601,6 +1082,8 @@ class LeagueScorerDashboard(tk.Tk):
         """Show the results viewer panel inline within the dashboard."""
         if not self._require_configured("View Results"):
             return
+        if session_config.output_dir:
+            sort_existing_output_files(session_config.output_dir)
         self._home_frame.pack_forget()
         from .results_viewer import ResultsViewerPanel
         panel = ResultsViewerPanel(self._page_container)
@@ -688,6 +1171,8 @@ class LeagueScorerDashboard(tk.Tk):
         if not self._require_configured("Audit Runners"):
             return
         session_config.ensure_dirs()
+        if session_config.output_dir:
+            sort_existing_output_files(session_config.output_dir)
         self._home_frame.pack_forget()
         from .audit_gui import LeagueAuditApp
         panel = LeagueAuditApp(
@@ -705,6 +1190,8 @@ class LeagueScorerDashboard(tk.Tk):
         """Show the audit viewer panel inline within the dashboard."""
         if not self._require_configured("View Audit"):
             return
+        if session_config.output_dir:
+            sort_existing_output_files(session_config.output_dir)
         if return_to_audit and hasattr(self, "_audit_panel"):
             self._audit_panel.pack_forget()
         else:
@@ -796,16 +1283,19 @@ class LeagueScorerDashboard(tk.Tk):
         ops_doc = docs_dir / "operational_dependencies.md"
 
         help_text = (
-            "WRRL League Management Help\n\n"
-            "• Set Root…: Choose your base data folder once.\n"
-            "  Folders are created as: {root}/{year}/inputs and {root}/{year}/outputs\n\n"
+            "WRRL League AI Help\n\n"
+            "• Settings (⚙️): Configure data paths and league scoring parameters.\n"
+            "  Set your Data Root once; folders are created as: {root}/{year}/inputs and {root}/{year}/outputs\n"
+            "  Inputs are structured as: raw_data, series, control, audited, raw_data_archive\n\n"
             "• Season: Select the current league year.\n\n"
-            "• Load Events: Select the events XLSX from the season inputs folder.\n"
+            "• Load Events: Select the events XLSX from inputs/control.\n"
             "  The filename is remembered and reused for the active season folder on later runs.\n"
             "• View Events: Browse the loaded events schedule.\n\n"
-            "• Import Race Roster: Paste a Race Roster URL and save it directly\n"
-            "  as a race workbook in the active season inputs folder.\n\n"
-            "• Run League Management: Execute the scoring pipeline.\n"
+            "• Import Race Roster: Paste a Race Roster URL and save results directly\n"
+            "  into inputs/raw_data.\n\n"
+            "• Run Autopilot: Execute audit, safe auto-fixes, and staged checks.\n"
+            "• View Autopilot Report: Open the latest automation summary.\n"
+            "• Run WRRL League AI: Execute the classic scoring pipeline manually.\n"
             "• View Results: Browse generated results.\n\n"
             "Operational dependencies docs:\n"
             f"• {dependencies_doc}\n"
@@ -822,9 +1312,11 @@ class LeagueScorerDashboard(tk.Tk):
             return
 
         session_config.ensure_dirs()
-        input_dir = session_config.input_dir
+        if session_config.input_dir:
+            sort_existing_input_files(session_config.input_dir)
+        input_dir = session_config.raw_data_dir
         if not input_dir or not input_dir.exists():
-            messagebox.showerror("Input not found", f"Input folder does not exist:\n{input_dir}")
+            messagebox.showerror("Input not found", f"Raw data folder does not exist:\n{input_dir}")
             return
 
         request = prompt_race_import_request(self)
@@ -956,6 +1448,7 @@ class LeagueScorerDashboard(tk.Tk):
                 return
 
             output_path, count, history_path = payload
+            self._refresh_config_panel()
             log_event(
                 "dashboard_import_raceroster_completed",
                 year=session_config.year,
@@ -1009,6 +1502,7 @@ class LeagueScorerDashboard(tk.Tk):
             return
 
         output_path, count, history_path = result
+        self._refresh_config_panel()
         log_event(
             "dashboard_import_sporthive_manual_completed",
             year=session_config.year,

@@ -47,8 +47,8 @@ class ClubEditorPanel(tk.Frame):
 
     def _load_eligible_clubs(self) -> None:
         clubs_path = (
-            session_config.input_dir / "clubs.xlsx"
-            if session_config.input_dir
+            session_config.control_dir / "clubs.xlsx"
+            if session_config.control_dir
             else None
         )
         if not clubs_path or not clubs_path.exists():
@@ -419,11 +419,11 @@ class ClubEditorPanel(tk.Frame):
 
     def _populate_file_list(self) -> None:
         skip = set(race_discovery_exclusions())
-        input_dir = session_config.input_dir
-        if not input_dir or not input_dir.exists():
+        raw_data_dir = session_config.raw_data_dir
+        if not raw_data_dir or not raw_data_dir.exists():
             return
         files = sorted(
-            [f for f in input_dir.glob("*.xlsx") if f.name.lower() not in skip],
+            [f for f in raw_data_dir.glob("*.xlsx") if f.name.lower() not in skip],
             key=lambda f: f.stem,
         )
         self._file_paths = files

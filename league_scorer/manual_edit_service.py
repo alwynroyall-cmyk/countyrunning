@@ -29,6 +29,9 @@ def apply_club_suggestions(updates_by_file: dict[Path, list[dict]]) -> tuple[int
     )
 
     for filepath, updates in updates_by_file.items():
+        if not _is_raw_data_file(filepath):
+            failed.append(f"{filepath.name}: edits are only allowed in inputs/raw_data")
+            continue
         try:
             wb = openpyxl.load_workbook(filepath)
         except Exception as exc:
@@ -120,6 +123,9 @@ def resolve_runner_field_across_files(
     )
 
     for _, path in race_files.items():
+        if not _is_raw_data_file(path):
+            failed_files.append(f"{path.name}: edits are only allowed in inputs/raw_data")
+            continue
         try:
             wb = openpyxl.load_workbook(path)
         except Exception as exc:
@@ -244,3 +250,8 @@ def _row_name_value(ws, row_idx: int, name_col) -> str:
         return f"{first} {last}".strip()
     val = ws.cell(row=row_idx, column=name_col).value
     return "" if val is None else str(val).strip()
+
+
+def _is_raw_data_file(path: Path) -> bool:
+    lower_parts = {part.lower() for part in Path(path).parts}
+    return "raw_data" in lower_parts

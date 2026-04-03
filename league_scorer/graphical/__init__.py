@@ -1,5 +1,5 @@
 """
-graphical — GUI and graphical interfaces for the Wiltshire League Management.
+graphical — GUI and graphical interfaces for WRRL League AI.
 """
 
 from .dashboard import launch_dashboard

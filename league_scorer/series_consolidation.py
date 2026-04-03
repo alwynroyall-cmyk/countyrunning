@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import re
-import shutil
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, List
@@ -16,7 +15,6 @@ _SERIES_PATTERN = re.compile(
     r"^race\s*#?\s*(\d+)\s*[-–]?\s*(.+?)\s+series\s*#\s*(\d+)\s*$",
     re.IGNORECASE,
 )
-_INVALID_PATH_CHARS = re.compile(r'[<>:"/\\|?*]')
 
 
 @dataclass(frozen=True)
@@ -30,46 +28,49 @@ class SeriesFileInfo:
 @dataclass(frozen=True)
 class SeriesConsolidationResult:
     consolidated_path: Path
-    archive_dir: Path
-    moved_files: List[Path]
+    round_number: int
+    removed_previous: List[Path]
+    club_warnings: List[str]
 
 
-def consolidate_series_files(filepaths: Iterable[Path], input_dir: Path) -> SeriesConsolidationResult:
+def consolidate_series_files(
+    filepaths: Iterable[Path],
+    *,
+    series_dir: Path,
+    raw_data_dir: Path,
+) -> SeriesConsolidationResult:
     selected_paths = [Path(filepath) for filepath in filepaths]
     if len(selected_paths) < 2:
         raise ValueError("Select at least two series files to consolidate.")
 
     parsed_files = [_parse_series_file(path) for path in selected_paths]
-    _validate_series_selection(parsed_files, input_dir)
+    _validate_series_selection(parsed_files, series_dir)
     parsed_files.sort(key=lambda item: item.series_index)
 
-    consolidated_df = _build_consolidated_dataframe(parsed_files)
+    consolidated_df, club_warnings = _build_consolidated_dataframe(parsed_files)
     series_name = parsed_files[0].series_name
     race_number = parsed_files[0].race_number
+    round_number = max(item.series_index for item in parsed_files)
 
-    consolidated_path = input_dir / f"Race #{race_number} {series_name} Consolidated.xlsx"
-    archive_dir = input_dir / f"{_safe_path_name(series_name)} Series"
-    archive_dir.mkdir(parents=True, exist_ok=True)
+    raw_data_dir.mkdir(parents=True, exist_ok=True)
+    consolidated_path = raw_data_dir / f"Race #{race_number} {series_name} Round {round_number}.xlsx"
+
+    removed_previous: List[Path] = []
+    for existing in sorted(raw_data_dir.glob(f"Race #{race_number} {series_name} Round *.xlsx")):
+        if existing.resolve() == consolidated_path.resolve():
+            continue
+        existing.unlink()
+        removed_previous.append(existing)
 
     if consolidated_path.exists():
         consolidated_path.unlink()
     consolidated_df.to_excel(consolidated_path, index=False)
 
-    moved_files: List[Path] = []
-    for info in parsed_files:
-        destination = archive_dir / info.path.name
-        if destination.exists() and destination.resolve() != info.path.resolve():
-            raise FileExistsError(
-                f"Cannot move '{info.path.name}' because '{destination.name}' already exists in '{archive_dir.name}'."
-            )
-        if info.path.resolve() != destination.resolve():
-            shutil.move(str(info.path), str(destination))
-        moved_files.append(destination)
-
     return SeriesConsolidationResult(
         consolidated_path=consolidated_path,
-        archive_dir=archive_dir,
-        moved_files=moved_files,
+        round_number=round_number,
+        removed_previous=removed_previous,
+        club_warnings=club_warnings,
     )
 
 
@@ -113,24 +114,46 @@ def _validate_series_selection(parsed_files: List[SeriesFileInfo], input_dir: Pa
         seen_indexes.add(info.series_index)
 
 
-def _build_consolidated_dataframe(parsed_files: List[SeriesFileInfo]) -> pd.DataFrame:
+def _build_consolidated_dataframe(parsed_files: List[SeriesFileInfo]) -> tuple[pd.DataFrame, List[str]]:
     frames: List[pd.DataFrame] = []
     combined_columns: List[str] = []
+    club_warnings: List[str] = []
+    runner_clubs: dict[str, set[str]] = {}
 
     for info in parsed_files:
         frame = load_race_dataframe(info.path).copy()
         frame.columns = [str(column).strip() for column in frame.columns]
         frame = frame.loc[:, ~frame.columns.duplicated()].copy()
+        _capture_runner_club_inconsistencies(frame, runner_clubs)
         frames.append(frame)
         for column in frame.columns:
             if column not in combined_columns:
                 combined_columns.append(column)
 
     normalised_frames = [frame.reindex(columns=combined_columns) for frame in frames]
-    return pd.concat(normalised_frames, ignore_index=True)
+    for runner_key, clubs in sorted(runner_clubs.items()):
+        clean = sorted(club for club in clubs if club)
+        if len(clean) > 1:
+            club_warnings.append(f"{runner_key}: {', '.join(clean)}")
+    return pd.concat(normalised_frames, ignore_index=True), club_warnings
 
 
-def _safe_path_name(value: str) -> str:
-    cleaned = _INVALID_PATH_CHARS.sub(" ", value)
-    cleaned = re.sub(r"\s+", " ", cleaned).strip()
-    return cleaned or "Series"
+def _capture_runner_club_inconsistencies(
+    frame: pd.DataFrame,
+    runner_clubs: dict[str, set[str]],
+) -> None:
+    lower_columns = {str(col).strip().lower(): col for col in frame.columns}
+    name_col = next((lower_columns[key] for key in lower_columns if "name" in key), None)
+    club_col = next((lower_columns[key] for key in lower_columns if "club" in key), None)
+    if name_col is None or club_col is None:
+        return
+
+    for _, row in frame.iterrows():
+        name = str(row.get(name_col, "") or "").strip()
+        club = str(row.get(club_col, "") or "").strip()
+        if not name:
+            continue
+        key = name.lower()
+        runner_clubs.setdefault(key, set())
+        if club:
+            runner_clubs[key].add(club)

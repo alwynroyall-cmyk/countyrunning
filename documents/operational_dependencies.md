@@ -1,4 +1,4 @@
-# WRRL League Scorer - Operational Dependencies
+# WRRL League AI - Operational Dependencies
 
 This page captures runtime dependencies and environment assumptions that are not obvious from `requirements.txt` alone.
 
@@ -35,7 +35,18 @@ If browser binaries are missing, related import flows may fail until Playwright 
 - The scorer expects the configured data root to follow:
   - `{data_root}/{year}/inputs`
   - `{data_root}/{year}/outputs`
-- Input workbooks are expected to be `.xlsx` files with expected WRRL columns.
+- Structured input subfolders under `inputs/`:
+  - `raw_data/` (source race files and imports)
+  - `series/` (series round source files)
+  - `control/` (clubs/events/name corrections)
+  - `audited/` (generated cleanse output used for scoring)
+  - `raw_data_archive/` (write-once archive copies)
+- Structured output subfolders under `outputs/`:
+  - `publish/` (docx/pdf/xlsx published outputs)
+  - `audit/` (workbooks and manual changes)
+  - `quality/` (staged checks and data quality reports)
+  - `autopilot/runs/` (autopilot reports)
+- Input workbooks are expected to be `.xlsx`/`.xlsm`/`.xls` files with expected WRRL columns.
 
 ## User Settings Files
 
@@ -50,4 +61,5 @@ Before a season run:
 2. Confirm Microsoft Word is installed if PDF output is required.
 3. Run `playwright install chromium` at least once on each machine.
 4. Confirm data root and season folders are configured in the dashboard.
-5. Confirm `clubs.xlsx` and events workbook are present in the season inputs folder.
+5. Confirm `clubs.xlsx`, `wrrl_events.xlsx`, and `name_corrections.xlsx` are present in `inputs/control`.
+6. Confirm raw race files are present in `inputs/raw_data` before running autopilot.

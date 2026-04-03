@@ -1,4 +1,7 @@
-# WRRL League Scorer — Application Health Check Report
+# WRRL League AI — Application Health Check Report
+
+Historical note: this report reflects a June 2025 snapshot and is retained for archive/reference.
+For current release behavior and folder layout, use `documents/release_6_0_0.md`.
 
 **Date:** June 2025  
 **Version under review:** League-Report-Cleanup @ `37435ee` (= `main`)  

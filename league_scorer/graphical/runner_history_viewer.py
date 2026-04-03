@@ -538,13 +538,13 @@ class RunnerHistoryPanel(tk.Frame):
             messagebox.showwarning("No Value Selected", f"Select a {field_type} value first.", parent=self)
             return
 
-        input_dir = session_config.input_dir
-        if not input_dir or not input_dir.exists():
+        raw_data_dir = session_config.raw_data_dir
+        if not raw_data_dir or not raw_data_dir.exists():
             messagebox.showerror("Input Not Found", "Active input directory is not available.", parent=self)
             return
 
         race_files = discover_race_files(
-            input_dir,
+            raw_data_dir,
             excluded_names=race_discovery_exclusions(),
         )
         if not race_files:

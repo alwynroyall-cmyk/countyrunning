@@ -7,8 +7,13 @@ All GUI components read from and write to the shared `config` instance.
 Directory convention:
     {data_root}/
         {year}/
-            inputs/     ← race result files + events spreadsheet
-            outputs/    ← generated reports
+            inputs/
+                raw_data/
+                series/
+                control/
+                audited/
+                raw_data_archive/
+            outputs/
 """
 
 from __future__ import annotations
@@ -17,6 +22,9 @@ import datetime
 import json
 from pathlib import Path
 from typing import Optional
+
+from .input_layout import build_input_paths
+from .output_layout import ensure_output_subdirs
 
 # Persisted settings file lives in the user's home directory.
 _PREFS_FILE = Path.home() / ".wrrl_prefs.json"
@@ -70,6 +78,36 @@ class SessionConfig:
             return None
         return self._data_root / str(self._year) / "outputs"
 
+    @property
+    def raw_data_dir(self) -> Optional[Path]:
+        if self.input_dir is None:
+            return None
+        return build_input_paths(self.input_dir).raw_data_dir
+
+    @property
+    def series_dir(self) -> Optional[Path]:
+        if self.input_dir is None:
+            return None
+        return build_input_paths(self.input_dir).series_dir
+
+    @property
+    def control_dir(self) -> Optional[Path]:
+        if self.input_dir is None:
+            return None
+        return build_input_paths(self.input_dir).control_dir
+
+    @property
+    def audited_dir(self) -> Optional[Path]:
+        if self.input_dir is None:
+            return None
+        return build_input_paths(self.input_dir).audited_dir
+
+    @property
+    def raw_data_archive_dir(self) -> Optional[Path]:
+        if self.input_dir is None:
+            return None
+        return build_input_paths(self.input_dir).raw_data_archive_dir
+
     # ── events file ───────────────────────────────────────────────────────────
 
     @property
@@ -97,8 +135,14 @@ class SessionConfig:
         """Create input and output directories if they do not yet exist."""
         if self.input_dir:
             self.input_dir.mkdir(parents=True, exist_ok=True)
+            paths = build_input_paths(self.input_dir)
+            paths.raw_data_dir.mkdir(parents=True, exist_ok=True)
+            paths.series_dir.mkdir(parents=True, exist_ok=True)
+            paths.control_dir.mkdir(parents=True, exist_ok=True)
+            paths.audited_dir.mkdir(parents=True, exist_ok=True)
+            paths.raw_data_archive_dir.mkdir(parents=True, exist_ok=True)
         if self.output_dir:
-            self.output_dir.mkdir(parents=True, exist_ok=True)
+            ensure_output_subdirs(self.output_dir)
         self._sync_events_path()
         self.save()
 
@@ -110,7 +154,8 @@ class SessionConfig:
         if self.input_dir is None:
             self._events_path = None
             return
-        self._events_path = self.input_dir / self._events_filename
+        control_dir = build_input_paths(self.input_dir).control_dir
+        self._events_path = control_dir / self._events_filename
 
     # ── persistence ──────────────────────────────────────────────────────────
 

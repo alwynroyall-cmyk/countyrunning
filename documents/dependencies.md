@@ -1,6 +1,6 @@
-# WRRL League Scorer — Python Dependencies
+# WRRL League AI — Python Dependencies
 
-This document lists all Python package dependencies required to run the Wiltshire Road Running League (WRRL) League Scorer application.
+This document lists all Python package dependencies required to run the WRRL League AI application.
 
 ## Required Python Packages
 

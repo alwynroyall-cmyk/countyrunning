@@ -12,6 +12,7 @@ from typing import Iterable
 import pandas as pd
 
 from .audit_writer import write_audit_workbook
+from .output_layout import ensure_output_subdirs
 from .session_config import config as session_config
 
 _SHEET_NAME = "Manual Changes"
@@ -24,7 +25,7 @@ def log_manual_data_changes(
     source: str,
     action: str,
 ) -> str | None:
-    """Append manual-change rows to outputs/audit/Manual_Data_Audit.xlsx.
+    """Append manual-change rows to outputs/audit/manual-changes/Manual_Data_Audit.xlsx.
 
     Returns an error string when logging fails, otherwise None.
     """
@@ -36,7 +37,8 @@ def log_manual_data_changes(
     if output_dir is None:
         return "Output directory is not configured for this session."
 
-    audit_path = output_dir / "audit" / _FILENAME
+    output_paths = ensure_output_subdirs(output_dir)
+    audit_path = output_paths.audit_manual_changes_dir / _FILENAME
     timestamp = datetime.now().isoformat(timespec="seconds")
     change_date = datetime.now().date().isoformat()
     user_name = getpass.getuser()

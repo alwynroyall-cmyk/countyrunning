@@ -187,10 +187,10 @@ class CheckAllRunnersPanel(tk.Frame):
 
     def _load_eligible_clubs(self) -> None:
         self._eligible_clubs = set()
-        input_dir = session_config.input_dir
-        if not input_dir:
+        control_dir = session_config.control_dir
+        if not control_dir:
             return
-        clubs_path = input_dir / "clubs.xlsx"
+        clubs_path = control_dir / "clubs.xlsx"
         if not clubs_path.exists():
             return
         try:
@@ -259,14 +259,14 @@ class CheckAllRunnersPanel(tk.Frame):
             wb.close()
 
     def _scan_all_races(self) -> None:
-        input_dir = session_config.input_dir
-        if not input_dir or not input_dir.exists():
+        raw_data_dir = session_config.raw_data_dir
+        if not raw_data_dir or not raw_data_dir.exists():
             self._status_var.set("Input directory not available.")
             return
 
         self._load_eligible_clubs()
         race_files = discover_race_files(
-            input_dir,
+            raw_data_dir,
             excluded_names=race_discovery_exclusions(),
         )
 

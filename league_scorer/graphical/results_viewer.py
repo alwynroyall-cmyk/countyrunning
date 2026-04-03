@@ -121,7 +121,7 @@ class ResultsViewerPanel(tk.Frame):
             return
         results_path = self._find_results_workbook()
         if results_path is None:
-            self._show_message("No 'Race N -- Results.xlsx' file found in output directory.")
+            self._show_message("No standings workbook found in outputs/publish/xlsx/standings.")
             return
         try:
             xl = pd.ExcelFile(results_path)

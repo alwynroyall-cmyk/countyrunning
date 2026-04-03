@@ -11,6 +11,8 @@ from .audit_writer import write_audit_workbook
 from .club_loader import load_clubs
 from .common_files import race_discovery_exclusions
 from .exceptions import FatalError, RaceProcessingError
+from .input_layout import build_input_paths, ensure_input_subdirs, sort_existing_input_files
+from .output_layout import ensure_output_subdirs, sort_existing_output_files
 from .models import RaceIssue, RunnerRaceEntry, UnrecognisedClub
 from .race_processor import process_race_file
 from .source_loader import discover_race_files
@@ -23,6 +25,7 @@ class LeagueAuditor:
         self.input_dir = input_dir
         self.output_dir = output_dir
         self.year = int(year)
+        self.input_paths = build_input_paths(input_dir)
 
         self.raw_to_preferred: Dict[str, str] = {}
         self.preferred_clubs: List[str] = []
@@ -47,9 +50,8 @@ class LeagueAuditor:
         for race_num in sorted(race_files):
             self._process_race(race_num, race_files[race_num])
 
-        audit_dir = self.output_dir / "audit"
-        audit_dir.mkdir(parents=True, exist_ok=True)
-        workbook_path = audit_dir / self._build_filename()
+        output_paths = ensure_output_subdirs(self.output_dir)
+        workbook_path = output_paths.audit_workbooks_dir / self._build_filename()
         sheets = self._build_sheets()
         write_audit_workbook(sheets, workbook_path)
         return workbook_path
@@ -67,13 +69,17 @@ class LeagueAuditor:
             raise FatalError(
                 f"Configured season year does not match output directory layout: {self.output_dir}"
             )
+        ensure_input_subdirs(self.input_dir)
+        sort_existing_input_files(self.input_dir)
+        ensure_output_subdirs(self.output_dir)
+        sort_existing_output_files(self.output_dir)
 
     def _load_clubs(self) -> None:
-        self.raw_to_preferred, club_info = load_clubs(self.input_dir / "clubs.xlsx")
+        self.raw_to_preferred, club_info = load_clubs(self.input_paths.control_dir / "clubs.xlsx")
         self.preferred_clubs = sorted(club_info)
 
     def _discover_races(self) -> Dict[int, Path]:
-        return discover_race_files(self.input_dir, excluded_names=race_discovery_exclusions())
+        return discover_race_files(self.input_paths.audited_dir, excluded_names=race_discovery_exclusions())
 
     def _process_race(self, race_num: int, filepath: Path) -> None:
         try:

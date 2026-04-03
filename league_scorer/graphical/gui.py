@@ -1,5 +1,5 @@
 """
-gui.py - League Management scorer window.
+gui.py - WRRL League AI scorer window.
 
 Opens as a Toplevel child of the dashboard.  Input/output paths are taken
 directly from session_config so no folder selection is needed here.
@@ -16,6 +16,7 @@ from tkinter import messagebox, scrolledtext
 
 from ..common_files import race_discovery_exclusions
 from ..exceptions import FatalError
+from ..input_layout import build_input_paths
 from ..main import LeagueScorer
 from ..raceroster_import import (
     SporthiveRaceNotDirectlyImportableError,
@@ -69,7 +70,7 @@ class _QueueHandler(logging.Handler):
 # ---------------------------------------------------------------------------
 
 class LeagueScorerApp(tk.Frame):
-    """League scorer panel — embeds inside the dashboard."""
+    """WRRL League AI scorer panel — embeds inside the dashboard."""
 
     _SENTINEL_OK    = "done"
     _SENTINEL_FATAL = "fatal"
@@ -123,11 +124,12 @@ class LeagueScorerApp(tk.Frame):
     # -------------------------------------------------------------------------
 
     def _discover_race_files(self) -> dict:
-        """Scan input_dir and return {race_num: Path} for all valid race files."""
+        """Scan audited folder and return {race_num: Path} for all valid race files."""
         if not self._input_dir or not self._input_dir.is_dir():
             return {}
+        audited_dir = build_input_paths(self._input_dir).audited_dir
         return discover_race_files(
-            self._input_dir,
+            audited_dir,
             excluded_names=race_discovery_exclusions(),
         )
 
@@ -167,7 +169,7 @@ class LeagueScorerApp(tk.Frame):
 
         tk.Label(
             bar,
-            text="Run League Scorer",
+            text="Run WRRL League AI",
             font=("Segoe UI", 14, "bold"),
             bg=NAVY, fg=WHITE,
         ).pack(side="left", padx=16, pady=10)
@@ -285,6 +287,9 @@ class LeagueScorerApp(tk.Frame):
             )
             return None
 
+        raw_data_dir = build_input_paths(self._input_dir).raw_data_dir
+        raw_data_dir.mkdir(parents=True, exist_ok=True)
+
         request = prompt_race_import_request(self)
         if request is None:
             return None
@@ -292,7 +297,7 @@ class LeagueScorerApp(tk.Frame):
         try:
             output_path, count, history_path = import_raceroster_results(
                 race_url=request.race_url,
-                input_dir=self._input_dir,
+                input_dir=raw_data_dir,
                 league_race_number=request.race_number,
                 race_name_override=request.race_name,
                 sporthive_race_id_hint=request.sporthive_race_hint,
@@ -334,7 +339,7 @@ class LeagueScorerApp(tk.Frame):
 
         result = run_manual_sporthive_import(
             self,
-            input_dir=self._input_dir,
+            input_dir=build_input_paths(self._input_dir).raw_data_dir,
             request=request,
             ask_page_text=_ask_page,
         )
@@ -612,7 +617,7 @@ class LeagueScorerApp(tk.Frame):
 def launch() -> None:
     """Standalone launcher (opens its own root window)."""
     root = tk.Tk()
-    root.title("League Management — Run Scorer")
+    root.title("WRRL League AI — Run Scorer")
     root.geometry("860x640")
     root.configure(bg=LIGHT)
     app = LeagueScorerApp(root)

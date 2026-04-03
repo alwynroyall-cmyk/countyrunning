@@ -496,19 +496,19 @@ class IssueReviewPanel(tk.Frame):
 
     def _resolve_source_file(self, race_value: str) -> Path | None:
         """Try to find the input race file matching the Race column value."""
-        if not race_value or not session_config.input_dir:
+        if not race_value or not session_config.raw_data_dir:
             return None
-        input_dir = Path(session_config.input_dir)
-        if not input_dir.exists():
+        raw_data_dir = Path(session_config.raw_data_dir)
+        if not raw_data_dir.exists():
             return None
         # The Race column contains the workbook stem (e.g. "Race 3 - Malmesbury")
         # Try direct stem match first, then partial match
         for suffix in (".xlsx", ".xls", ".xlsm"):
-            exact = input_dir / f"{race_value}{suffix}"
+            exact = raw_data_dir / f"{race_value}{suffix}"
             if exact.exists():
                 return exact
         # Partial match — race column value as substring of filename
-        for f in input_dir.iterdir():
+        for f in raw_data_dir.iterdir():
             if f.suffix.lower() in {".xlsx", ".xls", ".xlsm"}:
                 if race_value.lower() in f.stem.lower() or f.stem.lower() in race_value.lower():
                     return f

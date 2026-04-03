@@ -7,10 +7,12 @@ from datetime import datetime
 
 import pandas as pd
 
+from .input_layout import build_input_paths
 from .issue_tracking import build_issue_identity
+from .output_layout import build_output_paths
 from .session_config import config as session_config
 
-AUDIT_DIR = "audit"
+AUDIT_DIR = "audit/workbooks"
 SEASON_AUDIT_WORKBOOK = "Season Audit.xlsx"
 ACTIONABLE_SHEET = "Actionable Issues"
 
@@ -34,14 +36,15 @@ def list_audit_workbooks() -> dict[str, Path]:
 
     output_dir = session_config.output_dir
     if output_dir:
-        audit_dir = output_dir / AUDIT_DIR
+        audit_dir = build_output_paths(output_dir).audit_workbooks_dir
         if audit_dir.exists():
             for path in sorted(audit_dir.glob("*.xlsx"), key=lambda item: item.stat().st_mtime, reverse=True):
                 workbooks[f"Audit / {path.name}"] = path
 
     input_dir = session_config.input_dir
-    if input_dir and input_dir.exists():
-        for path in sorted(input_dir.glob("* (audited).xlsx"), key=lambda item: item.stat().st_mtime, reverse=True):
+    audited_dir = build_input_paths(input_dir).audited_dir if input_dir else None
+    if audited_dir and audited_dir.exists():
+        for path in sorted(audited_dir.glob("* (audited).xlsx"), key=lambda item: item.stat().st_mtime, reverse=True):
             workbooks[f"Inputs / {path.name}"] = path
 
     return workbooks
@@ -50,12 +53,6 @@ def list_audit_workbooks() -> dict[str, Path]:
 def find_latest_audit_workbook() -> Path | None:
     """Find the best available audit workbook, preferring Season Audit workbook names."""
     candidates = list(list_audit_workbooks().values())
-
-    if session_config.data_root:
-        root = Path(session_config.data_root)
-        if root.exists():
-            fallback = sorted(root.glob("*/outputs/audit/*.xlsx"), key=lambda p: p.stat().st_mtime, reverse=True)
-            candidates.extend(fallback)
 
     if not candidates:
         return None
@@ -86,7 +83,7 @@ def load_actionable_issues(workbook: Path) -> pd.DataFrame:
 
 
 def _load_recently_resolved_issue_keys(workbook: Path) -> set[str]:
-    manual_audit_path = workbook.parent / "Manual_Data_Audit.xlsx"
+    manual_audit_path = workbook.parent.parent / "manual-changes" / "Manual_Data_Audit.xlsx"
     if not manual_audit_path.exists():
         return set()
 
