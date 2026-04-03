@@ -11,11 +11,20 @@ This page captures runtime dependencies and environment assumptions that are not
 pip install -r requirements.txt
 ```
 
+## Supported Platforms
+
+As of v6.1.0, the application runs on Windows, macOS, and Linux:
+
+- **Windows**: fully supported; all features including file open and PDF export.
+- **macOS**: GUI and scoring pipeline supported; PDF export requires LibreOffice or a compatible converter unless Microsoft Word is installed.
+- **Linux**: GUI and scoring pipeline supported; file open uses `xdg-open`; PDF export requires LibreOffice or a compatible converter.
+
 ## PDF Output Dependency
 
 - The app generates DOCX reports with `python-docx`.
 - PDF conversion uses `docx2pdf`.
 - On Windows, `docx2pdf` requires Microsoft Word to be installed.
+- On macOS/Linux, PDF output is skipped unless a compatible conversion tool is available. The app reports a warning rather than failing.
 
 If Word is not available, the app will still generate DOCX output and report a PDF conversion warning.
 

@@ -6,4 +6,5 @@ python-docx>=1.1.0
 docx2pdf>=0.1.8
 playwright>=1.50.0
 
-# Note: PDF export via docx2pdf requires Microsoft Word on Windows.
+# PDF export via docx2pdf requires Microsoft Word on Windows.
+# On macOS/Linux, PDF output is skipped unless a compatible converter is available.

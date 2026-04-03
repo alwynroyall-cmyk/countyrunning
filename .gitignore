@@ -11,3 +11,6 @@ output/division-format-check/
 sporthive_event.json
 output/staged-checks/
 output/data-quality/
+output/autopilot/
+output/autopilot/runs/
+output/*.png
