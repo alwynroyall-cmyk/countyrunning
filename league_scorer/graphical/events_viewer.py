@@ -49,47 +49,33 @@ _STATUS_FG: dict[str, str] = {
 
 # Treeview columns: (id, heading, width, anchor)
 _COLUMNS = [
-    ("race_ref",           "Ref",         70,  "center"),
-    ("event_name",         "Event",      200,  "w"),
-    ("category",           "Category",   100,  "center"),
-    ("distance",           "Distance",    75,  "center"),
-    ("location",           "Location",   120,  "w"),
-    ("organiser",          "Organiser",  130,  "w"),
-    ("date_type",          "Date Type",   80,  "center"),
-    ("scheduled_dates",    "Dates",      160,  "w"),
-    ("eligibility_window", "Window",     110,  "w"),
-    ("entry_fee",          "Fee",         60,  "center"),
-    ("scoring_basis",      "Scoring",     85,  "center"),
-    ("status",             "Status",      90,  "center"),
-    ("notes",              "Notes",      200,  "w"),
+    ("race_ref",        "Ref",         70,  "center"),
+    ("event_name",      "Event",      200,  "w"),
+    ("distance",        "Distance",    75,  "center"),
+    ("location",        "Location",   120,  "w"),
+    ("organiser",       "Organiser",  130,  "w"),
+    ("date_type",       "Date Type",   80,  "center"),
+    ("scheduled_dates", "Dates",      160,  "w"),
+    ("entry_fee",       "Fee",         60,  "center"),
+    ("scoring_basis",   "Scoring",     85,  "center"),
+    ("status",          "Status",      90,  "center"),
 ]
 
 
-class EventsViewerWindow(tk.Toplevel):
-    """Standalone top-level window for viewing the Championship Events schedule."""
+
+class EventsViewerPanel(tk.Frame):
+    """Embedded panel for viewing the Championship Events schedule."""
 
     def __init__(self, parent: tk.Misc, schedule: EventsSchedule,
                  year: int = 2026, images_dir: Path | None = None,
                  output_dir: Path | None = None) -> None:
-        super().__init__(parent)
-        self.title("WRRL Championship Events")
-        self.geometry("1200x540")
-        self.minsize(900, 400)
-        self.resizable(True, True)
-        self.configure(bg=WRRL_LIGHT)
-
+        super().__init__(parent, bg=WRRL_LIGHT)
         self._schedule   = schedule
         self._year       = year
         self._images_dir = images_dir
         self._output_dir = output_dir
         self._build_ui()
         self._populate(schedule.events)
-
-        # Centre relative to parent
-        self.update_idletasks()
-        px = parent.winfo_rootx() + parent.winfo_width() // 2
-        py = parent.winfo_rooty() + parent.winfo_height() // 2
-        self.geometry(f"+{px - self.winfo_width() // 2}+{py - self.winfo_height() // 2}")
 
     # -------------------------------------------------------------------------
     # UI construction
@@ -234,17 +220,14 @@ class EventsViewerWindow(tk.Toplevel):
                 values=(
                     ev.race_ref,
                     ev.event_name,
-                    ev.category,
                     ev.distance,
                     ev.location,
                     ev.organiser,
                     ev.date_type,
                     ev.scheduled_dates,
-                    ev.eligibility_window,
                     ev.entry_fee,
                     ev.scoring_basis,
                     ev.status,
-                    ev.notes,
                 ),
                 tags=(tag,),
             )

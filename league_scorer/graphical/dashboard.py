@@ -16,7 +16,7 @@ from tkinter import filedialog, messagebox, ttk
 from PIL import Image, ImageTk
 
 from .gui import LeagueScorerApp
-from .events_viewer import EventsViewerWindow
+from .events_viewer import EventsViewerPanel
 from ..events_loader import load_events
 from ..common_files import race_discovery_exclusions
 from ..raceroster_import import (
@@ -478,29 +478,78 @@ class LeagueScorerDashboard(tk.Tk):
         )
         view_lbl.grid(row=0, column=1, sticky="w", padx=10, pady=(0, 2))
 
+
+        # Main button grid (excluding Settings, Classic Scorer, Publish Provisional Results)
         buttons = [
             ("📋 View Events", "Browse loaded events schedule", self._on_view_events, 1, 0, "secondary"),
-
             ("Run Autopilot", "Run audit, safe auto-fixes, and staged checks", self._on_run_autopilot, 2, 0, "primary"),
             ("Publish Results", "Publish final results from audited files (includes PDF packs)", self._on_publish_results, 2, 1, "primary"),
-
-            ("Publish Provisional Results", "Skip audit and publish current results immediately", self._on_run_provisional_fast_track, 3, 0, "secondary"),
             ("✏️ Manual Corrections", "Review club and name matching suggestions", self._on_review_manual_corrections, 3, 1, "secondary"),
-
             ("📊 View Results", "Open generated standings and reports", self._on_view_results, 4, 1, "secondary"),
             ("🔎 Runner/Club Enquiry", "Search published results by runner or club", self._on_view_runner_history, 4, 0, "secondary"),
-
             ("📝 View Autopilot Report", "Open latest autopilot summary report", self._on_view_autopilot_report, 5, 1, "secondary"),
-            ("▶ Run Classic Scorer", "Run the classic scoring pipeline manually", self._on_run_scorer, 5, 0, "secondary"),
-
             ("Compare Raw vs Archive", "Inspect line-by-line changes against the raw-data archive", self._on_compare_raw_archive, 6, 1, "secondary"),
             ("⬇ Fetch Race Results", "Download results from Race Roster into this season", self._on_import_raceroster, 6, 0, "primary"),
-
-            ("⚙️ Settings", "League scoring and report options", self._on_settings, 7, 1, "secondary"),
         ]
-
         for text, subtitle, cmd, row, col, tone in buttons:
             self._create_action_button(button_frame, text, subtitle, cmd, row, col, tone=tone)
+
+
+        # Add small, dark, subtle buttons to the bottom, styled like the header
+        self._add_bottom_action_buttons()
+    def _add_bottom_action_buttons(self):
+        """Add small, dark, subtle action buttons to the bottom area, styled like the header."""
+        bottom_frame = tk.Frame(self._home_frame, bg=WRRL_NAVY, pady=10)
+        bottom_frame.pack(side="bottom", fill="x")
+
+        btn_cfg = {
+            "font": ("Segoe UI", 9),
+            "bg": WRRL_NAVY,
+            "fg": "#a0b0c0",
+            "activebackground": WRRL_GREEN,
+            "activeforeground": WRRL_WHITE,
+            "relief": "flat",
+            "bd": 0,
+            "padx": 4,
+            "pady": 2,
+            "cursor": "hand2",
+            "highlightthickness": 0,
+            "width": 14,
+        }
+
+        # Inner frame for tight grouping
+        inner = tk.Frame(bottom_frame, bg=WRRL_NAVY)
+        inner.pack(anchor="w", pady=2, padx=10)
+
+        btn1 = tk.Button(
+            inner,
+            text="⚙️ Settings",
+            command=self._on_settings,
+            **btn_cfg,
+        )
+        btn1.pack(side="left")
+
+        sep1 = tk.Frame(inner, bg="#b0c4de", width=4, height=26)
+        sep1.pack(side="left", padx=2, pady=0)
+
+        btn2 = tk.Button(
+            inner,
+            text="▶ Classic Scorer",
+            command=self._on_run_scorer,
+            **btn_cfg,
+        )
+        btn2.pack(side="left")
+
+        sep2 = tk.Frame(inner, bg="#b0c4de", width=4, height=26)
+        sep2.pack(side="left", padx=2, pady=0)
+
+        btn3 = tk.Button(
+            inner,
+            text="Publish Provisional",
+            command=self._on_run_provisional_fast_track,
+            **btn_cfg,
+        )
+        btn3.pack(side="left")
 
     # ── config panel ──────────────────────────────────────────────────────────
 
@@ -1259,7 +1308,7 @@ class LeagueScorerDashboard(tk.Tk):
         return True
 
     def _on_view_events(self) -> None:
-        """Open the events viewer window."""
+        """Show the events viewer panel inline within the dashboard."""
         if not self._require_configured("View Events"):
             return
         if self._events_schedule is None:
@@ -1271,13 +1320,15 @@ class LeagueScorerDashboard(tk.Tk):
                 )
                 return
         images_dir = Path(__file__).parent.parent / "images"
-        EventsViewerWindow(
-            self,
+        self._home_frame.pack_forget()
+        panel = EventsViewerPanel(
+            self._page_container,
             self._events_schedule,
             year=session_config.year,
             images_dir=images_dir,
             output_dir=session_config.output_dir,
         )
+        panel.pack(fill="both", expand=True)
 
     def _on_view_results(self) -> None:
         """Show the results viewer panel inline within the dashboard."""
