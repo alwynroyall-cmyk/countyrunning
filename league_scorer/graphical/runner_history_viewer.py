@@ -167,31 +167,7 @@ class RunnerHistoryPanel(tk.Frame):
             command=self._copy_results,
         ).pack(side="left")
 
-        tk.Button(
-            export_bar,
-            text="Export CSV",
-            font=("Segoe UI", 9),
-            bg="#dbe1e8",
-            fg=WRRL_NAVY,
-            relief="flat",
-            padx=10,
-            pady=4,
-            cursor="hand2",
-            command=self._export_results_csv,
-        ).pack(side="left", padx=(8, 0))
-
-        tk.Button(
-            export_bar,
-            text="Export Excel",
-            font=("Segoe UI", 9),
-            bg="#dbe1e8",
-            fg=WRRL_NAVY,
-            relief="flat",
-            padx=10,
-            pady=4,
-            cursor="hand2",
-            command=self._export_results_excel,
-        ).pack(side="left", padx=(8, 0))
+        # Removed Export CSV and Export Excel buttons; only Copy Results remains
 
         # Resolve controls (shown only when conflicting values exist)
         self._resolve_frame = tk.Frame(self, bg=WRRL_LIGHT, padx=14, pady=6)
@@ -592,6 +568,12 @@ class RunnerHistoryPanel(tk.Frame):
                     name = str(row.get("Name", "")).strip()
                     if not name or name.lower() != runner_key:
                         continue
+                    # Format points as integer (no decimals)
+                    points_val = row.get("Points", "")
+                    try:
+                        points_int = int(float(points_val))
+                    except Exception:
+                        points_int = points_val
                     rows.append(
                         {
                             "Race": race_num,
@@ -599,8 +581,9 @@ class RunnerHistoryPanel(tk.Frame):
                             "Gender": str(row.get("Gender", "")).strip(),
                             "Category": str(row.get("Category", "")).strip(),
                             "Time": str(row.get("Time", "")).strip(),
-                            "Points": str(row.get("Points", "")).strip(),
+                            "Points": str(points_int),
                             "Team": str(row.get("Team", "")).strip(),
+                            "Source": sheet,  # Add the sheet name as the source
                         }
                     )
         except Exception as exc:
@@ -907,7 +890,15 @@ class RunnerHistoryPanel(tk.Frame):
 
         for index, (_, row) in enumerate(df.iterrows()):
             tag = "even" if index % 2 else "odd"
-            self._tree.insert("", "end", values=list(row), tags=(tag,))
+            # Ensure Points is always shown as integer string
+            row_vals = list(row)
+            if "Points" in columns:
+                points_idx = columns.index("Points")
+                try:
+                    row_vals[points_idx] = str(int(float(row_vals[points_idx])))
+                except Exception:
+                    pass
+            self._tree.insert("", "end", values=row_vals, tags=(tag,))
 
     def _show_message(self, msg: str):
         self._latest_df = None
