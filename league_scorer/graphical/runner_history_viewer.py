@@ -104,38 +104,7 @@ class RunnerHistoryPanel(tk.Frame):
         controls = tk.Frame(self, bg=WRRL_LIGHT, padx=14, pady=10)
         controls.pack(fill="x")
 
-        # Mode selector
-        mode_frame = tk.Frame(controls, bg=WRRL_LIGHT)
-        mode_frame.pack(side="left", padx=(0, 16))
-        
-        tk.Label(
-            mode_frame,
-            text="Search by:",
-            font=("Segoe UI", 10, "bold"),
-            bg=WRRL_LIGHT,
-            fg=WRRL_NAVY,
-        ).pack(side="left", padx=(0, 8))
-        
-        self._mode_var = tk.StringVar(value="runner")
-        tk.Radiobutton(
-            mode_frame,
-            text="Runner",
-            variable=self._mode_var,
-            value="runner",
-            command=self._on_mode_change,
-            bg=WRRL_LIGHT,
-            fg=WRRL_NAVY,
-        ).pack(side="left", padx=(0, 12))
-        
-        tk.Radiobutton(
-            mode_frame,
-            text="Club",
-            variable=self._mode_var,
-            value="club",
-            command=self._on_mode_change,
-            bg=WRRL_LIGHT,
-            fg=WRRL_NAVY,
-        ).pack(side="left")
+        # Removed mode selector (runner/club radio buttons)
 
         self._runner_var = tk.StringVar()
         self._runner_combo = ttk.Combobox(
@@ -157,30 +126,7 @@ class RunnerHistoryPanel(tk.Frame):
         )
         self._runner_combo_label.pack(side="left", padx=(0, 8), before=self._runner_combo)
 
-        # Club combobox (hidden by default)
-        club_frame = tk.Frame(controls, bg=WRRL_LIGHT)
-        self._club_frame = club_frame
-        
-        self._club_label = tk.Label(
-            club_frame,
-            text="Club:",
-            font=("Segoe UI", 10, "bold"),
-            bg=WRRL_LIGHT,
-            fg=WRRL_NAVY,
-        )
-        self._club_label.pack(side="left", padx=(0, 8))
-
-        self._club_var = tk.StringVar()
-        self._club_combo = ttk.Combobox(
-            club_frame,
-            textvariable=self._club_var,
-            state="normal",
-            width=48,
-        )
-        self._club_combo.pack(side="left")
-        self._club_combo.bind("<<ComboboxSelected>>", lambda _e: self._load_club_results())
-        self._club_combo.bind("<KeyRelease>", self._on_club_typed)
-        self._club_combo.bind("<Return>", self._on_club_enter)
+        # Removed club combobox and label
 
         tk.Button(
             controls,
@@ -407,8 +353,7 @@ class RunnerHistoryPanel(tk.Frame):
         if not target_text:
             return False
 
-        self._mode_var.set("runner")
-        self._on_mode_change()
+        # Mode selector removed; just select runner and load history
 
         exact = next((n for n in self._all_runner_names if n.lower() == target_text.lower()), None)
         if exact is None:
@@ -485,9 +430,7 @@ class RunnerHistoryPanel(tk.Frame):
             available = self._ensure_workbook_cache(force=True)
         except RuntimeError as exc:
             self._runner_combo["values"] = []
-            self._club_combo["values"] = []
             self._runner_var.set("")
-            self._club_var.set("")
             self._show_message(str(exc))
             self._summary_var.set("")
             self._refresh_resolve_controls(None)
@@ -495,24 +438,17 @@ class RunnerHistoryPanel(tk.Frame):
 
         if not available:
             self._runner_combo["values"] = []
-            self._club_combo["values"] = []
             self._runner_var.set("")
-            self._club_var.set("")
             self._show_message("No results workbook found in the active output folder.")
             self._summary_var.set("")
             self._refresh_resolve_controls(None)
             return
 
         names = self._wb_cache["name_map"]
-        clubs = self._wb_cache["club_map"]
         self._runner_name_map = names
-        self._club_map = clubs
         sorted_names = sorted(names.values(), key=lambda n: n.lower())
-        sorted_clubs = sorted(clubs.values(), key=lambda c: c.lower())
         self._all_runner_names = sorted_names
-        self._all_clubs = sorted_clubs
         self._runner_combo["values"] = sorted_names
-        self._club_combo["values"] = sorted_clubs
 
         if sorted_names:
             current = self._runner_var.get()
@@ -538,9 +474,6 @@ class RunnerHistoryPanel(tk.Frame):
             self._show_message("No runner names found in race sheets.")
             self._summary_var.set("")
             self._refresh_resolve_controls(None)
-
-        if sorted_clubs and not self._club_var.get():
-            self._club_var.set(sorted_clubs[0])
 
     def _on_mode_change(self):
         self._lookup_mode = self._mode_var.get()

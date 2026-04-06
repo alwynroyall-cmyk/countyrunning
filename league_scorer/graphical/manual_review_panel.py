@@ -121,6 +121,10 @@ class ManualReviewPanel(tk.Frame):
         notebook.pack(fill="both", expand=True)
         added_tabs = 0
 
+        self._notebook = notebook  # Store reference for tab change
+        self._anomaly_tab = None
+        self._apply_updates_btn = None
+
         if self._club_candidates:
             club_tab = tk.Frame(notebook, bg=_DEFAULT_BG)
             notebook.add(club_tab, text=f"Clubs ({len(self._club_candidates)})")
@@ -134,6 +138,7 @@ class ManualReviewPanel(tk.Frame):
             added_tabs += 1
 
         anomaly_tab = tk.Frame(notebook, bg=_DEFAULT_BG)
+        self._anomaly_tab = anomaly_tab
         notebook.add(anomaly_tab, text="Runner Anomalies")
         self._build_runner_anomalies_tab(anomaly_tab)
         added_tabs += 1
@@ -151,7 +156,7 @@ class ManualReviewPanel(tk.Frame):
         action_bar = tk.Frame(left, bg=_DEFAULT_BG)
         action_bar.pack(fill="x", pady=(8, 0))
 
-        tk.Button(
+        self._apply_updates_btn = tk.Button(
             action_bar,
             text="Apply Selected Updates",
             command=self._open_confirmation,
@@ -161,10 +166,25 @@ class ManualReviewPanel(tk.Frame):
             relief="flat",
             padx=14,
             pady=7,
-        ).pack(side="right")
+        )
+        self._apply_updates_btn.pack(side="right")
+
+        # Bind tab change event
+        notebook.bind("<<NotebookTabChanged>>", self._on_tab_changed)
 
         self._runner_panel = RunnerHistoryPanel(right, back_callback=None)
         self._runner_panel.pack(fill="both", expand=True)
+
+    def _on_tab_changed(self, event=None):
+        # Hide the Apply Selected Updates button if anomalies tab is selected
+        if not hasattr(self, '_notebook') or not hasattr(self, '_anomaly_tab') or not hasattr(self, '_apply_updates_btn'):
+            return
+        selected = self._notebook.select()
+        if selected == str(self._anomaly_tab):
+            self._apply_updates_btn.pack_forget()
+        else:
+            if not self._apply_updates_btn.winfo_ismapped():
+                self._apply_updates_btn.pack(side="right")
 
     def _set_equal_split(self) -> None:
         if self._split is None:
