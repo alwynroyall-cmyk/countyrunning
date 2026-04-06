@@ -17,7 +17,7 @@ from .club_match_dialog import (
     _build_write_result_text,
     _read_club_lookup_state,
     _summarise_selection,
-    _set_widget_tree_bg,
+    _set_widget_tree_bg as _legacy_set_widget_tree_bg,  # kept for compatibility
     ClubMatchCandidate,
 )
 from .manual_review_dialog import (
@@ -29,13 +29,22 @@ from .manual_review_dialog import (
 )
 from .results_workbook import find_latest_results_workbook, sorted_race_sheet_names
 
-WRRL_NAVY = "#3a4658"
-WRRL_GREEN = "#2d7a4a"
-WRRL_LIGHT = "#f5f5f5"
-WRRL_WHITE = "#ffffff"
-
-_HIGHLIGHT_BG = "#fff1c7"
-_DEFAULT_BG = WRRL_LIGHT
+from .manual_review_helpers import (
+    WRRL_NAVY,
+    WRRL_GREEN,
+    WRRL_LIGHT,
+    WRRL_WHITE,
+    _DEFAULT_BG,
+    _HIGHLIGHT_BG,
+    proper_case,
+    make_header_label,
+    build_scroll_frame,
+    set_widget_tree_bg,
+    scan_workbook_for_runner_state,
+    detect_runner_anomalies,
+    add_club_row,
+    add_name_row,
+)
 
 
 class ManualReviewPanel(tk.Frame):
@@ -50,7 +59,7 @@ class ManualReviewPanel(tk.Frame):
         back_callback=None,
     ) -> None:
         super().__init__(parent, bg=_DEFAULT_BG)
-        self._changed_runners: set[str] = set()  # Track runners with applied changes (normalized)
+        self._changed_runners: set[str] = set()
         self._back_callback = back_callback
         self._clubs_path = clubs_path
         self._names_path = names_path
@@ -67,7 +76,14 @@ class ManualReviewPanel(tk.Frame):
         self._anomaly_find_btn: tk.Button | None = None
         self._anomaly_scan_queue: "queue.Queue | None" = None
         self._split: tk.PanedWindow | None = None
+        self._notebook: ttk.Notebook | None = None
+        self._anomaly_tab: tk.Frame | None = None
+        self._apply_updates_btn: tk.Button | None = None
         self._build_ui()
+
+    # -----------------------------
+    # UI construction
+    # -----------------------------
 
     def _build_ui(self) -> None:
         header = tk.Frame(self, bg=WRRL_NAVY, padx=14, pady=10)
@@ -120,11 +136,11 @@ class ManualReviewPanel(tk.Frame):
 
         notebook = ttk.Notebook(left)
         notebook.pack(fill="both", expand=True)
-        added_tabs = 0
-
-        self._notebook = notebook  # Store reference for tab change
+        self._notebook = notebook
         self._anomaly_tab = None
         self._apply_updates_btn = None
+
+        added_tabs = 0
 
         if self._club_candidates:
             club_tab = tk.Frame(notebook, bg=_DEFAULT_BG)
@@ -170,22 +186,10 @@ class ManualReviewPanel(tk.Frame):
         )
         self._apply_updates_btn.pack(side="right")
 
-        # Bind tab change event
         notebook.bind("<<NotebookTabChanged>>", self._on_tab_changed)
 
         self._runner_panel = RunnerHistoryPanel(right, back_callback=None, parent_panel=self)
         self._runner_panel.pack(fill="both", expand=True)
-
-    def _on_tab_changed(self, event=None):
-        # Hide the Apply Selected Updates button if anomalies tab is selected
-        if not hasattr(self, '_notebook') or not hasattr(self, '_anomaly_tab') or not hasattr(self, '_apply_updates_btn'):
-            return
-        selected = self._notebook.select()
-        if selected == str(self._anomaly_tab):
-            self._apply_updates_btn.pack_forget()
-        else:
-            if not self._apply_updates_btn.winfo_ismapped():
-                self._apply_updates_btn.pack(side="right")
 
     def _set_equal_split(self) -> None:
         if self._split is None:
@@ -196,6 +200,20 @@ class ManualReviewPanel(tk.Frame):
                 self._split.sash_place(0, total_width // 2, 0)
         except Exception:
             return
+
+    def _on_tab_changed(self, _event=None):
+        if not self._notebook or not self._anomaly_tab or not self._apply_updates_btn:
+            return
+        selected = self._notebook.select()
+        if selected == str(self._anomaly_tab):
+            self._apply_updates_btn.pack_forget()
+        else:
+            if not self._apply_updates_btn.winfo_ismapped():
+                self._apply_updates_btn.pack(side="right")
+
+    # -----------------------------
+    # Tabs
+    # -----------------------------
 
     def _build_runner_anomalies_tab(self, parent: tk.Misc) -> None:
         intro = tk.Label(
@@ -228,7 +246,7 @@ class ManualReviewPanel(tk.Frame):
         self._anomaly_find_btn.pack(side="left")
 
         self._anomaly_status_var = tk.StringVar(
-            value="Click \u2018Find Anomalies\u2019 to scan for cross-race inconsistencies."
+            value="Click ‘Find Anomalies’ to scan for cross-race inconsistencies."
         )
         tk.Label(
             toolbar,
@@ -269,20 +287,62 @@ class ManualReviewPanel(tk.Frame):
         tree.bind("<<TreeviewSelect>>", self._on_runner_anomaly_selected)
         self._anomaly_tree = tree
 
+    def _build_club_tab(self, parent: tk.Misc) -> None:
+        header = tk.Frame(parent, bg="#dbe5ee")
+        header.pack(fill="x")
+        make_header_label(header, "Tick", 0, 8)
+        make_header_label(header, "Current Club", 1, 24)
+        make_header_label(header, "Proposed Club", 2, 24)
+        make_header_label(header, "Message", 3, 48)
+
+        rows_frame = build_scroll_frame(parent)
+        for candidate in self._club_candidates:
+            var = tk.BooleanVar(value=False)
+            self._club_vars[candidate.current_club] = var
+            add_club_row(rows_frame, candidate, var, self._club_row_frames)
+
+    def _build_name_tab(self, parent: tk.Misc) -> None:
+        header = tk.Frame(parent, bg="#dbe5ee")
+        header.pack(fill="x")
+        make_header_label(header, "Tick", 0, 8)
+        make_header_label(header, "Current Name", 1, 24)
+        make_header_label(header, "Proposed Name", 2, 28)
+        make_header_label(header, "Message", 3, 44)
+
+        rows_frame = build_scroll_frame(parent)
+        for candidate in self._name_candidates:
+            var = tk.BooleanVar(value=False)
+            value_var = tk.StringVar(value=candidate.proposed_name)
+            self._name_vars[candidate.current_name] = var
+            self._name_value_vars[candidate.current_name] = value_var
+            add_name_row(rows_frame, candidate, var, value_var, self._name_row_frames)
+
+    # -----------------------------
+    # Anomaly scanning
+    # -----------------------------
+
     def _refresh_runner_anomaly_list(self) -> None:
         if self._anomaly_tree is None:
             return
+        if self._anomaly_scan_queue is not None:
+            # Scan already in progress
+            return
+
         self._anomaly_tree.delete(*self._anomaly_tree.get_children())
         if self._anomaly_find_btn is not None:
-            self._anomaly_find_btn.config(state="disabled", text="Scanning\u2026")
+            self._anomaly_find_btn.config(state="disabled", text="Scanning…")
         if self._anomaly_status_var is not None:
-            self._anomaly_status_var.set("Scanning\u2026")
+            self._anomaly_status_var.set("Scanning…")
+
         q: queue.Queue = queue.Queue()
         self._anomaly_scan_queue = q
-        threading.Thread(
-            target=lambda: q.put(self._collect_runner_anomalies()),
-            daemon=True,
-        ).start()
+
+        def worker():
+            state = scan_workbook_for_runner_state()
+            anomalies = detect_runner_anomalies(state)
+            q.put(anomalies)
+
+        threading.Thread(target=worker, daemon=True).start()
         self.after(100, self._poll_anomaly_scan)
 
     def _poll_anomaly_scan(self) -> None:
@@ -294,30 +354,30 @@ class ManualReviewPanel(tk.Frame):
         except queue.Empty:
             self.after(100, self._poll_anomaly_scan)
             return
+
         self._anomaly_scan_queue = None
         tree = self._anomaly_tree
+        tree.delete(*tree.get_children())
+
         for idx, row in enumerate(anomalies):
             tag = "even" if idx % 2 else "odd"
             runner_name = row["runner"]
-            # Use Proper Case for tick check (matches anomaly list display)
-            def proper_case(s: str) -> str:
-                import re
-                return re.sub(r"([A-Za-z])([A-Za-z']*)", lambda m: m.group(1).upper() + m.group(2).lower(), s)
-            pc_runner = proper_case(runner_name.strip())
-            status = "✓" if pc_runner in self._changed_runners else ""
+            status = "✓" if runner_name in self._changed_runners else ""
             tree.insert(
                 "",
                 "end",
                 values=(status, runner_name, row["anomalies"], row["details"]),
                 tags=(tag,),
             )
+
         if anomalies:
             if self._anomaly_status_var is not None:
                 self._anomaly_status_var.set(f"{len(anomalies)} runner(s) with anomalies found.")
         else:
             if self._anomaly_status_var is not None:
                 self._anomaly_status_var.set("No anomalies found.")
-            tree.insert("", "end", values=("No anomalies found", "", ""), tags=("odd",))
+            tree.insert("", "end", values=("No anomalies found", "", "", ""), tags=("odd",))
+
         if self._anomaly_find_btn is not None:
             self._anomaly_find_btn.config(state="normal", text="Find Anomalies")
 
@@ -330,189 +390,24 @@ class ManualReviewPanel(tk.Frame):
         values = self._anomaly_tree.item(selected[0], "values")
         if not values:
             return
-        # values[0] is now the Status (tick) column, values[1] is the runner name
         runner_name = str(values[1]).strip() if len(values) > 1 else ""
         if not runner_name or runner_name.lower() == "no anomalies found":
             return
         self._runner_panel.select_runner(runner_name)
 
-    def _collect_runner_anomalies(self) -> list[dict[str, str]]:
-        import re
-        def proper_case(s: str) -> str:
-            # Excel-like PROPER() for names, handling apostrophes and hyphens
-            return re.sub(r"([A-Za-z])([A-Za-z']*)", lambda m: m.group(1).upper() + m.group(2).lower(), s)
+        # Auto-scroll to selected row for better UX
+        self._anomaly_tree.see(selected[0])
 
-        if session_config.output_dir is None:
-            return []
-        workbook = find_latest_results_workbook(session_config.output_dir)
-        if workbook is None:
-            return []
-
-        runner_state: dict[str, dict[str, set[str]]] = {}
-        name_map: dict[str, str] = {}  # normalized (lower) -> Proper Case
-        try:
-            xl = pd.ExcelFile(workbook)
-            for sheet in sorted_race_sheet_names(xl):
-                df = xl.parse(sheet).fillna("")
-                if "Name" not in df.columns:
-                    continue
-                for _, row in df.iterrows():
-                    name = str(row.get("Name", "")).strip()
-                    if not name:
-                        continue
-                    norm = name.lower()
-                    proper = proper_case(name)
-                    name_map[norm] = proper
-                    state = runner_state.setdefault(norm, {
-                        "club": set(),
-                        "gender": set(),
-                        "category": set(),
-                        "raw_names": set(),
-                    })
-                    state["raw_names"].add(name)
-
-                    club = str(row.get("Club", "")).strip()
-                    if club:
-                        state["club"].add(club)
-
-                    gender = str(row.get("Gender", "")).strip().upper()
-                    if gender:
-                        state["gender"].add(gender)
-
-                    category = str(row.get("Category", "")).strip()
-                    if category:
-                        state["category"].add(category)
-        except Exception:
-            return []
-
-        rows: list[dict[str, str]] = []
-        for norm, state in runner_state.items():
-            flags: list[str] = []
-            detail_parts: list[str] = []
-
-            if len(state["club"]) > 1:
-                flags.append("Club")
-                detail_parts.append("clubs=" + ", ".join(sorted(state["club"])))
-
-            if len(state["gender"]) > 1:
-                flags.append("Gender")
-                detail_parts.append("gender=" + ", ".join(sorted(state["gender"])))
-
-            if len(state["category"]) > 1:
-                flags.append("Category")
-                preview = sorted(state["category"])
-                detail_parts.append("categories=" + ", ".join(preview[:6]) + ("..." if len(preview) > 6 else ""))
-
-            if flags:
-                rows.append({
-                    "runner": name_map[norm],
-                    "anomalies": "/".join(flags),
-                    "details": " | ".join(detail_parts),
-                })
-
-        rows.sort(key=lambda item: item["runner"].lower())
-        return rows
-
-    def _build_club_tab(self, parent: tk.Misc) -> None:
-        header = tk.Frame(parent, bg="#dbe5ee")
-        header.pack(fill="x")
-        self._make_header_label(header, "Tick", 0, 8)
-        self._make_header_label(header, "Current Club", 1, 24)
-        self._make_header_label(header, "Proposed Club", 2, 24)
-        self._make_header_label(header, "Message", 3, 48)
-
-        rows_frame = self._build_scroll_frame(parent)
-        for candidate in self._club_candidates:
-            self._add_club_row(rows_frame, candidate)
-
-    def _build_name_tab(self, parent: tk.Misc) -> None:
-        header = tk.Frame(parent, bg="#dbe5ee")
-        header.pack(fill="x")
-        self._make_header_label(header, "Tick", 0, 8)
-        self._make_header_label(header, "Current Name", 1, 24)
-        self._make_header_label(header, "Proposed Name", 2, 28)
-        self._make_header_label(header, "Message", 3, 44)
-
-        rows_frame = self._build_scroll_frame(parent)
-        for candidate in self._name_candidates:
-            self._add_name_row(rows_frame, candidate)
-
-    def _build_scroll_frame(self, parent: tk.Misc) -> tk.Frame:
-        outer = tk.Frame(parent, bg=_DEFAULT_BG)
-        outer.pack(fill="both", expand=True)
-        canvas = tk.Canvas(outer, bg=_DEFAULT_BG, highlightthickness=0)
-        scrollbar = tk.Scrollbar(outer, orient="vertical", command=canvas.yview)
-        rows_frame = tk.Frame(canvas, bg=_DEFAULT_BG)
-        rows_frame.bind("<Configure>", lambda _event: canvas.configure(scrollregion=canvas.bbox("all")))
-        canvas.create_window((0, 0), window=rows_frame, anchor="nw")
-        canvas.configure(yscrollcommand=scrollbar.set)
-        canvas.pack(side="left", fill="both", expand=True)
-        scrollbar.pack(side="right", fill="y")
-        return rows_frame
-
-    def _make_header_label(self, parent: tk.Misc, text: str, column: int, width: int) -> None:
-        label = tk.Label(
-            parent,
-            text=text,
-            font=("Segoe UI", 10, "bold"),
-            bg="#dbe5ee",
-            fg="#22313f",
-            anchor="w",
-            width=width,
-            padx=6,
-            pady=6,
-        )
-        label.grid(row=0, column=column, sticky="ew")
-
-    def _add_club_row(self, parent: tk.Misc, candidate: ClubMatchCandidate) -> None:
-        var = tk.BooleanVar(value=False)
-        self._club_vars[candidate.current_club] = var
-        frame = tk.Frame(parent, bg=_DEFAULT_BG, bd=1, relief="flat")
-        frame.pack(fill="x", pady=1)
-        self._club_row_frames[candidate.current_club] = frame
-
-        tk.Checkbutton(frame, variable=var, bg=_DEFAULT_BG, activebackground=_DEFAULT_BG, highlightthickness=0).grid(row=0, column=0, sticky="w", padx=(6, 0), pady=6)
-        self._make_value_label(frame, candidate.current_club, 1, 24)
-        self._make_value_label(frame, candidate.proposed_club, 2, 24)
-        self._make_value_label(frame, candidate.message, 3, 72)
-        frame.grid_columnconfigure(3, weight=1)
-
-    def _add_name_row(self, parent: tk.Misc, candidate) -> None:
-        var = tk.BooleanVar(value=False)
-        value_var = tk.StringVar(value=candidate.proposed_name)
-        self._name_vars[candidate.current_name] = var
-        self._name_value_vars[candidate.current_name] = value_var
-
-        frame = tk.Frame(parent, bg=_DEFAULT_BG, bd=1, relief="flat")
-        frame.pack(fill="x", pady=1)
-        self._name_row_frames[candidate.current_name] = frame
-
-        tk.Checkbutton(frame, variable=var, bg=_DEFAULT_BG, activebackground=_DEFAULT_BG, highlightthickness=0).grid(row=0, column=0, sticky="w", padx=(6, 0), pady=6)
-        self._make_value_label(frame, candidate.current_name, 1, 24)
-        entry = tk.Entry(frame, textvariable=value_var, font=("Segoe UI", 10), bg="#ffffff", fg="#22313f", relief="solid", bd=1)
-        entry.grid(row=0, column=2, sticky="ew", padx=6, pady=6)
-        self._make_value_label(frame, candidate.message, 3, 64)
-        frame.grid_columnconfigure(2, weight=1)
-        frame.grid_columnconfigure(3, weight=1)
-
-    def _make_value_label(self, parent: tk.Misc, text: str, column: int, width: int) -> None:
-        label = tk.Label(
-            parent,
-            text=text,
-            font=("Segoe UI", 10),
-            bg=_DEFAULT_BG,
-            fg="#22313f",
-            anchor="w",
-            justify="left",
-            width=width,
-            wraplength=520 if column >= 3 else 0,
-            padx=6,
-            pady=6,
-        )
-        label.grid(row=0, column=column, sticky="ew")
+    # -----------------------------
+    # Confirmation / apply updates
+    # -----------------------------
 
     def _open_confirmation(self) -> None:
-        selected_clubs = [candidate for candidate in self._club_candidates if self._club_vars[candidate.current_club].get()]
+        selected_clubs = [
+            candidate
+            for candidate in self._club_candidates
+            if self._club_vars.get(candidate.current_club, tk.BooleanVar()).get()
+        ]
         selected_names = [
             {
                 "current_name": candidate.current_name,
@@ -520,7 +415,7 @@ class ManualReviewPanel(tk.Frame):
                 "message": candidate.message,
             }
             for candidate in self._name_candidates
-            if self._name_vars[candidate.current_name].get()
+            if self._name_vars.get(candidate.current_name, tk.BooleanVar()).get()
         ]
 
         if not selected_clubs and not selected_names:
@@ -549,11 +444,17 @@ class ManualReviewPanel(tk.Frame):
 
         club_summary = None
         if selected_clubs and self._clubs_path is not None:
-            club_summary = _summarise_selection(selected_clubs, _read_club_lookup_state(self._clubs_path))
+            club_summary = _summarise_selection(
+                selected_clubs,
+                _read_club_lookup_state(self._clubs_path),
+            )
 
         name_summary = None
         if selected_names and self._names_path is not None:
-            name_summary = _summarise_name_selection(selected_names, read_name_lookup_state(self._names_path))
+            name_summary = _summarise_name_selection(
+                selected_names,
+                read_name_lookup_state(self._names_path),
+            )
 
         _ManualReviewConfirmationDialog(self, club_summary, name_summary)
 
@@ -561,13 +462,13 @@ class ManualReviewPanel(tk.Frame):
         conflicts = set(conflict_clubs)
         for current_club, frame in self._club_row_frames.items():
             bg = _HIGHLIGHT_BG if current_club in conflicts else _DEFAULT_BG
-            _set_widget_tree_bg(frame, bg)
+            set_widget_tree_bg(frame, bg)
 
     def highlight_name_conflicts(self, conflict_names: List[str]) -> None:
         conflicts = set(conflict_names)
         for current_name, frame in self._name_row_frames.items():
             bg = _HIGHLIGHT_BG if current_name in conflicts else _DEFAULT_BG
-            _set_widget_tree_bg(frame, bg)
+            set_widget_tree_bg(frame, bg)
 
 
 class _ManualReviewConfirmationDialog(tk.Toplevel):
@@ -585,17 +486,12 @@ class _ManualReviewConfirmationDialog(tk.Toplevel):
         self.grab_set()
 
     def destroy(self):
-        # Mark the runner currently being reviewed (right panel) as changed
-        if self._panel and hasattr(self._panel, '_runner_panel') and self._panel._runner_panel is not None:
+        if self._panel and hasattr(self._panel, "_runner_panel") and self._panel._runner_panel is not None:
             runner_name = self._panel._runner_panel._runner_var.get().strip()
             if runner_name:
-                def proper_case(s: str) -> str:
-                    import re
-                    return re.sub(r"([A-Za-z])([A-Za-z']*)", lambda m: m.group(1).upper() + m.group(2).lower(), s)
                 pc_runner = proper_case(runner_name)
                 self._panel._changed_runners.add(pc_runner)
                 self._panel._refresh_runner_anomaly_list()
-                # Explicitly reload the right panel for the current runner
                 self._panel._runner_panel.select_runner(runner_name)
         super().destroy()
 
@@ -628,7 +524,10 @@ class _ManualReviewConfirmationDialog(tk.Toplevel):
             pady=6,
         ).pack(side="left")
 
-        has_conflicts = bool((self._club_summary and self._club_summary["conflicts"]) or (self._name_summary and self._name_summary["conflicts"]))
+        has_conflicts = bool(
+            (self._club_summary and self._club_summary["conflicts"])
+            or (self._name_summary and self._name_summary["conflicts"])
+        )
         tk.Button(
             action_bar,
             text="Confirm Write",
@@ -644,25 +543,29 @@ class _ManualReviewConfirmationDialog(tk.Toplevel):
 
     def _back_to_selection(self) -> None:
         if self._club_summary:
-            self._panel.highlight_club_conflicts([item.current_club for item in self._club_summary["conflicts"]])
+            self._panel.highlight_club_conflicts(
+                [item.current_club for item in self._club_summary["conflicts"]]
+            )
         if self._name_summary:
-            self._panel.highlight_name_conflicts([item["current_name"] for item in self._name_summary["conflicts"]])
+            self._panel.highlight_name_conflicts(
+                [item["current_name"] for item in self._name_summary["conflicts"]]
+            )
         self.destroy()
 
     def _confirm_write(self) -> None:
         messages = []
         if self._club_summary and self._panel._clubs_path is not None:
-            club_result = _append_club_conversions(self._panel._clubs_path, self._club_summary["new_rows"])
+            club_result = _append_club_conversions(
+                self._panel._clubs_path,
+                self._club_summary["new_rows"],
+            )
             messages.append(_build_write_result_text(club_result))
         if self._name_summary and self._panel._names_path is not None:
-            name_result = append_name_corrections(self._panel._names_path, self._name_summary["new_rows"])
+            name_result = append_name_corrections(
+                self._panel._names_path,
+                self._name_summary["new_rows"],
+            )
             messages.append(_build_name_write_result_text(name_result))
-
-        # DEBUG: Show selection and values at start
-        if self._panel and hasattr(self._panel, '_anomaly_tree') and self._panel._anomaly_tree is not None:
-            selected = self._panel._anomaly_tree.selection()
-            values = self._panel._anomaly_tree.item(selected[0], "values") if selected else None
-            messagebox.showinfo("DEBUG: _confirm_write called", f"Selected: {selected}\nValues: {values}")
 
         self.destroy()
         messagebox.showinfo("Manual Review Updated", "\n\n".join(messages), parent=self._panel)

@@ -45,11 +45,33 @@ class RunnerHistoryPanel(tk.Frame):
         self._club_map = {}
         self._all_clubs: list[str] = []
         self._latest_df: pd.DataFrame | None = None
-        self._lookup_mode = "runner"  # "runner" or "club"
+        self._lookup_mode = "runner"
         self._wb_cache: dict = {}
         self._configure_styles()
         self._build_ui()
         self._load_runner_options()
+
+    # ----------------------------------------------------------------------
+    # NEW HELPER: mark runner as changed in the left anomalies panel
+    # ----------------------------------------------------------------------
+    def _mark_runner_changed(self):
+        """Notify ManualReviewPanel that this runner has been updated."""
+        if not self._parent_panel:
+            return
+
+        runner = self._runner_var.get().strip()
+        if not runner:
+            return
+
+        import re
+        def proper_case(s: str) -> str:
+            return re.sub(r"([A-Za-z])([A-Za-z']*)",
+                          lambda m: m.group(1).upper() + m.group(2).lower(), s)
+
+        pc = proper_case(runner)
+        self._parent_panel._changed_runners.add(pc)
+        self._parent_panel._refresh_runner_anomaly_list()
+
 
     def _configure_styles(self):
         self._style.configure(
@@ -757,13 +779,27 @@ class RunnerHistoryPanel(tk.Frame):
             self._resolve_frame.pack(fill="x", padx=14, pady=(0, 6))
 
     def _resolve_club_across_inputs(self) -> None:
-        self._resolve_field_across_inputs(field_type="club", target_value=self._club_resolve_var.get().strip())
+        self._resolve_field_across_inputs(
+            field_type="club",
+            target_value=self._club_resolve_var.get().strip()
+        )
+        self._mark_runner_changed()
 
     def _resolve_gender_across_inputs(self) -> None:
-        self._resolve_field_across_inputs(field_type="gender", target_value=self._gender_resolve_var.get().strip().upper())
+        self._resolve_field_across_inputs(
+            field_type="gender",
+            target_value=self._gender_resolve_var.get().strip()
+        )
+        self._mark_runner_changed()
 
     def _resolve_category_across_inputs(self) -> None:
-        self._resolve_field_across_inputs(field_type="category", target_value=self._category_resolve_var.get().strip())
+        self._resolve_field_across_inputs(
+            field_type="category",
+            target_value=self._category_resolve_var.get().strip()
+        )
+        self._mark_runner_changed()
+
+
 
     def _resolve_time_across_inputs(self) -> None:
         entered = self._time_resolve_var.get().strip()

@@ -1,0 +1,184 @@
+import re
+import pandas as pd
+from pathlib import Path
+from openpyxl import load_workbook
+
+from ..manual_edit_service import resolve_runner_field_across_files
+from ..manual_data_audit import log_manual_data_changes
+from ..normalisation import parse_time_to_seconds  # kept in case other modules rely on it
+from ..race_processor import extract_race_number
+from ..results_workbook import sorted_race_sheet_names
+from ..session_config import config as session_config
+
+
+# -----------------------------
+# Basic utilities
+# -----------------------------
+def proper_case(s):
+    return re.sub(r"([A-Za-z])([A-Za-z']*)",
+                  lambda m: m.group(1).upper() + m.group(2).lower(),
+                  s or "")
+
+
+def norm(v):
+    if v is None:
+        return ""
+    t = str(v).strip()
+    return "" if t.lower() in ("nan", "none") else t
+
+
+# -----------------------------
+# Workbook cache
+# -----------------------------
+def load_workbook_cache():
+    output_dir = session_config.output_dir
+    wb_path = Path(output_dir) / "latest_results.xlsx"
+    if not wb_path.exists():
+        return None
+
+    try:
+        xl = pd.ExcelFile(wb_path)
+        race_sheets = sorted_race_sheet_names(xl)
+        sheets = {}
+        name_map = {}
+        club_map = {}
+
+        for sheet in race_sheets:
+            df = xl.parse(sheet)
+            sheets[sheet] = df
+
+            if "Name" in df.columns:
+                for v in df["Name"].dropna():
+                    name = str(v).strip()
+                    if name:
+                        pc = proper_case(name)
+                        name_map.setdefault(name.lower(), pc)
+
+            if "Club" in df.columns:
+                for v in df["Club"].dropna():
+                    club = str(v).strip()
+                    if club:
+                        club_map.setdefault(club.lower(), club)
+
+        xl.close()
+
+        return {
+            "path": wb_path,
+            "race_sheets": race_sheets,
+            "sheets": sheets,
+            "name_map": name_map,
+            "club_map": club_map,
+        }
+
+    except Exception:
+        return None
+
+
+# -----------------------------
+# Runner list
+# -----------------------------
+def extract_runner_names(cache):
+    names = cache["name_map"]
+    pcs = {k: proper_case(v) for k, v in names.items()}
+    return sorted(pcs.values(), key=lambda n: n.lower())
+
+
+# -----------------------------
+# Runner history extraction
+# -----------------------------
+def extract_runner_history(cache, runner_pc):
+    rows = []
+    key = runner_pc.lower()
+
+    for sheet in cache["race_sheets"]:
+        df = cache["sheets"][sheet].fillna("")
+        if "Name" not in df.columns:
+            continue
+
+        race_num = extract_race_number(sheet) or ""
+
+        for _, row in df.iterrows():
+            name = norm(row.get("Name"))
+            if not name:
+                continue
+
+            if proper_case(name).lower() != key:
+                continue
+
+            points_val = row.get("Points", "")
+            try:
+                points_int = int(float(points_val))
+            except Exception:
+                points_int = points_val
+
+            rows.append({
+                "Race": race_num,
+                "Club": norm(row.get("Club")),
+                "Gender": norm(row.get("Gender")),
+                "Category": norm(row.get("Category")),
+                "Time": norm(row.get("Time")),
+                "Points": str(points_int),
+                "Team": norm(row.get("Team")),
+                "Source": sheet,
+            })
+
+    return pd.DataFrame(rows)
+
+
+# -----------------------------
+# Conflict detection
+# -----------------------------
+def detect_conflicts(df):
+    conflicts = {}
+
+    clubs = {norm(v) for v in df.get("Club", [])}
+    clubs.discard("")
+    if len(clubs) > 1:
+        conflicts["club"] = sorted(clubs, key=str.lower)
+
+    genders = {norm(v).upper() for v in df.get("Gender", [])}
+    genders.discard("")
+    if len(genders) > 1:
+        conflicts["gender"] = sorted(genders)
+
+    cats = {norm(v) for v in df.get("Category", [])}
+    cats.discard("")
+    if len(cats) > 1:
+        conflicts["category"] = sorted(cats, key=str.lower)
+
+    return conflicts
+
+
+# -----------------------------
+# Resolve actions
+# -----------------------------
+def _apply_resolve(runner_pc, field, new_value):
+    resolve_runner_field_across_files(runner_pc, field, new_value)
+    log_manual_data_changes(runner_pc, field, new_value)
+
+
+def resolve_club(runner_pc, new_value):
+    _apply_resolve(runner_pc, "Club", new_value)
+
+
+def resolve_gender(runner_pc, new_value):
+    _apply_resolve(runner_pc, "Gender", new_value)
+
+
+def resolve_category(runner_pc, new_value):
+    _apply_resolve(runner_pc, "Category", new_value)
+
+
+# -----------------------------
+# Sanitisation for export
+# -----------------------------
+_FORMULA_PREFIXES = frozenset(("=", "+", "-", "@"))
+
+def sanitise_df_for_export(df):
+    df = df.copy()
+    for col in df.columns:
+        if df[col].dtype == object:
+            df[col] = df[col].map(
+                lambda v: ("'" + v) if isinstance(v, str) and v and v[0] in _FORMULA_PREFIXES else v
+            )
+    return df
