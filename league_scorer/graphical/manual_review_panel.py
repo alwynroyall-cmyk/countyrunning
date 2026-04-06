@@ -50,6 +50,7 @@ class ManualReviewPanel(tk.Frame):
         back_callback=None,
     ) -> None:
         super().__init__(parent, bg=_DEFAULT_BG)
+        self._changed_runners: set[str] = set()  # Track runners with applied changes
         self._back_callback = back_callback
         self._clubs_path = clubs_path
         self._names_path = names_path
@@ -243,12 +244,14 @@ class ManualReviewPanel(tk.Frame):
         tree = ttk.Treeview(
             table_wrap,
             show="headings",
-            columns=("Runner", "Anomalies", "Details"),
+            columns=("Status", "Runner", "Anomalies", "Details"),
             style="RunnerHistory.Treeview",
         )
+        tree.heading("Status", text="✓", anchor="center")
         tree.heading("Runner", text="Runner", anchor="w")
         tree.heading("Anomalies", text="Anomalies", anchor="w")
         tree.heading("Details", text="Details", anchor="w")
+        tree.column("Status", width=28, anchor="center", stretch=False)
         tree.column("Runner", width=220, anchor="w", stretch=False)
         tree.column("Anomalies", width=150, anchor="w", stretch=False)
         tree.column("Details", width=520, anchor="w", stretch=True)
@@ -295,10 +298,12 @@ class ManualReviewPanel(tk.Frame):
         tree = self._anomaly_tree
         for idx, row in enumerate(anomalies):
             tag = "even" if idx % 2 else "odd"
+            runner_name = row["runner"]
+            status = "✓" if runner_name in self._changed_runners else ""
             tree.insert(
                 "",
                 "end",
-                values=(row["runner"], row["anomalies"], row["details"]),
+                values=(status, runner_name, row["anomalies"], row["details"]),
                 tags=(tag,),
             )
         if anomalies:
@@ -320,12 +325,18 @@ class ManualReviewPanel(tk.Frame):
         values = self._anomaly_tree.item(selected[0], "values")
         if not values:
             return
-        runner_name = str(values[0]).strip()
+        # values[0] is now the Status (tick) column, values[1] is the runner name
+        runner_name = str(values[1]).strip() if len(values) > 1 else ""
         if not runner_name or runner_name.lower() == "no anomalies found":
             return
         self._runner_panel.select_runner(runner_name)
 
     def _collect_runner_anomalies(self) -> list[dict[str, str]]:
+        import re
+        def proper_case(s: str) -> str:
+            # Excel-like PROPER() for names, handling apostrophes and hyphens
+            return re.sub(r"([A-Za-z])([A-Za-z']*)", lambda m: m.group(1).upper() + m.group(2).lower(), s)
+
         if session_config.output_dir is None:
             return []
         workbook = find_latest_results_workbook(session_config.output_dir)
@@ -333,6 +344,7 @@ class ManualReviewPanel(tk.Frame):
             return []
 
         runner_state: dict[str, dict[str, set[str]]] = {}
+        name_map: dict[str, str] = {}  # normalized (lower) -> Proper Case
         try:
             xl = pd.ExcelFile(workbook)
             for sheet in sorted_race_sheet_names(xl):
@@ -343,14 +355,16 @@ class ManualReviewPanel(tk.Frame):
                     name = str(row.get("Name", "")).strip()
                     if not name:
                         continue
-                    state = runner_state.setdefault(
-                        name,
-                        {
-                            "club": set(),
-                            "gender": set(),
-                            "category": set(),
-                        },
-                    )
+                    norm = name.lower()
+                    proper = proper_case(name)
+                    name_map[norm] = proper
+                    state = runner_state.setdefault(norm, {
+                        "club": set(),
+                        "gender": set(),
+                        "category": set(),
+                        "raw_names": set(),
+                    })
+                    state["raw_names"].add(name)
 
                     club = str(row.get("Club", "")).strip()
                     if club:
@@ -367,7 +381,7 @@ class ManualReviewPanel(tk.Frame):
             return []
 
         rows: list[dict[str, str]] = []
-        for name, state in runner_state.items():
+        for norm, state in runner_state.items():
             flags: list[str] = []
             detail_parts: list[str] = []
 
@@ -385,13 +399,11 @@ class ManualReviewPanel(tk.Frame):
                 detail_parts.append("categories=" + ", ".join(preview[:6]) + ("..." if len(preview) > 6 else ""))
 
             if flags:
-                rows.append(
-                    {
-                        "runner": name,
-                        "anomalies": "/".join(flags),
-                        "details": " | ".join(detail_parts),
-                    }
-                )
+                rows.append({
+                    "runner": name_map[norm],
+                    "anomalies": "/".join(flags),
+                    "details": " | ".join(detail_parts),
+                })
 
         rows.sort(key=lambda item: item["runner"].lower())
         return rows
@@ -566,6 +578,17 @@ class _ManualReviewConfirmationDialog(tk.Toplevel):
 
         self._build_ui()
         self.grab_set()
+
+    def destroy(self):
+        # Mark the runner currently being reviewed (right panel) as changed
+        if self._panel and hasattr(self._panel, '_runner_panel') and self._panel._runner_panel is not None:
+            runner_name = self._panel._runner_panel._runner_var.get().strip()
+            if runner_name:
+                self._panel._changed_runners.add(runner_name)
+                self._panel._refresh_runner_anomaly_list()
+                # Explicitly reload the right panel for the current runner
+                self._panel._runner_panel.select_runner(runner_name)
+        super().destroy()
 
     def _build_ui(self) -> None:
         tk.Label(
