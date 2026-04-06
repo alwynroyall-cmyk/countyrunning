@@ -1,14 +1,14 @@
 WRRL League AI
 ===============
 
-Release: 6.0.0
+Release: 6.2.1
 
 Overview
 --------
 WRRL League AI is a desktop scoring and audit workflow for Wiltshire Road Running League seasons.
 It supports race ingestion, audit cleansing, issue review, scoring, staged checks, and report output.
 
-Key Changes In 6.0.0
+Key Changes In 6.2.1
 --------------------
 - Structured season input folders under inputs/:
 	- raw_data

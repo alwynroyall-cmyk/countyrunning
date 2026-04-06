@@ -1,9 +1,9 @@
-# WRRL League AI 6.0.0 Release Notes
+# WRRL League AI 6.2.1 Release Notes
 
 Date: 2026-04-03
 
 ## Summary
-Release 6.0.0 introduces the new structured season layout, strict autopilot provenance flow, archive behavior for raw race files, friendlier autopilot UX, and updated settings/setup workflow.
+Release 6.2.1 introduces the new structured season layout, strict autopilot provenance flow, archive behavior for raw race files, friendlier autopilot UX, and updated settings/setup workflow.
 
 ## Inputs: Structured Layout
 Season input folders are now standardised under:
@@ -51,7 +51,7 @@ Season output folders are now standardised under:
 ## Naming and Branding
 
 - Product naming updated to WRRL League AI.
-- Version is now 6.0.0.
+- Version is now 6.2.1.
 
 ## Operational Notes
 
