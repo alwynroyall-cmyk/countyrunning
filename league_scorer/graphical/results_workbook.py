@@ -6,6 +6,7 @@ from pathlib import Path
 import re
 
 import pandas as pd
+from ..race_processor import extract_race_number
 
 from ..output_layout import build_output_paths
 
