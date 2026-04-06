@@ -68,12 +68,13 @@ class EventsViewerPanel(tk.Frame):
 
     def __init__(self, parent: tk.Misc, schedule: EventsSchedule,
                  year: int = 2026, images_dir: Path | None = None,
-                 output_dir: Path | None = None) -> None:
+                 output_dir: Path | None = None, on_return_dashboard=None) -> None:
         super().__init__(parent, bg=WRRL_LIGHT)
         self._schedule   = schedule
         self._year       = year
         self._images_dir = images_dir
         self._output_dir = output_dir
+        self._on_return_dashboard_callback = on_return_dashboard
         self._build_ui()
         self._populate(schedule.events)
 
@@ -99,6 +100,23 @@ class EventsViewerPanel(tk.Frame):
             bg=WRRL_NAVY,
             fg=WRRL_WHITE,
         ).pack(side="left", padx=16, pady=8)
+
+        # Dashboard button (returns to dashboard)
+        dash_btn = tk.Button(
+            bar,
+            text="🏠 Dashboard",
+            font=("Segoe UI", 9, "bold"),
+            bg=WRRL_LIGHT,
+            fg=WRRL_GREEN,
+            relief="flat",
+            padx=10,
+            pady=4,
+            cursor="hand2",
+            activebackground="#e8f5e9",
+            activeforeground=WRRL_GREEN,
+            command=self._on_return_dashboard,
+        )
+        dash_btn.pack(side="right", padx=4, pady=8)
 
         # Generate Timeline button
         tl_btn = tk.Button(
@@ -127,6 +145,12 @@ class EventsViewerPanel(tk.Frame):
                 bg=WRRL_NAVY,
                 fg="#a0b0c0",
             ).pack(side="right", padx=4, pady=8)
+
+    def _on_return_dashboard(self):
+        # Call the dashboard's show_home_panel method if provided
+        if self._on_return_dashboard_callback:
+            self._on_return_dashboard_callback()
+        self.destroy()
 
     def _build_summary_bar(self) -> None:
         s = self._schedule

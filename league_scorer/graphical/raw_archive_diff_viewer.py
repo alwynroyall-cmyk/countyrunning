@@ -41,17 +41,17 @@ class RawArchiveDiffPanel(tk.Frame):
         if self._back_callback:
             tk.Button(
                 header,
-                text="\u25c4 Dashboard",
+                text="🏠 Dashboard",
                 font=("Segoe UI", 10, "bold"),
-                bg=WRRL_GREEN,
-                fg=WRRL_WHITE,
+                bg=WRRL_LIGHT,
+                fg=WRRL_GREEN,
                 relief="flat",
                 padx=10,
                 pady=4,
                 cursor="hand2",
                 command=self._back_callback,
                 activebackground="#1f5632",
-                activeforeground=WRRL_WHITE,
+                activeforeground=WRRL_GREEN,
             ).pack(side="right")
 
         controls = tk.Frame(self, bg=WRRL_LIGHT, padx=14, pady=10)

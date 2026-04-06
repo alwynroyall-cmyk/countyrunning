@@ -122,18 +122,7 @@ class ResultsViewerPanel(tk.Frame):
             pady=4,
         ).pack(side="left", padx=4)
         
-        tk.Button(
-            export_frame,
-            text="💾 Export CSV",
-            command=self._export_to_csv,
-            font=("Segoe UI", 9),
-            bg="#e8f0f7",
-            fg="#22313f",
-            relief="flat",
-            padx=10,
-            pady=4,
-        ).pack(side="left", padx=4)
-        
+    
         tk.Button(
             export_frame,
             text="📊 Export Excel",
@@ -148,14 +137,13 @@ class ResultsViewerPanel(tk.Frame):
 
         # Dropdowns for race/overall/individual
         options = [
-            ("Overall League Table", "overall"),
             ("Division 1 Teams", "div1"),
             ("Division 2 Teams", "div2"),
             ("Top 20 Male Individuals", "male"),
             ("Top 20 Female Individuals", "female"),
             ("Race Results", "race"),
         ]
-        self._option_var = tk.StringVar(value="overall")
+        self._option_var = tk.StringVar(value="div1")
         opt_frame = tk.Frame(self, bg="#f5f5f5")
         opt_frame.pack(pady=(0, 10))
         for text, val in options:
@@ -373,27 +361,6 @@ class ResultsViewerPanel(tk.Frame):
         except Exception as exc:
             messagebox.showerror("Export Error", f"Failed to copy to clipboard: {exc}", parent=self)
 
-    def _export_to_csv(self):
-        """Export the current table to CSV file."""
-        if self._current_df is None or self._current_df.empty:
-            messagebox.showwarning("No Data", "No results to export.", parent=self)
-            return
-        
-        filename = filedialog.asksaveasfilename(
-            parent=self,
-            defaultextension=".csv",
-            filetypes=[("CSV files", "*.csv"), ("All files", "*.*")],
-            initialfile=f"results_{self._current_option}.csv"
-        )
-        
-        if not filename:
-            return
-        
-        try:
-            self._current_df.to_csv(filename, index=False)
-            messagebox.showinfo("Success", f"Exported {len(self._current_df)} rows to {Path(filename).name}", parent=self)
-        except Exception as exc:
-            messagebox.showerror("Export Error", f"Failed to export CSV: {exc}", parent=self)
 
     def _export_to_excel(self):
         """Export the current table to Excel file."""

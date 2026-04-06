@@ -5,6 +5,8 @@ import tkinter as tk
 from datetime import datetime
 from pathlib import Path
 from tkinter import ttk, messagebox, filedialog, simpledialog
+
+from league_scorer.graphical.events_viewer import WRRL_GREEN
 from ..settings import settings, DEFAULT_SETTINGS
 from ..session_config import config as session_config
 from ..input_layout import sort_existing_input_files
@@ -117,17 +119,17 @@ class SettingsPanel(tk.Frame):
         logs_btn.grid(row=0, column=1, sticky="w")
         close_btn = tk.Button(
             btn_frame,
-            text="\u25c4 Dashboard",
+            text="🏠 Dashboard",
             command=self._on_close_clicked,
             font=("Segoe UI", 10, "bold"),
-            bg="#2d7a4a",
-            fg="#ffffff",
+            bg=WRRL_LIGHT,
+            fg=WRRL_GREEN,
             relief="flat",
             padx=10,
             pady=4,
             cursor="hand2",
             activebackground="#1f5632",
-            activeforeground="#ffffff",
+            activeforeground=WRRL_GREEN,
         )
         close_btn.grid(row=0, column=2, sticky="e")
 

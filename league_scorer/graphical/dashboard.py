@@ -479,20 +479,43 @@ class LeagueScorerDashboard(tk.Tk):
         view_lbl.grid(row=0, column=1, sticky="w", padx=10, pady=(0, 2))
 
 
-        # Main button grid (excluding Settings, Classic Scorer, Publish Provisional Results)
-        buttons = [
-            ("📋 View Events", "Browse loaded events schedule", self._on_view_events, 1, 0, "secondary"),
-            ("Run Autopilot", "Run audit, safe auto-fixes, and staged checks", self._on_run_autopilot, 2, 0, "primary"),
-            ("Publish Results", "Publish final results from audited files (includes PDF packs)", self._on_publish_results, 2, 1, "primary"),
-            ("✏️ Manual Corrections", "Review club and name matching suggestions", self._on_review_manual_corrections, 3, 1, "secondary"),
-            ("📊 View Results", "Open generated standings and reports", self._on_view_results, 4, 1, "secondary"),
-            ("🔎 Runner/Club Enquiry", "Search published results by runner or club", self._on_view_runner_history, 4, 0, "secondary"),
-            ("📝 View Autopilot Report", "Open latest autopilot summary report", self._on_view_autopilot_report, 5, 1, "secondary"),
-            ("Compare Raw vs Archive", "Inspect line-by-line changes against the raw-data archive", self._on_compare_raw_archive, 6, 1, "secondary"),
-            ("⬇ Fetch Race Results", "Download results from Race Roster into this season", self._on_import_raceroster, 6, 0, "primary"),
-        ]
-        for text, subtitle, cmd, row, col, tone in buttons:
-            self._create_action_button(button_frame, text, subtitle, cmd, row, col, tone=tone)
+
+        # Three-column main panel layout, no headings
+        for col in range(3):
+            button_frame.grid_columnconfigure(col, weight=1)
+
+        # Column 1
+        self._create_action_button(
+            button_frame, "Run Autopilot", "Run audit, safe auto-fixes, and staged checks", self._on_run_autopilot, 0, 0, tone="primary"
+        )
+        self._create_action_button(
+            button_frame, "Publish Results", "Publish final results from audited files (includes PDF packs)", self._on_publish_results, 1, 0, tone="primary"
+        )
+        self._create_action_button(
+            button_frame, "⬇ Fetch Results", "Download results from Race Roster into this season", self._on_import_raceroster, 2, 0, tone="primary"
+        )
+
+        # Column 2
+        self._create_action_button(
+            button_frame, "📝 View Autopilot Report", "Open latest autopilot summary report", self._on_view_autopilot_report, 0, 1, tone="secondary"
+        )
+        self._create_action_button(
+            button_frame, "📊 View Results", "Open generated standings and reports", self._on_view_results, 1, 1, tone="secondary"
+        )
+        self._create_action_button(
+            button_frame, "📋 View Events", "Browse loaded events schedule", self._on_view_events, 2, 1, tone="secondary"
+        )
+
+        # Column 3
+        self._create_action_button(
+            button_frame, "✏️ Manual Corrections", "Review club and name matching suggestions", self._on_review_manual_corrections, 0, 2, tone="secondary"
+        )
+        self._create_action_button(
+            button_frame, "Compare Raw vs Archive", "Inspect line-by-line changes against the raw-data archive", self._on_compare_raw_archive, 1, 2, tone="secondary"
+        )
+        self._create_action_button(
+            button_frame, "🔎 Runner/Club Enquiry", "Search published results by runner or club", self._on_view_runner_history, 2, 2, tone="secondary"
+        )
 
 
         # Add small, dark, subtle buttons to the bottom, styled like the header
@@ -1327,8 +1350,17 @@ class LeagueScorerDashboard(tk.Tk):
             year=session_config.year,
             images_dir=images_dir,
             output_dir=session_config.output_dir,
+            on_return_dashboard=self.show_home_panel
         )
         panel.pack(fill="both", expand=True)
+
+    def show_home_panel(self):
+        """Show the dashboard home panel."""
+        # Remove all children from page container except _home_frame
+        for child in self._page_container.winfo_children():
+            if child is not self._home_frame:
+                child.destroy()
+        self._home_frame.pack(fill="both", expand=True)
 
     def _on_view_results(self) -> None:
         """Show the results viewer panel inline within the dashboard."""
@@ -1349,17 +1381,17 @@ class LeagueScorerDashboard(tk.Tk):
         # Always-visible return control (top-right overlay)
         close_btn = tk.Button(
             panel,
-            text="\u25c4 Dashboard",
+            text="🏠 Dashboard",
             command=on_close,
             font=("Segoe UI", 10, "bold"),
-            bg=WRRL_GREEN,
-            fg=WRRL_WHITE,
+            bg=WRRL_LIGHT,
+            fg=WRRL_GREEN,
             relief="flat",
             padx=10,
             pady=4,
             cursor="hand2",
             activebackground="#1f5632",
-            activeforeground=WRRL_WHITE,
+            activeforeground=WRRL_GREEN,
         )
         close_btn.place(relx=1.0, x=-12, y=10, anchor="ne")
 
@@ -1520,7 +1552,7 @@ class LeagueScorerDashboard(tk.Tk):
             else:
                 self._home_frame.pack(fill="both", expand=True)
 
-        close_text = "\u25c4 Audit" if return_to_audit else "\u25c4 Dashboard"
+        close_text = "\u25c4 Audit" if return_to_audit else "🏠 Dashboard",
         close_btn = tk.Button(
             panel,
             text=close_text,
