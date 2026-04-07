@@ -40,6 +40,7 @@ from league_scorer.issue_resolution_service import (
 )
 from league_scorer.race_processor import extract_race_number
 from league_scorer.source_loader import discover_race_files
+import shutil
 from scripts import run_staged_checks as staged_checks
 
 
@@ -237,16 +238,41 @@ def _generate_audited_race_files(input_dir: Path, *, overwrite_existing: bool) -
     """Generate audited race files from raw_data and return {race_num: audited_path}."""
     paths = build_input_paths(input_dir)
 
+    # Discover candidate source files. Prefer series files (which may contain
+    # operator edits) over raw_data files when both exist for the same race.
     raw_race_files = discover_race_files(paths.raw_data_dir, excluded_names=race_discovery_exclusions())
-    if not raw_race_files:
+    series_race_files = discover_race_files(paths.series_dir, excluded_names=race_discovery_exclusions())
+
+    # Merge: series files take precedence over raw_data for the same race number.
+    if not raw_race_files and not series_race_files:
         return {}
+
+    # Start with raw files then overlay series files
+    merged_sources: dict[int, Path] = dict(raw_race_files)
+    for num, p in (series_race_files or {}).items():
+        merged_sources[num] = p
+
+    # Ensure series edits are persisted into inputs/raw_data so raw_data reflects latest operator changes.
+    # Copy series files into the raw_data folder (overwrite) and prefer the copied raw_data path as source.
+    refreshed_count = 0
+    for num, series_path in (series_race_files or {}).items():
+        try:
+            dest_dir = paths.raw_data_dir
+            dest_dir.mkdir(parents=True, exist_ok=True)
+            dest_path = dest_dir / series_path.name
+            shutil.copy2(series_path, dest_path)
+            merged_sources[num] = dest_path
+            refreshed_count += 1
+        except Exception:
+            # If copy fails, fall back to using the series file directly as source
+            merged_sources[num] = series_path
 
     raw_to_preferred, club_info = load_clubs(paths.control_dir / "clubs.xlsx")
     preferred_clubs = sorted(club_info)
 
     audited_race_files: dict[int, Path] = {}
-    for race_num in sorted(raw_race_files):
-        raw_path = raw_race_files[race_num]
+    for race_num in sorted(merged_sources):
+        raw_path = merged_sources[race_num]
         ensure_archived_in_inputs(raw_path, input_dir)
         audited_path = create_cleansed_race_file(
             raw_path,
@@ -623,6 +649,15 @@ def main() -> int:
     print(f"Safe fixes applied: {fix_summary.applied}")
     print(f"Wrote: {json_path}")
     print(f"Wrote: {md_path}")
+
+    # Clear dirty flag so UI knows data are aligned
+    try:
+        dirty_flag = Path(output_dir) / "autopilot" / "dirty"
+        if dirty_flag.exists():
+            dirty_flag.unlink()
+            print(f"INFO: Cleared dirty flag: {dirty_flag}", flush=True)
+    except Exception:
+        pass
 
     return 0 if success else 1
 

@@ -507,9 +507,46 @@ class LeagueScorerDashboard(tk.Tk):
         )
 
         # Column 3
-        self._create_action_button(
-            button_frame, "✏️ Manual Corrections", "Review club and name matching suggestions", self._on_review_manual_corrections, 0, 2, tone="secondary"
+        # Replace single 'Manual Corrections' card with two compact actions: Classic and RAES
+        btn_frame_cell = tk.Frame(button_frame, bg=WRRL_LIGHT)
+        btn_frame_cell.grid(row=0, column=2, padx=10, pady=10, sticky="nsew")
+        button_frame.grid_rowconfigure(0, weight=1)
+        button_frame.grid_columnconfigure(2, weight=1)
+
+        # Card-style container to hold two buttons side-by-side
+        card = tk.Frame(
+            btn_frame_cell,
+            bg="#ffffff",
+            cursor="hand2",
+            highlightthickness=1,
+            highlightbackground="#d4dce4",
+            highlightcolor="#d4dce4",
+            padx=8,
+            pady=8,
         )
+        card.pack(fill="both", expand=True)
+
+        inner = tk.Frame(card, bg="#ffffff")
+        inner.pack(fill="both", expand=True)
+
+        # Classic manual corrections retired — only RAES remains
+
+        # RAES button — stub for alternate manual correction flow
+        raes_btn = tk.Button(
+            inner,
+            text="RAES",
+            command=self._on_review_raes,
+            font=("Segoe UI", 11, "bold"),
+            bg="#ffffff",
+            fg=WRRL_NAVY,
+            relief="flat",
+            bd=0,
+            padx=6,
+            pady=8,
+            cursor="hand2",
+            highlightthickness=0,
+        )
+        raes_btn.pack(side="left", fill="both", expand=True)
         self._create_action_button(
             button_frame, "Compare Raw vs Archive", "Inspect line-by-line changes against the raw-data archive", self._on_compare_raw_archive, 1, 2, tone="secondary"
         )
@@ -1396,61 +1433,27 @@ class LeagueScorerDashboard(tk.Tk):
         close_btn.place(relx=1.0, x=-12, y=10, anchor="ne")
 
     def _on_review_manual_corrections(self) -> None:
-        """Open the manual review panel for club and name suggestions."""
-        from ..audit_data_service import find_latest_manual_review_workbook, load_club_review_suggestions, load_name_review_suggestions
-        from .manual_review_panel import ManualReviewPanel
-        from ..session_config import config as session_config
-        from ..input_layout import build_input_paths
+        # Legacy manual corrections retired; this action is removed.
+        messagebox.showinfo("Retired", "The classic manual corrections flow has been retired. Use RAES instead.", parent=self)
 
-        workbook = find_latest_manual_review_workbook()
-        if workbook is None:
-            messagebox.showwarning(
-                "No Audit Workbook",
-                "No audit workbook found. Run the audit first to generate club and name suggestions.",
-                parent=self,
-            )
+    def _on_review_raes(self) -> None:
+        """Open the RAES manual correction panel."""
+        if not self._require_configured("RAES Manual Corrections"):
             return
-
-        club_df = load_club_review_suggestions(workbook)
-        name_df = load_name_review_suggestions(workbook)
-
-        if club_df.empty and name_df.empty:
-            messagebox.showinfo(
-                "No Suggestions",
-                "No club or name suggestions found in the latest audit workbook.",
-                parent=self,
-            )
-            return
-
-        input_dir = session_config.input_dir
-        if input_dir is None:
-            messagebox.showwarning(
-                "Inputs Not Configured",
-                "Set the active season data root before reviewing manual corrections.",
-                parent=self,
-            )
-            return
-
-        input_paths = build_input_paths(input_dir)
-        clubs_path = input_paths.clubs_path
-        names_path = input_paths.name_corrections_path
-
+        log_event("dashboard_open_manual_corrections_raes", year=session_config.year)
+        # Open the RAESPanel inline (two-pane view)
         self._home_frame.pack_forget()
-        panel = ManualReviewPanel(
-            self._page_container,
-            club_df=club_df if not club_df.empty else None,
-            clubs_path=clubs_path if clubs_path.exists() else None,
-            name_df=name_df if not name_df.empty else None,
-            names_path=names_path,
-            back_callback=self._on_manual_review_back,
-        )
-        panel.pack(fill="both", expand=True)
-        self._manual_review_panel = panel
+        try:
+            from ..raes.raes_panel import RAESPanel
+
+            panel = RAESPanel(self._page_container, back_callback=self.show_home_panel)
+            panel.pack(fill="both", expand=True)
+            self._raes_panel = panel
+        except Exception as exc:
+            messagebox.showerror("RAES Error", f"Failed to open RAES panel: {exc}", parent=self)
 
     def _on_manual_review_back(self) -> None:
-        if hasattr(self, "_manual_review_panel"):
-            self._manual_review_panel.destroy()
-            del self._manual_review_panel
+        # No-op for retired manual review panel
         self._home_frame.pack(fill="both", expand=True)
 
     def _on_settings(self) -> None:

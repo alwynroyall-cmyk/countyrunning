@@ -183,6 +183,11 @@ class LeagueScorerApp(tk.Frame):
                 bg=NAVY, fg="#a0b8d0",
             ).pack(side="left", padx=4)
 
+        # Dirty indicator (red/green dot) - updated periodically
+        self._dirty_indicator = tk.Label(bar, text="●", font=("Segoe UI", 12), bg=NAVY, fg="green")
+        self._dirty_indicator.pack(side="right", padx=8)
+        self._update_dirty_indicator()
+
     def _build_paths_panel(self) -> None:
         panel = tk.Frame(self, bg=PANEL, bd=0)
         panel.pack(side="top", fill="x", padx=14, pady=(10, 4))
@@ -550,6 +555,31 @@ class LeagueScorerApp(tk.Frame):
                 self.after(100, self._poll_queue)
             except tk.TclError:
                 pass  # widget was destroyed before this reschedule
+
+    def _update_dirty_indicator(self) -> None:
+        """Check for autopilot dirty flag and update the header indicator."""
+        try:
+            from ..session_config import config as session_config
+            out = session_config.output_dir
+            is_dirty = False
+            if out is not None:
+                flag = Path(out) / "autopilot" / "dirty"
+                is_dirty = flag.exists()
+            # Red dot when dirty, green when clean
+            if is_dirty:
+                self._dirty_indicator.config(text="●", fg="red")
+            else:
+                self._dirty_indicator.config(text="●", fg="green")
+        except Exception:
+            # On error, show amber circle
+            try:
+                self._dirty_indicator.config(text="\u26AA")
+            except Exception:
+                pass
+        try:
+            self.after(500, self._update_dirty_indicator)
+        except tk.TclError:
+            pass
 
     def _on_done(self) -> None:
         self._stop_progress()

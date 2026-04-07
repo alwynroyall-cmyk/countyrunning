@@ -1,0 +1,85 @@
+{
+  "generated_at": "2026-04-07T14:22:58.977715+00:00",
+  "year": 2025,
+  "data_root": "C:\\Users\\alwyn\\OneDrive\\Documents\\WiltshireAthletics\\WRRL",
+  "input_dir": "C:\\Users\\alwyn\\OneDrive\\Documents\\WiltshireAthletics\\WRRL\\2025\\inputs",
+  "raw_dir": "C:\\Users\\alwyn\\OneDrive\\Documents\\WiltshireAthletics\\WRRL\\2025\\inputs\\raw_data",
+  "raw_summary": {
+    "files": 8,
+    "rows": 4571,
+    "schema_warnings": 0,
+    "blank_name": 0,
+    "blank_name_pct": 0.0,
+    "blank_category": 0,
+    "blank_category_pct": 0.0,
+    "blank_gender": 0,
+    "blank_gender_pct": 0.0,
+    "invalid_time": 40,
+    "invalid_time_pct": 0.88
+  },
+  "audited_summary": {
+    "files": 8,
+    "rows": 4563,
+    "schema_warnings": 0,
+    "blank_name": 0,
+    "blank_name_pct": 0.0,
+    "blank_category": 0,
+    "blank_category_pct": 0.0,
+    "blank_gender": 1,
+    "blank_gender_pct": 0.02,
+    "invalid_time": 40,
+    "invalid_time_pct": 0.88
+  },
+  "audited_blank_category_by_race": {
+    "1": 0,
+    "2": 0,
+    "3": 0,
+    "4": 0,
+    "5": 0,
+    "6": 0,
+    "7": 0,
+    "8": 0
+  },
+  "hotspots": {
+    "raw_blank_category": [],
+    "audited_blank_category": [],
+    "audited_invalid_time": [
+      {
+        "file": "C:\\Users\\alwyn\\OneDrive\\Documents\\WiltshireAthletics\\WRRL\\2025\\inputs\\audited\\Race 7 - Chippenham Half Marathon 2025 (audited).xlsx",
+        "rows": 1032,
+        "invalid_time": 15,
+        "invalid_time_pct": 1.45
+      },
+      {
+        "file": "C:\\Users\\alwyn\\OneDrive\\Documents\\WiltshireAthletics\\WRRL\\2025\\inputs\\audited\\Race 3 - Westbury 5k Consolidated (audited).xlsx",
+        "rows": 733,
+        "invalid_time": 8,
+        "invalid_time_pct": 1.09
+      },
+      {
+        "file": "C:\\Users\\alwyn\\OneDrive\\Documents\\WiltshireAthletics\\WRRL\\2025\\inputs\\audited\\Race 2 - Corsham 10k 2025 (audited).xlsx",
+        "rows": 1285,
+        "invalid_time": 13,
+        "invalid_time_pct": 1.01
+      },
+      {
+        "file": "C:\\Users\\alwyn\\OneDrive\\Documents\\WiltshireAthletics\\WRRL\\2025\\inputs\\audited\\Race 6 - Compton Bassett 5 Mile - 2025 (audited).xlsx",
+        "rows": 198,
+        "invalid_time": 2,
+        "invalid_time_pct": 1.01
+      },
+      {
+        "file": "C:\\Users\\alwyn\\OneDrive\\Documents\\WiltshireAthletics\\WRRL\\2025\\inputs\\audited\\Race 1 - Highworth 5 Mile 2025 (audited).xlsx",
+        "rows": 301,
+        "invalid_time": 1,
+        "invalid_time_pct": 0.33
+      },
+      {
+        "file": "C:\\Users\\alwyn\\OneDrive\\Documents\\WiltshireAthletics\\WRRL\\2025\\inputs\\audited\\Race 5 - Heddington 5k Consolidated (audited).xlsx",
+        "rows": 466,
+        "invalid_time": 1,
+        "invalid_time_pct": 0.21
+      }
+    ]
+  }
+}

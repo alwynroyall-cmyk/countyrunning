@@ -1,4 +1,4 @@
-"""WRRL League AI v6.2.1"""
+"""WRRL League AI v7.0.0"""
 
 # Central version constant for all modules
-__version__ = "6.2.1"
+__version__ = "7.0.0"

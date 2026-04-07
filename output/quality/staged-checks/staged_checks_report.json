@@ -1,0 +1,261 @@
+{
+  "generated_at": "2026-04-07T14:23:03.490374Z",
+  "success": false,
+  "stages": [
+    {
+      "stage": 1,
+      "name": "Raw Ingest Validation",
+      "status": "passed",
+      "message": "Validated 8 raw workbook(s); failures=0, warnings=0.",
+      "details": {
+        "raw_dir": "C:\\Users\\alwyn\\OneDrive\\Documents\\WiltshireAthletics\\WRRL\\2025\\inputs\\raw_data",
+        "races_detected": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8
+        ],
+        "errors": []
+      }
+    },
+    {
+      "stage": 2,
+      "name": "Raw To Audited Consolidation",
+      "status": "passed",
+      "message": "Raw races=8, audited races=8; quality gate=80.0% (observed=99.78%).",
+      "details": {
+        "missing_from_audited": [],
+        "audited_files": {
+          "1": "C:\\Users\\alwyn\\OneDrive\\Documents\\WiltshireAthletics\\WRRL\\2025\\inputs\\audited\\Race 1 - Highworth 5 Mile 2025 (audited).xlsx",
+          "2": "C:\\Users\\alwyn\\OneDrive\\Documents\\WiltshireAthletics\\WRRL\\2025\\inputs\\audited\\Race 2 - Corsham 10k 2025 (audited).xlsx",
+          "3": "C:\\Users\\alwyn\\OneDrive\\Documents\\WiltshireAthletics\\WRRL\\2025\\inputs\\audited\\Race 3 - Westbury 5k Consolidated (audited).xlsx",
+          "4": "C:\\Users\\alwyn\\OneDrive\\Documents\\WiltshireAthletics\\WRRL\\2025\\inputs\\audited\\Race 4 - Broad Town 5 Mile (audited).xlsx",
+          "5": "C:\\Users\\alwyn\\OneDrive\\Documents\\WiltshireAthletics\\WRRL\\2025\\inputs\\audited\\Race 5 - Heddington 5k Consolidated (audited).xlsx",
+          "6": "C:\\Users\\alwyn\\OneDrive\\Documents\\WiltshireAthletics\\WRRL\\2025\\inputs\\audited\\Race 6 - Compton Bassett 5 Mile - 2025 (audited).xlsx",
+          "7": "C:\\Users\\alwyn\\OneDrive\\Documents\\WiltshireAthletics\\WRRL\\2025\\inputs\\audited\\Race 7 - Chippenham Half Marathon 2025 (audited).xlsx",
+          "8": "C:\\Users\\alwyn\\OneDrive\\Documents\\WiltshireAthletics\\WRRL\\2025\\inputs\\audited\\Race 8 - Devizes10k (audited).xlsx"
+        },
+        "data_quality": {
+          "report_json": "output\\quality\\data-quality\\year-2025\\data_quality_report.json",
+          "report_markdown": "output\\quality\\data-quality\\year-2025\\data_quality_report.md",
+          "quality_gate_threshold_pct": 80.0,
+          "quality_success_pct": 99.78,
+          "quality_gate_passed": true,
+          "audited_blank_category_pct": 0.0,
+          "audited_invalid_time_pct": 0.88,
+          "top_blank_category_hotspots": []
+        }
+      }
+    },
+    {
+      "stage": 3,
+      "name": "Audit Generation Validation",
+      "status": "passed",
+      "message": "Audit workbook generated with 15 actionable issue row(s).",
+      "details": {
+        "audit_workbook": "C:\\Users\\alwyn\\OneDrive\\Documents\\WiltshireAthletics\\WRRL\\2025\\outputs\\audit\\workbooks\\Season Audit.xlsx",
+        "issue_count": 15,
+        "total_issue_count": 303
+      }
+    },
+    {
+      "stage": 4,
+      "name": "Main Scoring Regression",
+      "status": "failed",
+      "message": "Results fingerprint differs from baseline.",
+      "details": {
+        "baseline": "tests\\baselines\\season_1999_results_baseline.json",
+        "results_workbook": "C:\\Users\\alwyn\\OneDrive\\Documents\\WiltshireAthletics\\WRRL\\2025\\outputs\\publish\\xlsx\\standings\\Season Standings R08 2025.xlsx",
+        "warnings": [],
+        "diffs": [
+          {
+            "sheet": "Category Review",
+            "expected": {
+              "rows": 291,
+              "cols": 9,
+              "sha256": "57a6c4b443155c07430f56d5795624498feb31a5dccc79d0afcaca16759d3581"
+            },
+            "current": {
+              "rows": 1,
+              "cols": 9,
+              "sha256": "d098c924cf39981eff292692fa7d8fa77187cbba931af13493da2d7e609df53b"
+            }
+          },
+          {
+            "sheet": "Div 1",
+            "expected": {
+              "rows": 13,
+              "cols": 35,
+              "sha256": "0ea7bca8934598aae664d9b6b8d2d1746ae17afddedb6430e178683af89bc4fc"
+            },
+            "current": {
+              "rows": 13,
+              "cols": 35,
+              "sha256": "d1371bda9dac94d9fcc508350d6b81840545850bfba460650bc4462b4a3d1098"
+            }
+          },
+          {
+            "sheet": "Div 2",
+            "expected": {
+              "rows": 31,
+              "cols": 35,
+              "sha256": "2fb62cb6ca891e833c5070a7d81f5a6cbde425e3ac5284eb4ae7f08389024751"
+            },
+            "current": {
+              "rows": 31,
+              "cols": 35,
+              "sha256": "208c873825fdca3f3ce1972caa21509a42d98c8081ccacfa48e01f35d89da75e"
+            }
+          },
+          {
+            "sheet": "Female",
+            "expected": {
+              "rows": 378,
+              "cols": 13,
+              "sha256": "3f914a08001d0debf7af4fd438cb06a00b8fae7fb6e7b2eedb181ddb6d99aeb1"
+            },
+            "current": {
+              "rows": 373,
+              "cols": 13,
+              "sha256": "2614e4d18e3676a01dd01c8f7791c499f144e2694bbc2582b15853e4a3981ff1"
+            }
+          },
+          {
+            "sheet": "Male",
+            "expected": {
+              "rows": 504,
+              "cols": 13,
+              "sha256": "6f66e72c9230662e63bba41c38aacb5a01dcd72b2e90374b47ed30e93c180fc7"
+            },
+            "current": {
+              "rows": 493,
+              "cols": 13,
+              "sha256": "7778995682703f1a69faa3236ec4d2da81e537c3a17b6fa3d1dba53b2f4c37ed"
+            }
+          },
+          {
+            "sheet": "Race 1",
+            "expected": {
+              "rows": 301,
+              "cols": 13,
+              "sha256": "b923637236427b1c2346427888f8b4c75eb431923849a4cb7f88f5a6d1150c4d"
+            },
+            "current": {
+              "rows": 301,
+              "cols": 13,
+              "sha256": "4e6ac5e88fc275bc74c4126b7e95a8a9af39a5b99cb5d773d53c32770b35f87d"
+            }
+          },
+          {
+            "sheet": "Race 2",
+            "expected": {
+              "rows": 1283,
+              "cols": 13,
+              "sha256": "c081c3d0782767fa85b77bbb4907594168b23d1a8817d112797733458a31d270"
+            },
+            "current": {
+              "rows": 1284,
+              "cols": 13,
+              "sha256": "c9d815e4069ce77ca4097f176a5e41e651790e43fdbb14cf7765ed4f7065dff8"
+            }
+          },
+          {
+            "sheet": "Race 3",
+            "expected": {
+              "rows": 530,
+              "cols": 13,
+              "sha256": "3becaca288695f484f50162d3cc0506d65088b4316a2d56b4887e356770a996d"
+            },
+            "current": {
+              "rows": 538,
+              "cols": 13,
+              "sha256": "113683ff23116bf41952e881fba684ba1b6ae56f36ad65c4d09a5370ee950381"
+            }
+          },
+          {
+            "sheet": "Race 4",
+            "expected": {
+              "rows": 263,
+              "cols": 13,
+              "sha256": "53bc430e95a898c8ee402ceec70a6ab5cc9a6a0efac3801797243b3852d5d813"
+            },
+            "current": {
+              "rows": 263,
+              "cols": 13,
+              "sha256": "c362ecb5ac1a27fa102e5dc7f2bbd90694753eadf954b6e020987c627b7fb258"
+            }
+          },
+          {
+            "sheet": "Race 5",
+            "expected": {
+              "rows": 376,
+              "cols": 13,
+              "sha256": "6eec97703457f8df79849d12ff0c0f076dee72ea8e69a081925e871a26125f41"
+            },
+            "current": {
+              "rows": 383,
+              "cols": 13,
+              "sha256": "b19957239d1b7e5a59e096f8d011c3b41ee4ae8e652fcd4edda888d2155b7656"
+            }
+          },
+          {
+            "sheet": "Race 6",
+            "expected": {
+              "rows": 197,
+              "cols": 13,
+              "sha256": "03cf5ad91157c1c3f2829ab219a80d07d7893ed6481763a40f90214eed573fb4"
+            },
+            "current": {
+              "rows": 197,
+              "cols": 13,
+              "sha256": "37be52d5768d5ac7956b869843af7f6454cf154e04b908d55d622b59a574feb4"
+            }
+          },
+          {
+            "sheet": "Race 7",
+            "expected": {
+              "rows": 1031,
+              "cols": 13,
+              "sha256": "3f18992d2ae037a0cbf7dedd8f290d65a03b8df86345671096d2c3946a722560"
+            },
+            "current": {
+              "rows": 1031,
+              "cols": 13,
+              "sha256": "de3bbe7c5eb70144a18db88a7b4289e9ffbe2c0d014fab11acc2e60772a8f0bb"
+            }
+          },
+          {
+            "sheet": "Race 8",
+            "expected": {
+              "rows": 287,
+              "cols": 13,
+              "sha256": "cc6c0c24df7034c2f8219d410607528a3e022217df99c5aea8504c10ab77996a"
+            },
+            "current": {
+              "rows": 287,
+              "cols": 13,
+              "sha256": "5740703051555a9df4a435a04ed4a88921ae396f69cb6274ae0d346af89c608b"
+            }
+          },
+          {
+            "sheet": "Race Summary",
+            "expected": {
+              "rows": 9,
+              "cols": 7,
+              "sha256": "182899ca068ae5a9ae53a114b70920458547fc7103721713c114f6025bc743d3"
+            },
+            "current": {
+              "rows": 9,
+              "cols": 7,
+              "sha256": "4f8c3a44e9ecb7be4f86ea0b59b9e7ff07a4aa5d4425a808872c4e168f9bc5dd"
+            }
+          }
+        ]
+      }
+    }
+  ]
+}
