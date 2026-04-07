@@ -42,6 +42,8 @@ from league_scorer.race_processor import extract_race_number
 from league_scorer.source_loader import discover_race_files
 import shutil
 from scripts import run_staged_checks as staged_checks
+from league_scorer.series_consolidation import consolidate_series_files
+import re
 
 
 @dataclass
@@ -249,16 +251,46 @@ def _generate_audited_race_files(input_dir: Path, *, overwrite_existing: bool) -
 
     # Start with raw files then overlay series files
     merged_sources: dict[int, Path] = dict(raw_race_files)
-    for num, p in (series_race_files or {}).items():
-        merged_sources[num] = p
 
-    # Prefer series files over raw_data files for the same race number but DO NOT copy
-    # series workbooks into the `raw_data` folder. The consolidation process should
-    # merge series inputs into the consolidated workbook; copying series files into
-    # `raw_data` causes duplicate source files to appear there and is undesired.
-    for num, series_path in (series_race_files or {}).items():
-        # Use the series file as the preferred source for this race number.
-        merged_sources[num] = series_path
+    # Build merged_sources by preferring consolidated/raw sources in this order:
+    # 1) If there are multiple series round files for a race, consolidate them
+    #    into a single consolidated workbook in `raw_data` and use that.
+    # 2) If a single series file exists for the race, prefer that.
+    # 3) Otherwise use the raw_data file if present.
+    series_pattern = re.compile(r"^race\s*#?\s*(\d+)\b", re.IGNORECASE)
+    all_numbers = set(list(raw_race_files.keys()) + list(series_race_files.keys()))
+    for num in sorted(all_numbers):
+        # gather candidate series files for this race number
+        candidates: list[Path] = []
+        if paths.series_dir.exists():
+            for p in sorted(paths.series_dir.iterdir()):
+                if not p.is_file() or p.suffix.lower() not in {".xlsx", ".xlsm", ".xls"}:
+                    continue
+                m = series_pattern.match(p.stem.strip())
+                if not m:
+                    continue
+                try:
+                    rn = int(m.group(1))
+                except Exception:
+                    continue
+                if rn == num:
+                    candidates.append(p)
+
+        if len(candidates) >= 2:
+            # Consolidate multi-round series into raw_data and prefer that file
+            try:
+                result = consolidate_series_files(candidates, series_dir=paths.series_dir, raw_data_dir=paths.raw_data_dir)
+                merged_sources[num] = result.consolidated_path
+                continue
+            except Exception:
+                # fall through to try single series or raw
+                pass
+
+        # single series file present?
+        if num in series_race_files:
+            merged_sources[num] = series_race_files[num]
+        elif num in raw_race_files:
+            merged_sources[num] = raw_race_files[num]
 
     raw_to_preferred, club_info = load_clubs(paths.control_dir / "clubs.xlsx")
     preferred_clubs = sorted(club_info)
