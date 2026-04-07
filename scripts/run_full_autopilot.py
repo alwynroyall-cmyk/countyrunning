@@ -240,6 +240,32 @@ def _generate_audited_race_files(input_dir: Path, *, overwrite_existing: bool) -
     """Generate audited race files from raw_data and return {race_num: audited_path}."""
     paths = build_input_paths(input_dir)
 
+    # Clear out existing audited files to avoid false-negative stale issues
+    audited_dir = paths.audited_dir
+    if audited_dir.exists():
+        for f in sorted(audited_dir.iterdir()):
+            if f.is_file() and f.suffix.lower() in {".xlsx", ".xlsm", ".xls"}:
+                try:
+                    f.unlink()
+                except Exception:
+                    # ignore failures to delete; will be reported later if they cause errors
+                    pass
+
+    # Remove any residual series round workbooks that ended up in raw_data (these
+    # should not be present; consolidated workbooks belong in raw_data instead).
+    series_pattern = re.compile(r"\bseries\b\s*#\s*\d+", re.IGNORECASE)
+    raw_data_dir = paths.raw_data_dir
+    if raw_data_dir.exists():
+        for f in sorted(raw_data_dir.iterdir()):
+            if not f.is_file():
+                continue
+            name = f.stem
+            if series_pattern.search(name):
+                try:
+                    f.unlink()
+                except Exception:
+                    pass
+
     # Discover candidate source files. Prefer series files (which may contain
     # operator edits) over raw_data files when both exist for the same race.
     raw_race_files = discover_race_files(paths.raw_data_dir, excluded_names=race_discovery_exclusions())
