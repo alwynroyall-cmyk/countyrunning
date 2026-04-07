@@ -358,31 +358,9 @@ class RAESPanel(tk.Frame):
         tk.Label(src, text="Select source files (series → raw_data) to update. Use Preview to inspect proposed changes, then Apply to commit them.", bg="#ffffff", fg="#6b7785", wraplength=650, justify="left").pack(anchor="w", padx=4, pady=(0, 6))
 
         self._source_vars: dict[str, tk.BooleanVar] = {}
-        # Option: include all raw inputs even if the runner isn't found there
-        self._include_all_raw_var = tk.BooleanVar(value=False)
-        include_cb = tk.Checkbutton(src, text="Include all raw inputs (show every raw file)", variable=self._include_all_raw_var, bg="#ffffff", anchor="w")
-        include_cb.pack(fill="x", padx=8, pady=(0, 6))
-
-        def _build_source_checkboxes():
-            # clear any existing checkboxes (preserve the include_cb)
-            for child in list(src.winfo_children()):
-                # keep the header labels and include_cb and edit_row/preview/etc which come later
-                if child is include_cb:
-                    continue
-                child.destroy()
-            self._source_vars.clear()
+        # Build source file checkboxes (series first, then raw)
+        try:
             candidates = find_candidate_source_files(runner)
-            # optionally include every raw file from raw_data_dir
-            if self._include_all_raw_var.get():
-                try:
-                    rd = session_config.raw_data_dir
-                    if rd is not None and rd.exists():
-                        for p in rd.iterdir():
-                            if p.suffix.lower() in ('.xlsx', '.xlsm', '.xls') and p not in candidates.get('raw', []):
-                                candidates.setdefault('raw', []).append(p)
-                except Exception:
-                    pass
-            # show series first
             for p in candidates.get("series", []):
                 var = tk.BooleanVar(value=False)
                 self._source_vars[str(p)] = var
@@ -393,10 +371,8 @@ class RAESPanel(tk.Frame):
                 self._source_vars[str(p)] = var
                 cb = tk.Checkbutton(src, text=f"Raw: {p.name}", variable=var, bg="#ffffff", anchor="w")
                 cb.pack(fill="x", padx=8)
-
-        # rebuild sources when the include-all toggle changes
-        self._include_all_raw_var.trace_add("write", lambda *a: _build_source_checkboxes())
-        _build_source_checkboxes()
+        except Exception:
+            pass
 
         # expose source vars for the status-bar Apply button
         self._raes_source_vars = self._source_vars
@@ -415,16 +391,6 @@ class RAESPanel(tk.Frame):
         # expose controls for the status-bar Apply button
         self._raes_field_var = field_var
         self._raes_value_combo = value_combo
-
-        # Preview area (treeview)
-        preview_frame = tk.Frame(src, bg="#ffffff")
-        preview_frame.pack(fill="both", padx=8, pady=(4, 8))
-        cols = ("file", "sheet", "row", "old", "new")
-        self._preview_tree = ttk.Treeview(preview_frame, columns=cols, show="headings", height=6)
-        for c, h in zip(cols, ("File", "Sheet", "Row", "Old Value", "New Value")):
-            self._preview_tree.heading(c, text=h)
-            self._preview_tree.column(c, width=120 if c == "file" else 100, anchor="w")
-        self._preview_tree.pack(fill="both", expand=True)
 
         def _populate_value_options(field):
             if field == "category":
@@ -471,48 +437,9 @@ class RAESPanel(tk.Frame):
         field_menu.bind("<<ComboboxSelected>>", lambda _e: _populate_value_options(field_var.get()))
         _populate_value_options(field_var.get())
 
-        # Action buttons: Preview, Apply, Mark Reviewed, Dashboard
         def _gather_selected_files():
             sel = [Path(p) for p, v in self._source_vars.items() if v.get()]
             return sel
-
-        def _populate_preview():
-            for i in self._preview_tree.get_children():
-                self._preview_tree.delete(i)
-            files = _gather_selected_files()
-            if not files:
-                messagebox.showwarning("Preview", "No source files selected. Please check at least one source file.", parent=self)
-                return
-            fcnt = 0
-            for p in files:
-                try:
-                    wb = openpyxl.load_workbook(p, read_only=True, data_only=True)
-                except Exception:
-                    continue
-                try:
-                    for sname in wb.sheetnames:
-                        ws = wb[sname]
-                        name_col, field_col = _find_columns(ws, field_var.get())
-                        if name_col is None or field_col is None:
-                            continue
-                        for ri in range(2, ws.max_row + 1):
-                            nm = _row_name_value(ws, ri, name_col)
-                            if str(nm).strip().lower() != runner.lower():
-                                continue
-                            cell = ws.cell(row=ri, column=field_col)
-                            old = "" if cell.value is None else str(cell.value).strip()
-                            new = value_combo.get()
-                            self._preview_tree.insert("", "end", values=(p.name, sname, ri, old, new))
-                            fcnt += 1
-                except Exception:
-                    continue
-                finally:
-                    try:
-                        wb.close()
-                    except Exception:
-                        pass
-            if fcnt == 0:
-                messagebox.showinfo("Preview", "No matching rows found for the selected runner/field.", parent=self)
 
         def _do_apply():
             files = _gather_selected_files()
@@ -545,15 +472,12 @@ class RAESPanel(tk.Frame):
             except Exception:
                 pass
 
-        action_row = tk.Frame(src, bg="#ffffff")
-        action_row.pack(fill="x", padx=8, pady=(6, 8))
-        preview_btn = tk.Button(action_row, text="Preview selected", bg="#eef2f6", command=_populate_preview, relief="groove")
-        preview_btn.pack(side="left")
-        apply_btn = tk.Button(action_row, text="Apply to selected files", bg=WRRL_GREEN, fg="#ffffff", command=_do_apply, relief="raised")
-        apply_btn.pack(side="left", padx=(6, 0))
-        mark_btn = tk.Button(action_row, text="Mark Reviewed", command=lambda: self._on_mark_reviewed(runner), relief="groove")
+        # Move action buttons next to the field/value controls
+        apply_btn = tk.Button(edit_row, text="Apply to selected files", bg=WRRL_GREEN, fg="#ffffff", command=_do_apply, relief="raised")
+        apply_btn.pack(side="left", padx=(12, 6))
+        mark_btn = tk.Button(edit_row, text="Mark Reviewed", command=lambda: self._on_mark_reviewed(runner), relief="groove")
         mark_btn.pack(side="left", padx=(6, 0))
-        tk.Button(action_row, text="Dashboard", command=self._on_back, bg="#ffffff", relief="flat").pack(side="right")
+        tk.Button(edit_row, text="Dashboard", command=self._on_back, bg="#ffffff", relief="flat").pack(side="right")
 
         # Diagnostics — use the same boxed style as Runner Summary
         diag = tk.Frame(self._detail_container, bg="#f7f7f9", bd=1, relief="solid")
