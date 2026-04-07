@@ -564,7 +564,8 @@ class LeagueScorerApp(tk.Frame):
             is_dirty = False
             if out is not None:
                 flag = Path(out) / "autopilot" / "dirty"
-                is_dirty = flag.exists()
+                raes_flag = Path(out) / "raes" / "dirty"
+                is_dirty = flag.exists() or raes_flag.exists()
             # Red dot when dirty, green when clean
             if is_dirty:
                 self._dirty_indicator.config(text="●", fg="red")

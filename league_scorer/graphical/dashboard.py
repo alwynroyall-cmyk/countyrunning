@@ -682,6 +682,13 @@ class LeagueScorerDashboard(tk.Tk):
         if not session_config.input_dir:
             return False, "No input folder configured"
 
+        # If RAES has written a dirty marker, treat data as stale until autopilot runs
+        out = session_config.output_dir
+        if out is not None:
+            raes_dirty = Path(out) / "raes" / "dirty"
+            if raes_dirty.exists():
+                return False, "RAES edits pending — run Autopilot"
+
         raw_data_dir = session_config.raw_data_dir
         audited_dir = session_config.audited_dir
         if not raw_data_dir or not audited_dir:

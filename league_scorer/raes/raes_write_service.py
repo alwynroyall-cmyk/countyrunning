@@ -10,12 +10,14 @@ from pathlib import Path
 import json
 import datetime
 from typing import List, Dict
+import re
 
 import openpyxl
 
 from ..session_config import config as session_config
 from ..structured_logging import log_event
 from ..manual_edit_service import _find_columns, _atomic_save
+from ..name_lookup import load_name_corrections
 
 
 def _ensure_raes_output_dir() -> Path | None:
@@ -38,6 +40,16 @@ def find_candidate_source_files(runner: str, race_sheet: str | None = None) -> D
     series_files: List[Path] = []
     raw_files: List[Path] = []
 
+    # Load reviewed name corrections (alias -> preferred) so we match original/raw names
+    alias_map = {}
+    try:
+        ctrl = session_config.control_dir
+        if ctrl is not None:
+            nmf = Path(ctrl) / "name_corrections.xlsx"
+            alias_map = load_name_corrections(nmf)
+    except Exception:
+        alias_map = {}
+
     sdir = session_config.series_dir
     rdir = session_config.raw_data_dir
 
@@ -46,7 +58,7 @@ def find_candidate_source_files(runner: str, race_sheet: str | None = None) -> D
             return []
         return [p for p in dirp.iterdir() if p.suffix.lower() in ('.xlsx', '.xlsm', '.xls')]
 
-    # Scan series files first
+    # Scan series files first (series workbooks may contain multiple "series" files)
     for p in _list_xlsx(sdir):
         try:
             wb = openpyxl.load_workbook(p, read_only=True, data_only=True)
@@ -55,7 +67,7 @@ def find_candidate_source_files(runner: str, race_sheet: str | None = None) -> D
             if race_sheet and race_sheet in names:
                 matched = True
             else:
-                # scan sheets for runner
+                # scan sheets for runner (match displayed name or any reviewed raw-name alias)
                 for s in names:
                     try:
                         ws = wb[s]
@@ -63,8 +75,14 @@ def find_candidate_source_files(runner: str, race_sheet: str | None = None) -> D
                             if not row:
                                 continue
                             vals = [str(x).strip().lower() for x in row if x is not None]
+                            # direct match
+                            if runner_key in vals:
+                                matched = True
+                                break
+                            # alias match
                             for v in vals:
-                                if v == runner_key:
+                                pref = alias_map.get(v)
+                                if pref and pref.strip().lower() == runner_key:
                                     matched = True
                                     break
                             if matched:
@@ -78,6 +96,24 @@ def find_candidate_source_files(runner: str, race_sheet: str | None = None) -> D
                 series_files.append(p)
         except Exception:
             continue
+    # build set of race numbers present in series files to avoid showing
+    # corresponding raw round copies later
+    def _race_num_from_name(nm: str):
+        if not nm:
+            return None
+        m = re.search(r"race\s*#?\s*(\d+)", nm, re.IGNORECASE)
+        if m:
+            try:
+                return int(m.group(1))
+            except Exception:
+                return None
+        return None
+
+    series_race_nums = set()
+    for p in series_files:
+        rn = _race_num_from_name(p.stem)
+        if rn is not None:
+            series_race_nums.add(rn)
 
     # Raw data files
     for p in _list_xlsx(rdir):
@@ -91,8 +127,17 @@ def find_candidate_source_files(runner: str, race_sheet: str | None = None) -> D
                         if not row:
                             continue
                         vals = [str(x).strip().lower() for x in row if x is not None]
+                        # match if any cell directly matches the preferred name
                         if runner_key in vals:
                             found = True
+                            break
+                        # or if any cell is a reviewed alias that maps to the preferred name
+                        for v in vals:
+                            pref = alias_map.get(v)
+                            if pref and pref.strip().lower() == runner_key:
+                                found = True
+                                break
+                        if found:
                             break
                     if found:
                         break
@@ -102,7 +147,15 @@ def find_candidate_source_files(runner: str, race_sheet: str | None = None) -> D
             if found:
                 # Exclude consolidated workbooks and series round workbooks from raw_data candidates
                 stem = p.stem.lower()
+                # also exclude round copies or raw files that match a series race number
                 if "consolidated" in stem or "series" in stem:
+                    continue
+                # exclude if filename indicates a round (e.g. 'round')
+                if "round" in stem:
+                    continue
+                # exclude if this raw file corresponds to a race number already present in series files
+                rn = _race_num_from_name(p.stem)
+                if rn is not None and rn in series_race_nums:
                     continue
                 raw_files.append(p)
         except Exception:
@@ -118,6 +171,15 @@ def apply_field_to_files(files: List[Path], runner: str, field_type: str, target
     """
     audit: List[Dict] = []
     runner_key = runner.lower()
+    # load name alias mappings so we can match original/raw names when applying
+    alias_map = {}
+    try:
+        ctrl = session_config.control_dir
+        if ctrl is not None:
+            nmf = Path(ctrl) / "name_corrections.xlsx"
+            alias_map = load_name_corrections(nmf)
+    except Exception:
+        alias_map = {}
     for path in files:
         try:
             wb = openpyxl.load_workbook(path)
@@ -141,7 +203,9 @@ def apply_field_to_files(files: List[Path], runner: str, field_type: str, target
                         current_name = f"{str(first).strip()} {str(last).strip()}".strip()
                     else:
                         current_name = ws.cell(row=row_idx, column=name_col).value or ""
-                    if str(current_name).strip().lower() != runner_key:
+                    current_name_l = str(current_name).strip().lower()
+                    # match either the preferred name or a raw alias mapped to the preferred
+                    if current_name_l != runner_key and alias_map.get(current_name_l, '').strip().lower() != runner_key:
                         continue
                     cell = ws.cell(row=row_idx, column=field_col)
                     old = "" if cell.value is None else str(cell.value).strip()
@@ -193,6 +257,13 @@ def apply_field_to_files(files: List[Path], runner: str, field_type: str, target
             flag.parent.mkdir(parents=True, exist_ok=True)
             flag.write_text(datetime.datetime.utcnow().isoformat() + "Z\n", encoding="utf-8")
             log_event("data_dirty", year=session_config.year, file_changes=len(audit))
+            # Also write a RAES-specific marker so the GUI can pick up edits immediately
+            try:
+                raes_flag = Path(out) / "raes" / "dirty"
+                raes_flag.parent.mkdir(parents=True, exist_ok=True)
+                raes_flag.write_text(datetime.datetime.utcnow().isoformat() + "Z\n", encoding="utf-8")
+            except Exception:
+                pass
     except Exception:
         # non-fatal if we cannot write the dirty flag
         pass

@@ -707,6 +707,14 @@ def main() -> int:
         if dirty_flag.exists():
             dirty_flag.unlink()
             print(f"INFO: Cleared dirty flag: {dirty_flag}", flush=True)
+        # also clear RAES-specific dirty marker if present
+        try:
+            raes_flag = Path(output_dir) / "raes" / "dirty"
+            if raes_flag.exists():
+                raes_flag.unlink()
+                print(f"INFO: Cleared RAES dirty flag: {raes_flag}", flush=True)
+        except Exception:
+            pass
     except Exception:
         pass
 

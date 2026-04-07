@@ -339,11 +339,9 @@ class RAESPanel(tk.Frame):
                             _toggle(f, b, s)
 
                     hdr.bind("<Button-1>", _hdr_click)
-                    # Expand this race section by default when showing the runner
-                    try:
-                        _toggle(info, btn, sheet)
-                    except Exception:
-                        pass
+                    # Do NOT auto-expand race sections by default — keep the
+                    # inspector compact so action buttons remain visible.
+                    # Users can expand individual races by clicking the header.
 
         except Exception:
             tk.Label(races_frame, text="Failed to read workbook races.", bg="#ffffff").pack(padx=8, pady=8)
@@ -360,18 +358,48 @@ class RAESPanel(tk.Frame):
         tk.Label(src, text="Select source files (series → raw_data) to update. Use Preview to inspect proposed changes, then Apply to commit them.", bg="#ffffff", fg="#6b7785", wraplength=650, justify="left").pack(anchor="w", padx=4, pady=(0, 6))
 
         self._source_vars: dict[str, tk.BooleanVar] = {}
-        candidates = find_candidate_source_files(runner)
-        # show series first
-        for p in candidates.get("series", []):
-            var = tk.BooleanVar(value=False)
-            self._source_vars[str(p)] = var
-            cb = tk.Checkbutton(src, text=f"Series: {p.name}", variable=var, bg="#ffffff", anchor="w")
-            cb.pack(fill="x", padx=8)
-        for p in candidates.get("raw", []):
-            var = tk.BooleanVar(value=False)
-            self._source_vars[str(p)] = var
-            cb = tk.Checkbutton(src, text=f"Raw: {p.name}", variable=var, bg="#ffffff", anchor="w")
-            cb.pack(fill="x", padx=8)
+        # Option: include all raw inputs even if the runner isn't found there
+        self._include_all_raw_var = tk.BooleanVar(value=False)
+        include_cb = tk.Checkbutton(src, text="Include all raw inputs (show every raw file)", variable=self._include_all_raw_var, bg="#ffffff", anchor="w")
+        include_cb.pack(fill="x", padx=8, pady=(0, 6))
+
+        def _build_source_checkboxes():
+            # clear any existing checkboxes (preserve the include_cb)
+            for child in list(src.winfo_children()):
+                # keep the header labels and include_cb and edit_row/preview/etc which come later
+                if child is include_cb:
+                    continue
+                child.destroy()
+            self._source_vars.clear()
+            candidates = find_candidate_source_files(runner)
+            # optionally include every raw file from raw_data_dir
+            if self._include_all_raw_var.get():
+                try:
+                    rd = session_config.raw_data_dir
+                    if rd is not None and rd.exists():
+                        for p in rd.iterdir():
+                            if p.suffix.lower() in ('.xlsx', '.xlsm', '.xls') and p not in candidates.get('raw', []):
+                                candidates.setdefault('raw', []).append(p)
+                except Exception:
+                    pass
+            # show series first
+            for p in candidates.get("series", []):
+                var = tk.BooleanVar(value=False)
+                self._source_vars[str(p)] = var
+                cb = tk.Checkbutton(src, text=f"Series: {p.name}", variable=var, bg="#ffffff", anchor="w")
+                cb.pack(fill="x", padx=8)
+            for p in candidates.get("raw", []):
+                var = tk.BooleanVar(value=False)
+                self._source_vars[str(p)] = var
+                cb = tk.Checkbutton(src, text=f"Raw: {p.name}", variable=var, bg="#ffffff", anchor="w")
+                cb.pack(fill="x", padx=8)
+
+        # rebuild sources when the include-all toggle changes
+        self._include_all_raw_var.trace_add("write", lambda *a: _build_source_checkboxes())
+        _build_source_checkboxes()
+
+        # expose source vars for the status-bar Apply button
+        self._raes_source_vars = self._source_vars
 
         # Field edit controls (inside processing window `src`)
         edit_row = tk.Frame(src, bg="#ffffff")
@@ -383,6 +411,10 @@ class RAESPanel(tk.Frame):
         tk.Label(edit_row, text="Value:", bg="#ffffff").pack(side="left")
         value_combo = ttk.Combobox(edit_row, values=[], width=24)
         value_combo.pack(side="left", padx=(6, 12))
+
+        # expose controls for the status-bar Apply button
+        self._raes_field_var = field_var
+        self._raes_value_combo = value_combo
 
         # Preview area (treeview)
         preview_frame = tk.Frame(src, bg="#ffffff")
@@ -439,7 +471,89 @@ class RAESPanel(tk.Frame):
         field_menu.bind("<<ComboboxSelected>>", lambda _e: _populate_value_options(field_var.get()))
         _populate_value_options(field_var.get())
 
-    
+        # Action buttons: Preview, Apply, Mark Reviewed, Dashboard
+        def _gather_selected_files():
+            sel = [Path(p) for p, v in self._source_vars.items() if v.get()]
+            return sel
+
+        def _populate_preview():
+            for i in self._preview_tree.get_children():
+                self._preview_tree.delete(i)
+            files = _gather_selected_files()
+            if not files:
+                messagebox.showwarning("Preview", "No source files selected. Please check at least one source file.", parent=self)
+                return
+            fcnt = 0
+            for p in files:
+                try:
+                    wb = openpyxl.load_workbook(p, read_only=True, data_only=True)
+                except Exception:
+                    continue
+                try:
+                    for sname in wb.sheetnames:
+                        ws = wb[sname]
+                        name_col, field_col = _find_columns(ws, field_var.get())
+                        if name_col is None or field_col is None:
+                            continue
+                        for ri in range(2, ws.max_row + 1):
+                            nm = _row_name_value(ws, ri, name_col)
+                            if str(nm).strip().lower() != runner.lower():
+                                continue
+                            cell = ws.cell(row=ri, column=field_col)
+                            old = "" if cell.value is None else str(cell.value).strip()
+                            new = value_combo.get()
+                            self._preview_tree.insert("", "end", values=(p.name, sname, ri, old, new))
+                            fcnt += 1
+                except Exception:
+                    continue
+                finally:
+                    try:
+                        wb.close()
+                    except Exception:
+                        pass
+            if fcnt == 0:
+                messagebox.showinfo("Preview", "No matching rows found for the selected runner/field.", parent=self)
+
+        def _do_apply():
+            files = _gather_selected_files()
+            if not files:
+                messagebox.showwarning("Apply", "No source files selected. Please check at least one source file.", parent=self)
+                return
+            fv = field_var.get()
+            vv = value_combo.get()
+            if not fv or not vv:
+                messagebox.showwarning("Apply", "Field and value must be selected before applying.", parent=self)
+                return
+            ok = messagebox.askyesno("Apply Changes", f"Apply change: set {fv} → {vv} for {runner} in {len(files)} file(s)?", parent=self)
+            if not ok:
+                return
+            try:
+                audit = apply_field_to_files(files, runner, fv, vv)
+            except Exception as exc:
+                messagebox.showerror("Apply Error", f"Failed to apply changes: {exc}", parent=self)
+                return
+            # summarize results
+            changed = [a for a in audit if a.get("runner")]
+            errors = [a for a in audit if a.get("error")]
+            msg = f"Applied edits: {len(changed)} change(s)."
+            if errors:
+                msg += f" {len(errors)} error(s) occurred. See RAES changes file for details."
+            messagebox.showinfo("Apply Results", msg, parent=self)
+            # refresh view to reflect processed state and recent changes
+            try:
+                self._show_runner_detail(runner)
+            except Exception:
+                pass
+
+        action_row = tk.Frame(src, bg="#ffffff")
+        action_row.pack(fill="x", padx=8, pady=(6, 8))
+        preview_btn = tk.Button(action_row, text="Preview selected", bg="#eef2f6", command=_populate_preview, relief="groove")
+        preview_btn.pack(side="left")
+        apply_btn = tk.Button(action_row, text="Apply to selected files", bg=WRRL_GREEN, fg="#ffffff", command=_do_apply, relief="raised")
+        apply_btn.pack(side="left", padx=(6, 0))
+        mark_btn = tk.Button(action_row, text="Mark Reviewed", command=lambda: self._on_mark_reviewed(runner), relief="groove")
+        mark_btn.pack(side="left", padx=(6, 0))
+        tk.Button(action_row, text="Dashboard", command=self._on_back, bg="#ffffff", relief="flat").pack(side="right")
 
         # Diagnostics — use the same boxed style as Runner Summary
         diag = tk.Frame(self._detail_container, bg="#f7f7f9", bd=1, relief="solid")
@@ -524,6 +638,11 @@ class RAESPanel(tk.Frame):
         self._set_processed_for_runner(runner, True)
         log_event("raes_mark_reviewed", year=session_config.year, runner=runner)
 
+    def _apply_current_change(self) -> None:
+        # Status-bar Apply removed per UX decision; use inspector Apply instead.
+        return
+        
+
     def _set_processed_for_runner(self, runner: str, processed: bool) -> None:
         for r in self._rows:
             if r.get("runner") == runner:
@@ -541,8 +660,10 @@ class RAESPanel(tk.Frame):
             out = session_config.output_dir
             is_dirty = False
             if out is not None:
-                flag = Path(out) / "autopilot" / "dirty"
-                is_dirty = flag.exists()
+                # Check both the autopilot dirty flag and the RAES-specific dirty flag
+                ap_flag = Path(out) / "autopilot" / "dirty"
+                raes_flag = Path(out) / "raes" / "dirty"
+                is_dirty = ap_flag.exists() or raes_flag.exists()
             if is_dirty:
                 self._dirty_var.set("DATA DIRTY — run Autopilot")
                 self._dirty_lbl.config(fg="#b22222")
