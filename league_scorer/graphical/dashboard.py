@@ -531,22 +531,16 @@ class LeagueScorerDashboard(tk.Tk):
 
         # Classic manual corrections retired — only RAES remains
 
-        # RAES button — stub for alternate manual correction flow
-        raes_btn = tk.Button(
-            inner,
-            text="RAES",
-            command=self._on_review_raes,
-            font=("Segoe UI", 11, "bold"),
-            bg="#ffffff",
-            fg=WRRL_NAVY,
-            relief="flat",
-            bd=0,
-            padx=6,
-            pady=8,
-            cursor="hand2",
-            highlightthickness=0,
+        # Data Corrections (RAES) action card
+        self._create_action_button(
+            button_frame,
+            "Data Corrections (RAES)",
+            "Review and apply runner-level corrections using the RAES two-pane editor.",
+            self._on_review_raes,
+            0,
+            2,
+            tone="secondary",
         )
-        raes_btn.pack(side="left", fill="both", expand=True)
         self._create_action_button(
             button_frame, "Compare Raw vs Archive", "Inspect line-by-line changes against the raw-data archive", self._on_compare_raw_archive, 1, 2, tone="secondary"
         )
