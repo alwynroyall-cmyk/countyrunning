@@ -95,7 +95,12 @@ class RAESPanel(tk.Frame):
         status = tk.Frame(self, bg=WRRL_LIGHT)
         status.pack(fill="x", padx=12, pady=(8, 12))
         tk.Label(status, textvariable=self._last_updated_var, bg=WRRL_LIGHT, fg="#666666", font=("Segoe UI", 9)).pack(side="left")
+        # Dirty indicator for RAES panel (mirrors autopilot dirty flag)
+        self._dirty_var = tk.StringVar(value="")
+        self._dirty_lbl = tk.Label(status, textvariable=self._dirty_var, bg=WRRL_LIGHT, fg="#b22222", font=("Segoe UI", 9, "bold"))
+        self._dirty_lbl.pack(side="right", padx=(8, 0))
         tk.Label(status, textvariable=self._workbook_var, bg=WRRL_LIGHT, fg="#666666", font=("Segoe UI", 9)).pack(side="right")
+        self._update_dirty_indicator()
 
     # Remainder of methods (refresh, select, show detail, toggles, etc.)
     # are left unchanged; to keep the patch concise, import paths only were adapted.
@@ -124,6 +129,11 @@ class RAESPanel(tk.Frame):
 
         threading.Thread(target=worker, daemon=True).start()
         self.after(120, self._poll_scan)
+        # ensure dirty indicator kept up to date
+        try:
+            self.after(500, self._update_dirty_indicator)
+        except Exception:
+            pass
 
     def _on_select(self, _event) -> None:
         sel = self._tree.selection()
@@ -362,6 +372,29 @@ class RAESPanel(tk.Frame):
             self._source_vars[str(p)] = var
             cb = tk.Checkbutton(src, text=f"Raw: {p.name}", variable=var, bg="#ffffff", anchor="w")
             cb.pack(fill="x", padx=8)
+
+    def _update_dirty_indicator(self) -> None:
+        """Poll the autopilot dirty flag and update the status label."""
+        try:
+            out = session_config.output_dir
+            is_dirty = False
+            if out is not None:
+                flag = Path(out) / "autopilot" / "dirty"
+                is_dirty = flag.exists()
+            if is_dirty:
+                self._dirty_var.set("DATA DIRTY — run Autopilot")
+                self._dirty_lbl.config(fg="#b22222")
+            else:
+                self._dirty_var.set("")
+        except Exception:
+            try:
+                self._dirty_var.set("")
+            except Exception:
+                pass
+        try:
+            self.after(1000, self._update_dirty_indicator)
+        except Exception:
+            pass
 
         # Field edit controls (now inside the processing window `src`)
         edit_row = tk.Frame(src, bg="#ffffff")

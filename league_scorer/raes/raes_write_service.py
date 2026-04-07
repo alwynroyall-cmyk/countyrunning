@@ -100,8 +100,9 @@ def find_candidate_source_files(runner: str, race_sheet: str | None = None) -> D
                     continue
             wb.close()
             if found:
-                # Exclude consolidated workbooks from raw_data candidates
-                if "consolidated" in p.stem.lower():
+                # Exclude consolidated workbooks and series round workbooks from raw_data candidates
+                stem = p.stem.lower()
+                if "consolidated" in stem or "series" in stem:
                     continue
                 raw_files.append(p)
         except Exception:
