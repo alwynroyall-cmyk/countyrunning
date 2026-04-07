@@ -14,3 +14,5 @@ output/data-quality/
 output/autopilot/
 output/autopilot/runs/
 output/*.png
+output/autopilot_runs/
+output/staged_reports/

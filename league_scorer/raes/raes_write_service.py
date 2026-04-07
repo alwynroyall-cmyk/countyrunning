@@ -40,7 +40,12 @@ def find_candidate_source_files(runner: str, race_sheet: str | None = None) -> D
     series_files: List[Path] = []
     raw_files: List[Path] = []
 
-    # Load reviewed name corrections (alias -> preferred) so we match original/raw names
+    # Load reviewed name corrections (alias -> preferred) so we match original/raw names.
+    # Rationale: operators may have corrected or normalised runner names (for example
+    # "Daf MARION" -> "Daphne MARION"). The audit/standings workbooks use the
+    # preferred/normalised name; raw/series inputs may still contain the original
+    # variant. We consult `inputs/control/name_corrections.xlsx` to map aliases to
+    # the preferred name so RAES can discover candidate source files reliably.
     alias_map = {}
     try:
         ctrl = session_config.control_dir
@@ -250,6 +255,8 @@ def apply_field_to_files(files: List[Path], runner: str, field_type: str, target
             pass
 
     # Mark data as dirty so autopilot/UI know a run is required.
+    # Note: we set both a generic `autopilot/dirty` flag and a `raes/dirty` flag
+    # so the dashboard and RAES panel update immediately after manual edits.
     try:
         out = session_config.output_dir
         if out is not None:

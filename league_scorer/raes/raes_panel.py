@@ -27,6 +27,41 @@ WRRL_NAVY = "#3a4658"
 WRRL_GREEN = "#2d7a4a"
 
 
+class _Tooltip:
+    """Minimal hover tooltip for small UI hints.
+
+    Intended for use on Checkbutton widgets to explain series/raw
+    precedence and choices to reviewers.
+    """
+
+    def __init__(self, widget: tk.Widget, text: str):
+        self.widget = widget
+        self.text = text
+        self.tipwindow: tk.Toplevel | None = None
+        widget.bind("<Enter>", self._show)
+        widget.bind("<Leave>", self._hide)
+
+    def _show(self, _event=None) -> None:
+        if self.tipwindow or not self.text:
+            return
+        x = self.widget.winfo_rootx() + 20
+        y = self.widget.winfo_rooty() + 20
+        tw = tk.Toplevel(self.widget)
+        tw.wm_overrideredirect(True)
+        tw.wm_geometry(f"+{x}+{y}")
+        lbl = tk.Label(tw, text=self.text, justify="left", background="#ffffe0", relief="solid", borderwidth=1, font=("Segoe UI", 8))
+        lbl.pack(ipadx=4, ipady=2)
+        self.tipwindow = tw
+
+    def _hide(self, _event=None) -> None:
+        if self.tipwindow:
+            try:
+                self.tipwindow.destroy()
+            except Exception:
+                pass
+            self.tipwindow = None
+
+
 class RAESPanel(tk.Frame):
     """RAES two-pane panel: anomalies list (left) and runner view (right).
 
@@ -49,6 +84,11 @@ class RAESPanel(tk.Frame):
     # only import paths have been adjusted to account for the new package.)
 
     def _build(self) -> None:
+        # The main frame layout is intentionally compact to keep action
+        # buttons visible even when many race sections exist. The left
+        # pane lists runners with anomalies; the right pane shows a
+        # per-runner inspector including source-file selection and
+        # apply/mark actions.
         toolbar = tk.Frame(self, bg=WRRL_LIGHT)
         toolbar.pack(fill="x", padx=12, pady=(12, 6))
 
@@ -95,7 +135,11 @@ class RAESPanel(tk.Frame):
         status = tk.Frame(self, bg=WRRL_LIGHT)
         status.pack(fill="x", padx=12, pady=(8, 12))
         tk.Label(status, textvariable=self._last_updated_var, bg=WRRL_LIGHT, fg="#666666", font=("Segoe UI", 9)).pack(side="left")
-        # Dirty indicator for RAES panel (mirrors autopilot dirty flag)
+        # Dirty indicator for RAES panel (mirrors autopilot dirty flag).
+        # We check both the global `autopilot/dirty` marker and the
+        # RAES-specific `raes/dirty` marker so users see an immediate
+        # red indicator after manual edits and while Autopilot is
+        # re-running to reconcile changes.
         self._dirty_var = tk.StringVar(value="")
         self._dirty_lbl = tk.Label(status, textvariable=self._dirty_var, bg=WRRL_LIGHT, fg="#b22222", font=("Segoe UI", 9, "bold"))
         self._dirty_lbl.pack(side="right", padx=(8, 0))
@@ -106,6 +150,9 @@ class RAESPanel(tk.Frame):
     # are left unchanged; to keep the patch concise, import paths only were adapted.
 
     def _build_detail_placeholder(self) -> None:
+        # Clear any existing detail widgets and show a lightweight
+        # hint to the user. Keeping the placeholder simple avoids UI
+        # flicker when switching runners quickly.
         for child in self._detail_container.winfo_children():
             child.destroy()
         tk.Label(self._detail_container, text="Select a runner from the left to view details.", bg="#ffffff", fg=WRRL_NAVY, font=("Segoe UI", 11)).pack(padx=12, pady=12)
@@ -145,6 +192,11 @@ class RAESPanel(tk.Frame):
         self._show_runner_detail(runner)
 
     def _show_runner_detail(self, runner: str) -> None:
+        # Rebuild the right-hand inspector for the selected runner.
+        # This includes: summary, league standings rows, per-race
+        # sections, and the Processing Window (source file selection
+        # + apply/mark controls). We intentionally avoid auto-expanding
+        # all race sections to keep the UI compact.
         for child in self._detail_container.winfo_children():
             child.destroy()
         # Header
@@ -209,7 +261,10 @@ class RAESPanel(tk.Frame):
         else:
             tk.Label(summary, text="No summary available.", bg="#f7f7f9").pack(padx=8, pady=8)
 
-        # League Summary: surface Male/Female standings rows under the summary
+        # League Summary: surface Male/Female standings rows under the summary.
+        # These are the generated league sheets (read-only) and are shown
+        # to give the reviewer context about totals/positions across the
+        # season.
         league_summary = tk.Frame(self._detail_container, bg="#f7f7f9", bd=1, relief="solid")
         league_summary.pack(fill="x", padx=8, pady=(8, 6))
         tk.Label(league_summary, text="League Summary", font=("Segoe UI", 10, "bold"), bg="#f7f7f9").pack(anchor="w", padx=8, pady=(6, 4))
@@ -355,7 +410,14 @@ class RAESPanel(tk.Frame):
         src = tk.Frame(outer_src, bg="#ffffff", bd=1, relief="solid")
         src.pack(fill="x", padx=6, pady=6)
         tk.Label(src, text="Processing Window — Source files and actions", bg="#ffffff", font=("Segoe UI", 10, "bold")).pack(anchor="w", padx=4, pady=(4, 2))
+        # Note: the UI follows a series-first precedence when presenting
+        # candidate source files (series files are shown above raw files).
+        # This guides reviewers to prefer updating series workbooks where
+        # available so that derived raw_data can be regenerated safely by
+        # Autopilot.
         tk.Label(src, text="Select source files (series → raw_data) to update. Use Preview to inspect proposed changes, then Apply to commit them.", bg="#ffffff", fg="#6b7785", wraplength=650, justify="left").pack(anchor="w", padx=4, pady=(0, 6))
+        # Concise help text for reviewers
+        tk.Label(src, text="Tip: Prefer editing series files when present; Autopilot will regenerate raw_data.", bg="#ffffff", fg="#444444", font=("Segoe UI", 9), wraplength=650, justify="left").pack(anchor="w", padx=4, pady=(0, 8))
 
         self._source_vars: dict[str, tk.BooleanVar] = {}
         # Build source file checkboxes (series first, then raw)
@@ -366,11 +428,19 @@ class RAESPanel(tk.Frame):
                 self._source_vars[str(p)] = var
                 cb = tk.Checkbutton(src, text=f"Series: {p.name}", variable=var, bg="#ffffff", anchor="w")
                 cb.pack(fill="x", padx=8)
+                try:
+                    _Tooltip(cb, "Series workbook — preferred source. Editing here will be propagated when Autopilot regenerates raw_data.")
+                except Exception:
+                    pass
             for p in candidates.get("raw", []):
                 var = tk.BooleanVar(value=False)
                 self._source_vars[str(p)] = var
                 cb = tk.Checkbutton(src, text=f"Raw: {p.name}", variable=var, bg="#ffffff", anchor="w")
                 cb.pack(fill="x", padx=8)
+                try:
+                    _Tooltip(cb, "Raw data workbook — edit only if series workbook not available or the change applies only to raw input.")
+                except Exception:
+                    pass
         except Exception:
             pass
 

@@ -50,6 +50,10 @@ def _processed_state_path() -> Path | None:
     out = session_config.output_dir
     if out is None:
         return None
+    # Persist processed-state under outputs/<year>/raes/processed_state.json
+    # so the RAES UI can remember which runners a reviewer has already
+    # marked reviewed. This is intentionally lightweight JSON rather
+    # than embedding state in workbooks.
     d = Path(out) / "raes"
     d.mkdir(parents=True, exist_ok=True)
     return d / "processed_state.json"
@@ -78,6 +82,8 @@ def save_processed_state(state: Dict[str, bool]) -> None:
     if p is None:
         return
     try:
+        # Write atomically in future if needed; for now a simple write
+        # is sufficient since processed-state is small and non-critical.
         with open(p, "w", encoding="utf-8") as fh:
             json.dump(state, fh, ensure_ascii=False, indent=2)
     except Exception:
