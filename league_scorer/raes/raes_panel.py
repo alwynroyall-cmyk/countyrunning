@@ -373,6 +373,72 @@ class RAESPanel(tk.Frame):
             cb = tk.Checkbutton(src, text=f"Raw: {p.name}", variable=var, bg="#ffffff", anchor="w")
             cb.pack(fill="x", padx=8)
 
+        # Field edit controls (inside processing window `src`)
+        edit_row = tk.Frame(src, bg="#ffffff")
+        edit_row.pack(fill="x", padx=8, pady=(4, 8))
+        tk.Label(edit_row, text="Field:", bg="#ffffff").pack(side="left")
+        field_var = tk.StringVar(value="category")
+        field_menu = ttk.Combobox(edit_row, textvariable=field_var, values=["category", "club", "gender"], width=12, state="readonly")
+        field_menu.pack(side="left", padx=(6, 12))
+        tk.Label(edit_row, text="Value:", bg="#ffffff").pack(side="left")
+        value_combo = ttk.Combobox(edit_row, values=[], width=24)
+        value_combo.pack(side="left", padx=(6, 12))
+
+        # Preview area (treeview)
+        preview_frame = tk.Frame(src, bg="#ffffff")
+        preview_frame.pack(fill="both", padx=8, pady=(4, 8))
+        cols = ("file", "sheet", "row", "old", "new")
+        self._preview_tree = ttk.Treeview(preview_frame, columns=cols, show="headings", height=6)
+        for c, h in zip(cols, ("File", "Sheet", "Row", "Old Value", "New Value")):
+            self._preview_tree.heading(c, text=h)
+            self._preview_tree.column(c, width=120 if c == "file" else 100, anchor="w")
+        self._preview_tree.pack(fill="both", expand=True)
+
+        def _populate_value_options(field):
+            if field == "category":
+                opts = ["Jun", "Sen", "V40", "V50", "V60", "V70"]
+                value_combo.config(values=opts)
+                if not value_combo.get():
+                    value_combo.set(opts[0])
+            elif field == "gender":
+                opts = ["Male", "Female"]
+                value_combo.config(values=opts)
+                if not value_combo.get():
+                    value_combo.set(opts[0])
+            else:  # club -> compute from candidate files
+                opts_set = set()
+                cand = find_candidate_source_files(runner)
+                files = cand.get("series", []) + cand.get("raw", [])
+                for p in files:
+                    try:
+                        wb = openpyxl.load_workbook(p, read_only=True, data_only=True)
+                        for s in wb.sheetnames:
+                            try:
+                                ws = wb[s]
+                                name_col, club_col = _find_columns(ws, "club")
+                                if name_col is None or club_col is None:
+                                    continue
+                                for ri in range(2, ws.max_row + 1):
+                                    nm = _row_name_value(ws, ri, name_col)
+                                    if nm.lower() != runner.lower():
+                                        continue
+                                    cell = ws.cell(row=ri, column=club_col)
+                                    val = "" if cell.value is None else str(cell.value).strip()
+                                    if val:
+                                        opts_set.add(val)
+                            except Exception:
+                                continue
+                        wb.close()
+                    except Exception:
+                        continue
+                opts = sorted(opts_set)
+                value_combo.config(values=opts)
+                if opts and not value_combo.get():
+                    value_combo.set(opts[0])
+
+        field_menu.bind("<<ComboboxSelected>>", lambda _e: _populate_value_options(field_var.get()))
+        _populate_value_options(field_var.get())
+
     def _update_dirty_indicator(self) -> None:
         """Poll the autopilot dirty flag and update the status label."""
         try:
