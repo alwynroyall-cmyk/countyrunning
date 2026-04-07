@@ -252,20 +252,13 @@ def _generate_audited_race_files(input_dir: Path, *, overwrite_existing: bool) -
     for num, p in (series_race_files or {}).items():
         merged_sources[num] = p
 
-    # Ensure series edits are persisted into inputs/raw_data so raw_data reflects latest operator changes.
-    # Copy series files into the raw_data folder (overwrite) and prefer the copied raw_data path as source.
-    refreshed_count = 0
+    # Prefer series files over raw_data files for the same race number but DO NOT copy
+    # series workbooks into the `raw_data` folder. The consolidation process should
+    # merge series inputs into the consolidated workbook; copying series files into
+    # `raw_data` causes duplicate source files to appear there and is undesired.
     for num, series_path in (series_race_files or {}).items():
-        try:
-            dest_dir = paths.raw_data_dir
-            dest_dir.mkdir(parents=True, exist_ok=True)
-            dest_path = dest_dir / series_path.name
-            shutil.copy2(series_path, dest_path)
-            merged_sources[num] = dest_path
-            refreshed_count += 1
-        except Exception:
-            # If copy fails, fall back to using the series file directly as source
-            merged_sources[num] = series_path
+        # Use the series file as the preferred source for this race number.
+        merged_sources[num] = series_path
 
     raw_to_preferred, club_info = load_clubs(paths.control_dir / "clubs.xlsx")
     preferred_clubs = sorted(club_info)
