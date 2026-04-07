@@ -439,106 +439,7 @@ class RAESPanel(tk.Frame):
         field_menu.bind("<<ComboboxSelected>>", lambda _e: _populate_value_options(field_var.get()))
         _populate_value_options(field_var.get())
 
-    def _update_dirty_indicator(self) -> None:
-        """Poll the autopilot dirty flag and update the status label."""
-        try:
-            out = session_config.output_dir
-            is_dirty = False
-            if out is not None:
-                flag = Path(out) / "autopilot" / "dirty"
-                is_dirty = flag.exists()
-            if is_dirty:
-                self._dirty_var.set("DATA DIRTY — run Autopilot")
-                self._dirty_lbl.config(fg="#b22222")
-            else:
-                self._dirty_var.set("")
-        except Exception:
-            try:
-                self._dirty_var.set("")
-            except Exception:
-                pass
-        try:
-            self.after(1000, self._update_dirty_indicator)
-        except Exception:
-            pass
-
-        # end of _update_dirty_indicator
-
-        # Update options when field changes
-        field_menu.bind("<<ComboboxSelected>>", lambda _e: _populate_value_options(field_var.get()))
-        _populate_value_options(field_var.get())
-        def _build_preview():
-            self._preview_tree.delete(*self._preview_tree.get_children())
-            field = field_var.get()
-            val = value_combo.get().strip()
-            if not val:
-                messagebox.showwarning("RAES", "Please select a value to preview.", parent=self)
-                return []
-            files = [Path(p) for p, v in self._source_vars.items() if v.get()]
-            if not files:
-                messagebox.showwarning("RAES", "No source files selected.", parent=self)
-                return []
-            preview_rows = []
-            for path in files:
-                try:
-                    wb = openpyxl.load_workbook(path)
-                except Exception:
-                    continue
-                try:
-                    for sname in wb.sheetnames:
-                        ws = wb[sname]
-                        name_col, field_col = _find_columns(ws, field)
-                        if name_col is None or field_col is None:
-                            continue
-                        for row_idx in range(2, ws.max_row + 1):
-                            nm = _row_name_value(ws, row_idx, name_col)
-                            if nm.lower() != runner.lower():
-                                continue
-                            cell = ws.cell(row=row_idx, column=field_col)
-                            old = "" if cell.value is None else str(cell.value).strip()
-                            preview_rows.append((path.name, sname, row_idx, old, val))
-                finally:
-                    try:
-                        wb.close()
-                    except Exception:
-                        pass
-            for r in preview_rows:
-                self._preview_tree.insert("", "end", values=r)
-            return preview_rows
-
-        def _on_apply_selected():
-            field = field_var.get()
-            val = value_combo.get().strip()
-            if not val:
-                messagebox.showwarning("RAES", "Please select a value to apply.", parent=self)
-                return
-            # basic validation for category
-            if field == "category":
-                allowed = {"Jun", "Sen", "V40", "V50", "V60", "V70"}
-                if val not in allowed:
-                    messagebox.showerror("RAES", f"Invalid category. Allowed: {', '.join(sorted(allowed))}", parent=self)
-                    return
-            # collect selected files
-            files = [Path(p) for p, v in self._source_vars.items() if v.get()]
-            if not files:
-                messagebox.showwarning("RAES", "No source files selected.", parent=self)
-                return
-            # show preview and confirm
-            preview_rows = _build_preview()
-            if not preview_rows:
-                messagebox.showinfo("RAES", "No matching rows found to apply.", parent=self)
-                return
-            if not messagebox.askyesno("RAES Apply", f"Apply {field}='{val}' to {len(preview_rows)} rows across {len(files)} files?", parent=self):
-                return
-            audit = apply_field_to_files(files, runner, field, val)
-            messagebox.showinfo("RAES", f"Applied edits. Records: {len(audit)}", parent=self)
-            # mark reviewed
-            set_runner_processed(runner, True)
-            self._set_processed_for_runner(runner, True)
-        apply_btn = tk.Button(edit_row, text="Apply to selected files", command=_on_apply_selected, bg="#2b7bd9", fg="#fff")
-        apply_btn.pack(side="left")
-        preview_btn = tk.Button(edit_row, text="Preview", command=_build_preview)
-        preview_btn.pack(side="left", padx=(8, 0))
+    
 
         # Diagnostics — use the same boxed style as Runner Summary
         diag = tk.Frame(self._detail_container, bg="#f7f7f9", bd=1, relief="solid")
@@ -633,6 +534,29 @@ class RAESPanel(tk.Frame):
             if vals and vals[0] == runner:
                 mark = "✓" if processed else ""
                 self._tree.item(iid, values=(vals[0], mark))
+
+    def _update_dirty_indicator(self) -> None:
+        """Poll the autopilot dirty flag and update the status label."""
+        try:
+            out = session_config.output_dir
+            is_dirty = False
+            if out is not None:
+                flag = Path(out) / "autopilot" / "dirty"
+                is_dirty = flag.exists()
+            if is_dirty:
+                self._dirty_var.set("DATA DIRTY — run Autopilot")
+                self._dirty_lbl.config(fg="#b22222")
+            else:
+                self._dirty_var.set("")
+        except Exception:
+            try:
+                self._dirty_var.set("")
+            except Exception:
+                pass
+        try:
+            self.after(1000, self._update_dirty_indicator)
+        except Exception:
+            pass
 
     def _poll_scan(self) -> None:
         # Simple poll loop to consume worker results — full implementation
