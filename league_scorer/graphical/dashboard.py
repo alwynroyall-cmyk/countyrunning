@@ -752,6 +752,12 @@ class LeagueScorerDashboard(tk.Tk):
                             subtitle_lbl.config(bg=WRRL_AMBER, fg="#6f5a10")
             except Exception:
                 pass
+        # Schedule another refresh so the dashboard stays in sync with external
+        # changes (autopilot/RAES writes) without user interaction.
+        try:
+            self.after(1000, self._refresh_config_panel)
+        except Exception:
+            pass
 
     def _compute_data_freshness(self) -> tuple[bool, str]:
         if not session_config.input_dir:
