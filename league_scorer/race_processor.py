@@ -279,6 +279,7 @@ def _deduplicate(
     """
     # key → best RunnerRaceEntry so far
     best: Dict[Tuple, RunnerRaceEntry] = {}
+    order_pos: Dict[Tuple, int] = {}
     ordered: List[RunnerRaceEntry] = []
 
     for r in runners:
@@ -291,6 +292,7 @@ def _deduplicate(
 
         if key not in best:
             best[key] = r
+            order_pos[key] = len(ordered)
             ordered.append(r)
         else:
             existing = best[key]
@@ -328,8 +330,7 @@ def _deduplicate(
                 )
                 r.warnings.append(warning_text)
                 best[key] = r
-                index = ordered.index(existing)
-                ordered[index] = r
+                ordered[order_pos[key]] = r
             else:
                 code = "AUD-ROW-008"
                 warning_text = (

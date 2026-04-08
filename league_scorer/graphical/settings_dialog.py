@@ -4,8 +4,13 @@ import socket
 import tkinter as tk
 from datetime import datetime
 from pathlib import Path
-from tkinter import ttk, messagebox
+from tkinter import ttk, messagebox, filedialog, simpledialog
+
+from league_scorer.graphical.events_viewer import WRRL_GREEN
 from ..settings import settings, DEFAULT_SETTINGS
+from ..session_config import config as session_config
+from ..input_layout import sort_existing_input_files
+from ..output_layout import sort_existing_output_files
 from ..graphical.dashboard import WRRL_NAVY, WRRL_LIGHT
 
 
@@ -37,6 +42,7 @@ class SettingsPanel(tk.Frame):
     def __init__(self, parent, on_close=None, on_open_logs=None):
         super().__init__(parent, bg=WRRL_LIGHT)
         self._vars = {}
+        self._path_value_labels = {}
         self._on_close = on_close
         self._on_open_logs = on_open_logs
         self._project_root = Path(__file__).resolve().parents[2]
@@ -99,6 +105,11 @@ class SettingsPanel(tk.Frame):
         self._build_info_panel(info_frame)
 
         row += 1
+        paths_frame = tk.Frame(frm, bg=WRRL_LIGHT)
+        paths_frame.grid(row=row, column=0, columnspan=2, sticky="ew", pady=(20, 0))
+        self._build_paths_panel(paths_frame)
+
+        row += 1
         btn_frame = tk.Frame(frm, bg=WRRL_LIGHT)
         btn_frame.grid(row=row, column=0, columnspan=2, sticky="ew", pady=(18,0))
         btn_frame.grid_columnconfigure(1, weight=1)
@@ -108,17 +119,17 @@ class SettingsPanel(tk.Frame):
         logs_btn.grid(row=0, column=1, sticky="w")
         close_btn = tk.Button(
             btn_frame,
-            text="\u25c4 Dashboard",
+            text="🏠 Dashboard",
             command=self._on_close_clicked,
             font=("Segoe UI", 10, "bold"),
-            bg="#2d7a4a",
-            fg="#ffffff",
+            bg=WRRL_LIGHT,
+            fg=WRRL_GREEN,
             relief="flat",
             padx=10,
             pady=4,
             cursor="hand2",
             activebackground="#1f5632",
-            activeforeground="#ffffff",
+            activeforeground=WRRL_GREEN,
         )
         close_btn.grid(row=0, column=2, sticky="e")
 
@@ -211,6 +222,186 @@ class SettingsPanel(tk.Frame):
             return datetime.fromtimestamp(path.stat().st_mtime).strftime("%d %b %Y %H:%M")
         except OSError:
             return "Unavailable"
+
+    def _build_paths_panel(self, parent):
+        """Build the data paths configuration section."""
+        # Title
+        title = tk.Label(
+            parent,
+            text="Data Paths",
+            font=("Segoe UI", 12, "bold"),
+            bg=WRRL_LIGHT,
+            fg=WRRL_NAVY,
+        )
+        title.pack(anchor="w", pady=(0, 12))
+
+        # Data Root selector frame
+        root_frame = tk.Frame(parent, bg=WRRL_LIGHT)
+        root_frame.pack(fill="x", pady=(0, 12))
+
+        root_label = tk.Label(
+            root_frame,
+            text="Data Root:",
+            font=("Segoe UI", 10, "bold"),
+            bg=WRRL_LIGHT,
+            fg=WRRL_NAVY,
+        )
+        root_label.pack(side="left")
+
+        self._data_root_display = tk.Label(
+            root_frame,
+            text=str(session_config.data_root) if session_config.data_root else "Not set",
+            font=("Segoe UI", 9),
+            bg=WRRL_LIGHT,
+            fg="#ff9900" if not session_config.data_root else "#2d7a4a",
+            anchor="w",
+        )
+        self._data_root_display.pack(side="left", fill="x", expand=True, padx=(8, 10))
+
+        browse_btn = tk.Button(
+            root_frame,
+            text="Browse…",
+            command=self._on_browse_data_root,
+            font=("Segoe UI", 9),
+            bg="#2d7a4a",
+            fg="white",
+            relief="flat",
+            padx=10,
+            pady=2,
+            cursor="hand2",
+            activebackground="#1f5632",
+            activeforeground="white",
+        )
+        browse_btn.pack(side="right")
+
+        setup_btn = tk.Button(
+            root_frame,
+            text="Set Up New Season...",
+            command=self._on_setup_new_season,
+            font=("Segoe UI", 9),
+            bg="#2d7a4a",
+            fg="white",
+            relief="flat",
+            padx=10,
+            pady=2,
+            cursor="hand2",
+            activebackground="#1f5632",
+            activeforeground="white",
+        )
+        setup_btn.pack(side="right", padx=(0, 8))
+
+        # Path info frame
+        info_frame = tk.Frame(parent, bg="#f5f5f5", padx=10, pady=10, highlightbackground="#d0d0d0", highlightthickness=1)
+        info_frame.pack(fill="x")
+
+        paths_title = tk.Label(
+            info_frame,
+            text="Paths for current season",
+            font=("Segoe UI", 9, "bold"),
+            bg="#f5f5f5",
+            fg=WRRL_NAVY,
+        )
+        paths_title.pack(anchor="w", pady=(0, 8))
+
+        for label_text, config_attr in [
+            ("Input Folder:", "input_dir"),
+            ("Output Folder:", "output_dir"),
+            ("Events File:", "events_path"),
+        ]:
+            path_row = tk.Frame(info_frame, bg="#f5f5f5")
+            path_row.pack(fill="x", pady=(0, 6))
+
+            lbl = tk.Label(
+                path_row,
+                text=label_text,
+                font=("Segoe UI", 9, "bold"),
+                bg="#f5f5f5",
+                fg=WRRL_NAVY,
+                width=15,
+                anchor="w",
+            )
+            lbl.pack(side="left")
+
+            path_lbl = tk.Label(
+                path_row,
+                text="",
+                font=("Segoe UI", 9),
+                bg="#f5f5f5",
+                fg="#b0b0b0",
+                anchor="w",
+            )
+            path_lbl.pack(side="left", fill="x", expand=True)
+            self._path_value_labels[config_attr] = path_lbl
+
+        self._refresh_paths_display()
+
+    def _refresh_paths_display(self):
+        for config_attr, path_lbl in self._path_value_labels.items():
+            path_value = getattr(session_config, config_attr, None)
+            if path_value:
+                display_text = path_value.name if config_attr == "events_path" else str(path_value)
+                exists = path_value.exists() if hasattr(path_value, "exists") else False
+                text_color = "#2d7a4a" if exists else "#ff9900"
+            else:
+                display_text = "—"
+                text_color = "#b0b0b0"
+            path_lbl.config(text=display_text, fg=text_color)
+
+    def _on_browse_data_root(self):
+        """Open a folder browser to select the data root."""
+        initial = str(session_config.data_root) if session_config.data_root else "/"
+        folder = filedialog.askdirectory(
+            title="Select Data Root Folder (parent of all year folders)",
+            initialdir=initial,
+        )
+        if folder:
+            session_config.data_root = Path(folder)
+            session_config.ensure_dirs()
+            self._data_root_display.config(
+                text=str(session_config.data_root),
+                fg="#2d7a4a",
+            )
+            self._refresh_paths_display()
+            messagebox.showinfo(
+                "Data Root Updated",
+                f"Data root set to:\n{session_config.data_root}",
+            )
+
+    def _on_setup_new_season(self):
+        if not session_config.data_root:
+            messagebox.showerror(
+                "Data Root Missing",
+                "Set Data Root first, then set up a season.",
+            )
+            return
+
+        year = simpledialog.askinteger(
+            "Set Up New Season",
+            "Enter season year:",
+            parent=self,
+            initialvalue=session_config.year,
+            minvalue=2020,
+            maxvalue=2100,
+        )
+        if year is None:
+            return
+
+        session_config.year = year
+        session_config.ensure_dirs()
+        if session_config.input_dir:
+            sort_existing_input_files(session_config.input_dir)
+        if session_config.output_dir:
+            sort_existing_output_files(session_config.output_dir)
+
+        self._data_root_display.config(
+            text=str(session_config.data_root),
+            fg="#2d7a4a",
+        )
+        self._refresh_paths_display()
+        messagebox.showinfo(
+            "Season Ready",
+            f"Season {year} is ready.\n\nInput: {session_config.input_dir}\nOutput: {session_config.output_dir}",
+        )
 
     def _on_save(self):
         for key, var in self._vars.items():

@@ -1,0 +1,82 @@
+[
+  {
+    "change": {
+      "timestamp": "2026-04-07T11:39:28.600746Z",
+      "file": "C:\\Users\\alwyn\\OneDrive\\Documents\\WiltshireAthletics\\WRRL\\2025\\inputs\\series\\Race #5 Heddington 5k Series #3.xlsx",
+      "sheet": "Sheet1",
+      "runner": "Amy Cameron",
+      "field": "category",
+      "old_value": "FV45",
+      "new_value": "V40"
+    },
+    "found": []
+  },
+  {
+    "change": {
+      "timestamp": "2026-04-07T11:45:53.804665Z",
+      "file": "C:\\Users\\alwyn\\OneDrive\\Documents\\WiltshireAthletics\\WRRL\\2025\\inputs\\raw_data\\Race #8 - Devizes10k.xlsx",
+      "sheet": "Sheet1",
+      "runner": "Amy Miskell-Dodd",
+      "field": "category",
+      "old_value": "F35",
+      "new_value": "V40"
+    },
+    "found": []
+  },
+  {
+    "change": {
+      "timestamp": "2026-04-07T11:54:49.895208Z",
+      "file": "C:\\Users\\alwyn\\OneDrive\\Documents\\WiltshireAthletics\\WRRL\\2025\\inputs\\raw_data\\Race #8 - Devizes10k.xlsx",
+      "sheet": "Sheet1",
+      "runner": "Anne Garnish",
+      "field": "category",
+      "old_value": "F45",
+      "new_value": "V50"
+    },
+    "found": [
+      {
+        "sheet": "Female",
+        "rownum": 141,
+        "row": {
+          "Position": 140,
+          "Name": "Anne Garnish",
+          "Club": "Somer AC",
+          "Category": "V50",
+          "Race 1 Points": "",
+          "Race 2 Points": "",
+          "Race 3 Points": "",
+          "Race 4 Points": "",
+          "Race 5 Points": "",
+          "Race 6 Points": "",
+          "Race 7 Points": "",
+          "Race 8 Points": 80,
+          "Total Points": 80
+        }
+      }
+    ]
+  },
+  {
+    "change": {
+      "timestamp": "2026-04-07T12:18:57.257807Z",
+      "file": "C:\\Users\\alwyn\\OneDrive\\Documents\\WiltshireAthletics\\WRRL\\2025\\inputs\\raw_data\\Race #7 - Chippenham Half Marathon 2025.xlsx",
+      "sheet": "Sheet1",
+      "runner": "Caroline Allsop",
+      "field": "category",
+      "old_value": "FSen",
+      "new_value": "Sen"
+    },
+    "found": []
+  },
+  {
+    "change": {
+      "timestamp": "2026-04-07T12:18:57.373062Z",
+      "file": "C:\\Users\\alwyn\\OneDrive\\Documents\\WiltshireAthletics\\WRRL\\2025\\inputs\\raw_data\\Race #8 - Devizes10k.xlsx",
+      "sheet": "Sheet1",
+      "runner": "Caroline Allsop",
+      "field": "category",
+      "old_value": "F35",
+      "new_value": "Sen"
+    },
+    "found": []
+  }
+]

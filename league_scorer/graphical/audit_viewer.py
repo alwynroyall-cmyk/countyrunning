@@ -101,13 +101,14 @@ class AuditViewerPanel(tk.Frame):
             self._sheet_var.set("")
             return
         try:
-            xl = pd.ExcelFile(workbook)
-            self._sheet_dropdown["values"] = xl.sheet_names
-            if xl.sheet_names and self._sheet_var.get() not in xl.sheet_names:
-                self._sheet_var.set(xl.sheet_names[0])
-        except Exception:
+            with pd.ExcelFile(workbook) as xl:
+                self._sheet_dropdown["values"] = xl.sheet_names
+                if xl.sheet_names and self._sheet_var.get() not in xl.sheet_names:
+                    self._sheet_var.set(xl.sheet_names[0])
+        except Exception as exc:
             self._sheet_dropdown["values"] = []
             self._sheet_var.set("")
+            self._show_message(f"Could not read workbook: {exc}")
 
     def _selected_workbook(self) -> Path | None:
         name = self._file_var.get()

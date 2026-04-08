@@ -1,5 +1,5 @@
 """
-gui.py - League Management scorer window.
+gui.py - WRRL League AI scorer window.
 
 Opens as a Toplevel child of the dashboard.  Input/output paths are taken
 directly from session_config so no folder selection is needed here.
@@ -16,6 +16,7 @@ from tkinter import messagebox, scrolledtext
 
 from ..common_files import race_discovery_exclusions
 from ..exceptions import FatalError
+from ..input_layout import build_input_paths
 from ..main import LeagueScorer
 from ..raceroster_import import (
     SporthiveRaceNotDirectlyImportableError,
@@ -69,7 +70,7 @@ class _QueueHandler(logging.Handler):
 # ---------------------------------------------------------------------------
 
 class LeagueScorerApp(tk.Frame):
-    """League scorer panel — embeds inside the dashboard."""
+    """WRRL League AI scorer panel — embeds inside the dashboard."""
 
     _SENTINEL_OK    = "done"
     _SENTINEL_FATAL = "fatal"
@@ -123,11 +124,12 @@ class LeagueScorerApp(tk.Frame):
     # -------------------------------------------------------------------------
 
     def _discover_race_files(self) -> dict:
-        """Scan input_dir and return {race_num: Path} for all valid race files."""
+        """Scan audited folder and return {race_num: Path} for all valid race files."""
         if not self._input_dir or not self._input_dir.is_dir():
             return {}
+        audited_dir = build_input_paths(self._input_dir).audited_dir
         return discover_race_files(
-            self._input_dir,
+            audited_dir,
             excluded_names=race_discovery_exclusions(),
         )
 
@@ -167,7 +169,7 @@ class LeagueScorerApp(tk.Frame):
 
         tk.Label(
             bar,
-            text="Run League Scorer",
+            text="Run WRRL League AI",
             font=("Segoe UI", 14, "bold"),
             bg=NAVY, fg=WHITE,
         ).pack(side="left", padx=16, pady=10)
@@ -180,6 +182,11 @@ class LeagueScorerApp(tk.Frame):
                 font=("Segoe UI", 10),
                 bg=NAVY, fg="#a0b8d0",
             ).pack(side="left", padx=4)
+
+        # Dirty indicator (red/green dot) - updated periodically
+        self._dirty_indicator = tk.Label(bar, text="●", font=("Segoe UI", 12), bg=NAVY, fg="green")
+        self._dirty_indicator.pack(side="right", padx=8)
+        self._update_dirty_indicator()
 
     def _build_paths_panel(self) -> None:
         panel = tk.Frame(self, bg=PANEL, bd=0)
@@ -285,6 +292,9 @@ class LeagueScorerApp(tk.Frame):
             )
             return None
 
+        raw_data_dir = build_input_paths(self._input_dir).raw_data_dir
+        raw_data_dir.mkdir(parents=True, exist_ok=True)
+
         request = prompt_race_import_request(self)
         if request is None:
             return None
@@ -292,7 +302,7 @@ class LeagueScorerApp(tk.Frame):
         try:
             output_path, count, history_path = import_raceroster_results(
                 race_url=request.race_url,
-                input_dir=self._input_dir,
+                input_dir=raw_data_dir,
                 league_race_number=request.race_number,
                 race_name_override=request.race_name,
                 sporthive_race_id_hint=request.sporthive_race_hint,
@@ -334,7 +344,7 @@ class LeagueScorerApp(tk.Frame):
 
         result = run_manual_sporthive_import(
             self,
-            input_dir=self._input_dir,
+            input_dir=build_input_paths(self._input_dir).raw_data_dir,
             request=request,
             ask_page_text=_ask_page,
         )
@@ -546,6 +556,42 @@ class LeagueScorerApp(tk.Frame):
             except tk.TclError:
                 pass  # widget was destroyed before this reschedule
 
+    def _update_dirty_indicator(self) -> None:
+        """Check for autopilot dirty flag and update the header indicator."""
+        try:
+            from ..session_config import config as session_config
+            out = session_config.output_dir
+            is_dirty = False
+            if out is not None:
+                flag = Path(out) / "autopilot" / "dirty"
+                raes_flag = Path(out) / "raes" / "dirty"
+                is_dirty = flag.exists() or raes_flag.exists()
+            # Red dot when dirty, green when clean
+            if is_dirty:
+                self._dirty_indicator.config(text="●", fg="red")
+            else:
+                self._dirty_indicator.config(text="●", fg="green")
+            # Also update the run button colour to match freshness state so
+            # the prominent action reflects that data are dirty.
+            try:
+                if is_dirty:
+                    # Use amber to warn the user rather than disabling the button
+                    self._run_btn.config(bg=AMBER)
+                else:
+                    self._run_btn.config(bg=GREEN)
+            except Exception:
+                pass
+        except Exception:
+            # On error, show amber circle
+            try:
+                self._dirty_indicator.config(text="\u26AA")
+            except Exception:
+                pass
+        try:
+            self.after(500, self._update_dirty_indicator)
+        except tk.TclError:
+            pass
+
     def _on_done(self) -> None:
         self._stop_progress()
         self._run_btn.config(state="normal", bg=GREEN)
@@ -612,7 +658,7 @@ class LeagueScorerApp(tk.Frame):
 def launch() -> None:
     """Standalone launcher (opens its own root window)."""
     root = tk.Tk()
-    root.title("League Management — Run Scorer")
+    root.title("WRRL League AI — Run Scorer")
     root.geometry("860x640")
     root.configure(bg=LIGHT)
     app = LeagueScorerApp(root)

@@ -14,6 +14,7 @@ import pandas as pd
 
 from ..common_files import race_discovery_exclusions
 from ..manual_data_audit import log_manual_data_changes
+from ..manual_edit_service import _atomic_save
 from ..session_config import config as session_config
 from .dashboard import WRRL_GREEN, WRRL_LIGHT, WRRL_NAVY, WRRL_WHITE
 
@@ -47,8 +48,8 @@ class ClubEditorPanel(tk.Frame):
 
     def _load_eligible_clubs(self) -> None:
         clubs_path = (
-            session_config.input_dir / "clubs.xlsx"
-            if session_config.input_dir
+            session_config.control_dir / "clubs.xlsx"
+            if session_config.control_dir
             else None
         )
         if not clubs_path or not clubs_path.exists():
@@ -419,11 +420,11 @@ class ClubEditorPanel(tk.Frame):
 
     def _populate_file_list(self) -> None:
         skip = set(race_discovery_exclusions())
-        input_dir = session_config.input_dir
-        if not input_dir or not input_dir.exists():
+        raw_data_dir = session_config.raw_data_dir
+        if not raw_data_dir or not raw_data_dir.exists():
             return
         files = sorted(
-            [f for f in input_dir.glob("*.xlsx") if f.name.lower() not in skip],
+            [f for f in raw_data_dir.glob("*.xlsx") if f.name.lower() not in skip],
             key=lambda f: f.stem,
         )
         self._file_paths = files
@@ -633,7 +634,7 @@ class ClubEditorPanel(tk.Frame):
         for row_idx, new_club in self._pending_changes.items():
             self._ws.cell(row=row_idx, column=excel_col).value = new_club
         try:
-            self._wb.save(self._current_file)
+            _atomic_save(self._wb, self._current_file)
         except Exception as exc:
             messagebox.showerror("Save Error", f"Could not save workbook:\n{exc}", parent=self)
             return

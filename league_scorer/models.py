@@ -8,6 +8,12 @@ class ClubInfo:
     div_a: int  # 1 or 2
     div_b: int  # 1 or 2
 
+    def __post_init__(self) -> None:
+        if self.div_a not in {1, 2}:
+            raise ValueError(f"ClubInfo.div_a must be 1 or 2, got {self.div_a!r}")
+        if self.div_b not in {1, 2}:
+            raise ValueError(f"ClubInfo.div_b must be 1 or 2, got {self.div_b!r}")
+
 
 @dataclass
 class RunnerRaceEntry:
@@ -66,6 +72,12 @@ class TeamRaceResult:
     women_score: int = 0
     team_score: int = 0
     team_points: int = 0  # division points (20→1, or 0 for no runners)
+
+    def __post_init__(self) -> None:
+        if self.team_id not in {"A", "B"}:
+            raise ValueError(f"TeamRaceResult.team_id must be 'A' or 'B', got {self.team_id!r}")
+        if self.division not in {1, 2}:
+            raise ValueError(f"TeamRaceResult.division must be 1 or 2, got {self.division!r}")
 
 
 @dataclass

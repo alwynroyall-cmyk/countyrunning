@@ -42,9 +42,11 @@ def create_cleansed_race_file(
     filepath: Path,
     raw_to_preferred: Dict[str, str],
     preferred_clubs: Iterable[str],
+    audited_dir: Path,
+    control_dir: Path,
     overwrite_existing: bool = False,
 ) -> Path:
-    """Write a new audited workbook alongside the original source file."""
+    """Write a new audited workbook into the season audited folder."""
     source_df = load_race_dataframe(filepath)
     col_map = _resolve_columns(source_df.columns)
 
@@ -52,7 +54,7 @@ def create_cleansed_race_file(
     if time_col is None:
         raise ValueError(f"'{filepath.name}' has no time-like column")
 
-    name_corrections = load_name_corrections(filepath.parent / "name_corrections.xlsx")
+    name_corrections = load_name_corrections(control_dir / "name_corrections.xlsx")
 
     use_excel_time_format = _is_race_over_5k(filepath.stem)
 
@@ -67,7 +69,8 @@ def create_cleansed_race_file(
     )
     race_sheet_name = _build_race_sheet_name(filepath)
 
-    output_path = filepath.with_name(f"{_build_audited_stem(filepath.stem)} (audited).xlsx")
+    audited_dir.mkdir(parents=True, exist_ok=True)
+    output_path = audited_dir / f"{_build_audited_stem(filepath.stem)} (audited).xlsx"
     if output_path.exists():
         if not overwrite_existing:
             raise FileExistsError(f"Audited file already exists: {output_path.name}")
@@ -98,7 +101,7 @@ def _build_output_frames(
     preferred_clubs: list[str],
     name_corrections: Dict[str, str],
     prefer_excel_time_format: bool = False,
-) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     race_rows = []
     club_suggestions: Dict[str, dict] = {}
     name_suggestions: Dict[str, dict] = {}

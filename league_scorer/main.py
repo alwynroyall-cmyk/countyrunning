@@ -20,6 +20,7 @@ from typing import Dict, List
 from .common_files import race_discovery_exclusions
 from .club_loader import load_clubs
 from .exceptions import FatalError, RaceProcessingError
+from .input_layout import build_input_paths, ensure_input_subdirs, sort_existing_input_files
 from .individual_scoring import assign_individual_points
 from .models import (
     CategoryRecord,
@@ -28,6 +29,15 @@ from .models import (
     RunnerRaceEntry,
     TeamRaceResult,
     UnrecognisedClub,
+)
+from .output_layout import (
+    category_review_filename,
+    ensure_output_subdirs,
+    league_update_basename,
+    race_scoring_card_basename,
+    standings_filename,
+    time_query_review_filename,
+    sort_existing_output_files,
 )
 from .output_writer import (
     write_category_mismatch_todo,
@@ -51,6 +61,7 @@ class LeagueScorer:
         self.input_dir = input_dir
         self.output_dir = output_dir
         self.year = int(year)
+        self.input_paths = build_input_paths(input_dir)
 
         self.raw_to_preferred: Dict[str, str] = {}
         self.club_info: Dict[str, ClubInfo] = {}
@@ -98,7 +109,7 @@ class LeagueScorer:
         )
 
         if not race_files:
-            log.warning("No valid race files found in '%s'.", self.input_dir)
+            log.warning("No valid audited race files found in '%s'.", self.input_paths.audited_dir)
             log_event("league_run_no_races", level="WARNING", logger=log, year=self.year)
             return []
 
@@ -150,14 +161,19 @@ class LeagueScorer:
                 f"Expected .../{expected_year}/outputs, got: {self.output_dir}"
             )
 
+        ensure_input_subdirs(self.input_dir)
+        sort_existing_input_files(self.input_dir)
+        ensure_output_subdirs(self.output_dir)
+        sort_existing_output_files(self.output_dir)
+
     def _load_clubs(self) -> None:
         self.raw_to_preferred, self.club_info = load_clubs(
-            self.input_dir / "clubs.xlsx"
+            self.input_paths.control_dir / "clubs.xlsx"
         )
 
     def _discover_races(self) -> Dict[int, Path]:
-        """Find all supported race files with a valid Race # name."""
-        races = discover_race_files(self.input_dir, excluded_names=race_discovery_exclusions())
+        """Find all audited race files with a valid Race # name."""
+        races = discover_race_files(self.input_paths.audited_dir, excluded_names=race_discovery_exclusions())
         log.info("Discovered %d race file(s).", len(races))
         log_event("race_discovery_completed", logger=log, year=self.year, race_count=len(races))
         return races
@@ -199,7 +215,11 @@ class LeagueScorer:
         self.all_race_issues[race_num] = list(issue_notes)
 
         # Write branded per-race scoring card
-        pfx = f"Race {race_num} -- "
+        race_label = filepath.stem
+        if "(audited)" in race_label.lower():
+            race_label = race_label.rsplit("(audited)", 1)[0].strip(" -")
+        card_basename = race_scoring_card_basename(race_num, race_label)
+        output_paths = ensure_output_subdirs(self.output_dir)
         images_dir = Path(__file__).parent / "images"
         pdf_warning = write_race_report(
             race_num=race_num,
@@ -208,7 +228,8 @@ class LeagueScorer:
             team_results=team_results,
             images_dir=images_dir,
             year=self.year,
-            filepath=self.output_dir / f"{pfx}race report",
+            filepath=output_paths.publish_docx_race_cards_dir / card_basename,
+            pdf_output_dir=output_paths.publish_pdf_race_cards_dir,
             source_file=filepath,
         )
         if pdf_warning:
@@ -237,7 +258,7 @@ class LeagueScorer:
     def _write_cumulative_outputs(self) -> None:
         """Aggregate all processed races and write cumulative output files."""
         highest = max(self.all_race_runners)
-        pfx = f"Race {highest} -- "
+        output_paths = ensure_output_subdirs(self.output_dir)
 
         log.info("Aggregating results (highest race: %d)…", highest)
         log_event("cumulative_write_started", logger=log, year=self.year, highest_race=highest)
@@ -256,17 +277,17 @@ class LeagueScorer:
             race_files=self.selected_race_files,
             all_unrec_clubs=self.all_unrec_clubs,
             race_issues=self.all_race_issues,
-            filepath=self.output_dir / f"{pfx}Results.xlsx",
+            filepath=output_paths.publish_xlsx_standings_dir / standings_filename(highest, self.year),
         )
 
         write_category_mismatch_todo(
             all_race_runners=self.all_race_runners,
-            filepath=self.output_dir / f"{pfx}Category Mismatch TODO.xlsx",
+            filepath=output_paths.publish_xlsx_review_packs_dir / category_review_filename(highest, self.year),
         )
 
         write_time_qry_todo(
             all_race_runners=self.all_race_runners,
-            filepath=self.output_dir / f"{pfx}Time QRY TODO.xlsx",
+            filepath=output_paths.publish_xlsx_review_packs_dir / time_query_review_filename(highest, self.year),
         )
 
         images_dir = Path(__file__).parent / "images"
@@ -280,7 +301,8 @@ class LeagueScorer:
             div2_teams=div2_teams,
             unrec_all=all_unrec,
             images_dir=images_dir,
-            filepath=self.output_dir / f"{pfx}League Update Report",
+            filepath=output_paths.publish_docx_league_updates_dir / league_update_basename(highest, self.year),
+            pdf_output_dir=output_paths.publish_pdf_league_updates_dir,
         )
         if pdf_warning:
             self.run_warnings.append(pdf_warning)

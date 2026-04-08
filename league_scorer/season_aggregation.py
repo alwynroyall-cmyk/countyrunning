@@ -20,7 +20,7 @@ from .models import (
 
 log = logging.getLogger(__name__)
 
-from .settings import settings
+from .rules import get_best_n
 
 
 # ───────────────────────────────────────────────────────────── individuals ───
@@ -56,7 +56,7 @@ def build_individual_season(
             rec.race_points[race_num] = r.points
 
     # Compute season totals
-    best_n = settings.get("BEST_N")
+    best_n = get_best_n()
     for rec in season_map.values():
         sorted_scores = sorted(rec.race_points.values(), reverse=True)
         rec.total_points = sum(sorted_scores[:best_n])
@@ -145,7 +145,7 @@ def build_team_season(
                 season_map[key].race_results[race_num] = t
 
     # Compute best-6 season totals
-    best_n = settings.get("BEST_N")
+    best_n = get_best_n()
     for rec in season_map.values():
         pts_list = sorted(
             (t.team_points for t in rec.race_results.values()),

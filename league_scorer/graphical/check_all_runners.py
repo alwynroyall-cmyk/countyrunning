@@ -11,6 +11,7 @@ import tkinter as tk
 from collections import Counter, defaultdict
 from pathlib import Path
 from tkinter import messagebox, ttk
+import threading
 
 import openpyxl
 import pandas as pd
@@ -187,15 +188,16 @@ class CheckAllRunnersPanel(tk.Frame):
 
     def _load_eligible_clubs(self) -> None:
         self._eligible_clubs = set()
-        input_dir = session_config.input_dir
-        if not input_dir:
+        control_dir = session_config.control_dir
+        if not control_dir:
             return
-        clubs_path = input_dir / "clubs.xlsx"
+        clubs_path = control_dir / "clubs.xlsx"
         if not clubs_path.exists():
             return
         try:
             df = pd.read_excel(clubs_path, dtype=str)
-        except Exception:
+        except Exception as exc:
+            self._status_var.set(f"Could not load clubs: {exc}")
             return
 
         for col in ("Club", "Preferred name"):
@@ -259,71 +261,97 @@ class CheckAllRunnersPanel(tk.Frame):
             wb.close()
 
     def _scan_all_races(self) -> None:
-        input_dir = session_config.input_dir
-        if not input_dir or not input_dir.exists():
+        raw_data_dir = session_config.raw_data_dir
+        if not raw_data_dir or not raw_data_dir.exists():
             self._status_var.set("Input directory not available.")
             return
 
-        self._load_eligible_clubs()
-        race_files = discover_race_files(
-            input_dir,
-            excluded_names=race_discovery_exclusions(),
-        )
+        self._status_var.set("Scanning\u2026")
+        self._apply_btn.config(state="disabled")
 
-        by_name: dict[str, list[dict]] = defaultdict(list)
-        for race_num, filepath in race_files.items():
-            rows, club_col_1based = self._extract_rows(filepath)
-            if not rows or club_col_1based is None:
-                continue
-            for entry in rows:
-                by_name[entry["name"].strip().lower()].append(
-                    {
-                        "race": race_num,
-                        "file": filepath,
-                        "file_name": filepath.name,
-                        "row_idx": entry["row_idx"],
-                        "name": entry["name"],
-                        "club": entry["club"],
-                        "club_col": club_col_1based,
-                    }
-                )
+        def _worker() -> None:
+            # Inline clubs loading — avoids calling tk methods from background thread.
+            eligible_clubs: set[str] = set()
+            control_dir = session_config.control_dir
+            if control_dir:
+                clubs_path = control_dir / "clubs.xlsx"
+                if clubs_path.exists():
+                    try:
+                        df = pd.read_excel(clubs_path, dtype=str)
+                        for col in ("Club", "Preferred name"):
+                            if col in df.columns:
+                                eligible_clubs.update(
+                                    v.strip().lower() for v in df[col].dropna() if str(v).strip()
+                                )
+                    except Exception:
+                        pass
 
-        suggestions: list[dict] = []
-        for _, entries in by_name.items():
-            valid = [
-                e["club"]
-                for e in entries
-                if e["club"] and e["club"].strip().lower() in self._eligible_clubs
-            ]
-            if not valid:
-                continue
+            race_files = discover_race_files(
+                raw_data_dir,
+                excluded_names=race_discovery_exclusions(),
+            )
 
-            counts = Counter(valid)
-            suggested_club, count = sorted(counts.items(), key=lambda t: (-t[1], t[0].lower()))[0]
-            evidence = f"Seen as '{suggested_club}' in {count}/{len(valid)} valid entries"
-
-            for e in entries:
-                if e["club"]:
+            by_name: dict[str, list[dict]] = defaultdict(list)
+            for race_num, filepath in race_files.items():
+                rows, club_col_1based = self._extract_rows(filepath)
+                if not rows or club_col_1based is None:
                     continue
-                key = f"{e['file']}::{e['row_idx']}"
-                suggestions.append(
-                    {
-                        "key": key,
-                        "race": e["race"],
-                        "file": e["file"],
-                        "file_name": e["file_name"],
-                        "row_idx": e["row_idx"],
-                        "name": e["name"],
-                        "club_col": e["club_col"],
-                        "suggested_club": suggested_club,
-                        "evidence": evidence,
-                    }
-                )
+                for entry in rows:
+                    by_name[entry["name"].strip().lower()].append(
+                        {
+                            "race": race_num,
+                            "file": filepath,
+                            "file_name": filepath.name,
+                            "row_idx": entry["row_idx"],
+                            "name": entry["name"],
+                            "club": entry["club"],
+                            "club_col": club_col_1based,
+                        }
+                    )
 
-        suggestions.sort(key=lambda s: (s["race"], s["file_name"].lower(), s["name"].lower(), s["row_idx"]))
-        self._suggestions = suggestions
-        self._selected = {s["key"]: True for s in suggestions}
-        self._refresh_table()
+            suggestions: list[dict] = []
+            for _, entries in by_name.items():
+                valid = [
+                    e["club"]
+                    for e in entries
+                    if e["club"] and e["club"].strip().lower() in eligible_clubs
+                ]
+                if not valid:
+                    continue
+
+                counts = Counter(valid)
+                suggested_club, count = sorted(counts.items(), key=lambda t: (-t[1], t[0].lower()))[0]
+                evidence = f"Seen as '{suggested_club}' in {count}/{len(valid)} valid entries"
+
+                for e in entries:
+                    if e["club"]:
+                        continue
+                    key = f"{e['file']}::{e['row_idx']}"
+                    suggestions.append(
+                        {
+                            "key": key,
+                            "race": e["race"],
+                            "file": e["file"],
+                            "file_name": e["file_name"],
+                            "row_idx": e["row_idx"],
+                            "name": e["name"],
+                            "club_col": e["club_col"],
+                            "suggested_club": suggested_club,
+                            "evidence": evidence,
+                        }
+                    )
+
+            suggestions.sort(key=lambda s: (s["race"], s["file_name"].lower(), s["name"].lower(), s["row_idx"]))
+
+            def _done() -> None:
+                self._eligible_clubs = eligible_clubs
+                self._suggestions = suggestions
+                self._selected = {s["key"]: True for s in suggestions}
+                self._refresh_table()
+
+            self.after(0, _done)
+
+        threading.Thread(target=_worker, daemon=True).start()
 
     # ── table / selection ────────────────────────────────────────────────────
 
@@ -397,38 +425,51 @@ class CheckAllRunnersPanel(tk.Frame):
         for s in selected:
             updates_by_file[s["file"]].append(s)
 
-        applied, audit_changes, failed = apply_club_suggestions(updates_by_file)
+        self._apply_btn.config(state="disabled")
+        self._status_var.set("Applying…")
 
-        # Remove successfully applied suggestions from in-memory list
-        if applied:
-            selected_keys = {s["key"] for s in selected}
-            self._suggestions = [s for s in self._suggestions if s["key"] not in selected_keys]
-            for k in list(self._selected.keys()):
-                if k in selected_keys:
-                    self._selected.pop(k, None)
+        def _worker():
+            result = apply_club_suggestions(updates_by_file)
+            self.after(0, lambda: _done(*result))
 
-        self._refresh_table()
+        def _done(applied: int, audit_changes: list, failed: list) -> None:
+            # Remove only suggestions whose files were successfully written.
+            # Files with entries in failed are kept so the operator can retry.
+            if applied:
+                failed_file_names = {
+                    fp.name for fp in updates_by_file
+                    if any(msg.startswith(fp.name + ":") for msg in failed)
+                }
+                succeeded_keys = {s["key"] for s in selected if s["file"].name not in failed_file_names}
+                self._suggestions = [s for s in self._suggestions if s["key"] not in succeeded_keys]
+                for k in list(self._selected.keys()):
+                    if k in succeeded_keys:
+                        self._selected.pop(k, None)
 
-        log_error = log_manual_data_changes(
-            audit_changes,
-            source="Check All Runners",
-            action="Bulk update club",
-        )
-        if log_error:
-            failed.append(f"Manual_Data_Audit: {log_error}")
+            self._refresh_table()
 
-        if failed:
-            messagebox.showwarning(
-                "Applied With Issues",
-                f"Applied {applied} updates, but some files failed:\n\n" + "\n".join(failed),
-                parent=self,
+            log_error = log_manual_data_changes(
+                audit_changes,
+                source="Check All Runners",
+                action="Bulk update club",
             )
-        else:
-            messagebox.showinfo(
-                "Apply Complete",
-                f"Applied {applied} club update(s).",
-                parent=self,
-            )
+            if log_error:
+                failed.append(f"Manual_Data_Audit: {log_error}")
+
+            if failed:
+                messagebox.showwarning(
+                    "Applied With Issues",
+                    f"Applied {applied} updates, but some files failed:\n\n" + "\n".join(failed),
+                    parent=self,
+                )
+            else:
+                messagebox.showinfo(
+                    "Apply Complete",
+                    f"Applied {applied} club update(s).",
+                    parent=self,
+                )
+
+        threading.Thread(target=_worker, daemon=True).start()
 
     def _on_back(self) -> None:
         if self._back_callback:

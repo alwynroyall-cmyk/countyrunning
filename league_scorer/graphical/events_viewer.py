@@ -49,47 +49,34 @@ _STATUS_FG: dict[str, str] = {
 
 # Treeview columns: (id, heading, width, anchor)
 _COLUMNS = [
-    ("race_ref",           "Ref",         70,  "center"),
-    ("event_name",         "Event",      200,  "w"),
-    ("category",           "Category",   100,  "center"),
-    ("distance",           "Distance",    75,  "center"),
-    ("location",           "Location",   120,  "w"),
-    ("organiser",          "Organiser",  130,  "w"),
-    ("date_type",          "Date Type",   80,  "center"),
-    ("scheduled_dates",    "Dates",      160,  "w"),
-    ("eligibility_window", "Window",     110,  "w"),
-    ("entry_fee",          "Fee",         60,  "center"),
-    ("scoring_basis",      "Scoring",     85,  "center"),
-    ("status",             "Status",      90,  "center"),
-    ("notes",              "Notes",      200,  "w"),
+    ("race_ref",        "Ref",         70,  "center"),
+    ("event_name",      "Event",      200,  "w"),
+    ("distance",        "Distance",    75,  "center"),
+    ("location",        "Location",   120,  "w"),
+    ("organiser",       "Organiser",  130,  "w"),
+    ("date_type",       "Date Type",   80,  "center"),
+    ("scheduled_dates", "Dates",      160,  "w"),
+    ("entry_fee",       "Fee",         60,  "center"),
+    ("scoring_basis",   "Scoring",     85,  "center"),
+    ("status",          "Status",      90,  "center"),
 ]
 
 
-class EventsViewerWindow(tk.Toplevel):
-    """Standalone top-level window for viewing the Championship Events schedule."""
+
+class EventsViewerPanel(tk.Frame):
+    """Embedded panel for viewing the Championship Events schedule."""
 
     def __init__(self, parent: tk.Misc, schedule: EventsSchedule,
                  year: int = 2026, images_dir: Path | None = None,
-                 output_dir: Path | None = None) -> None:
-        super().__init__(parent)
-        self.title("WRRL Championship Events")
-        self.geometry("1200x540")
-        self.minsize(900, 400)
-        self.resizable(True, True)
-        self.configure(bg=WRRL_LIGHT)
-
+                 output_dir: Path | None = None, on_return_dashboard=None) -> None:
+        super().__init__(parent, bg=WRRL_LIGHT)
         self._schedule   = schedule
         self._year       = year
         self._images_dir = images_dir
         self._output_dir = output_dir
+        self._on_return_dashboard_callback = on_return_dashboard
         self._build_ui()
         self._populate(schedule.events)
-
-        # Centre relative to parent
-        self.update_idletasks()
-        px = parent.winfo_rootx() + parent.winfo_width() // 2
-        py = parent.winfo_rooty() + parent.winfo_height() // 2
-        self.geometry(f"+{px - self.winfo_width() // 2}+{py - self.winfo_height() // 2}")
 
     # -------------------------------------------------------------------------
     # UI construction
@@ -113,6 +100,23 @@ class EventsViewerWindow(tk.Toplevel):
             bg=WRRL_NAVY,
             fg=WRRL_WHITE,
         ).pack(side="left", padx=16, pady=8)
+
+        # Dashboard button (returns to dashboard)
+        dash_btn = tk.Button(
+            bar,
+            text="🏠 Dashboard",
+            font=("Segoe UI", 9, "bold"),
+            bg=WRRL_LIGHT,
+            fg=WRRL_GREEN,
+            relief="flat",
+            padx=10,
+            pady=4,
+            cursor="hand2",
+            activebackground="#e8f5e9",
+            activeforeground=WRRL_GREEN,
+            command=self._on_return_dashboard,
+        )
+        dash_btn.pack(side="right", padx=4, pady=8)
 
         # Generate Timeline button
         tl_btn = tk.Button(
@@ -141,6 +145,12 @@ class EventsViewerWindow(tk.Toplevel):
                 bg=WRRL_NAVY,
                 fg="#a0b0c0",
             ).pack(side="right", padx=4, pady=8)
+
+    def _on_return_dashboard(self):
+        # Call the dashboard's show_home_panel method if provided
+        if self._on_return_dashboard_callback:
+            self._on_return_dashboard_callback()
+        self.destroy()
 
     def _build_summary_bar(self) -> None:
         s = self._schedule
@@ -234,17 +244,14 @@ class EventsViewerWindow(tk.Toplevel):
                 values=(
                     ev.race_ref,
                     ev.event_name,
-                    ev.category,
                     ev.distance,
                     ev.location,
                     ev.organiser,
                     ev.date_type,
                     ev.scheduled_dates,
-                    ev.eligibility_window,
                     ev.entry_fee,
                     ev.scoring_basis,
                     ev.status,
-                    ev.notes,
                 ),
                 tags=(tag,),
             )

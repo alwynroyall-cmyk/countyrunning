@@ -9,6 +9,8 @@ from ..audit import LeagueAuditor
 from ..club_loader import load_clubs
 from ..common_files import race_discovery_exclusions
 from ..exceptions import FatalError
+from ..input_layout import build_input_paths
+from ..output_layout import ensure_output_subdirs
 from ..race_processor import extract_race_number
 from ..series_consolidation import consolidate_series_files
 from ..source_loader import discover_race_files
@@ -31,8 +33,11 @@ class LeagueAuditApp(LeagueScorerApp):
         super().__init__(*args, **kwargs)
 
     def _discover_race_files(self) -> dict:
-        """Discover race files from _race_dir (if set) or the session input folder."""
-        scan_dir = self._race_dir if self._race_dir and self._race_dir.is_dir() else self._input_dir
+        """Discover race files from selected folder or the structured raw_data folder."""
+        default_scan_dir = None
+        if self._input_dir and self._input_dir.is_dir():
+            default_scan_dir = build_input_paths(self._input_dir).raw_data_dir
+        scan_dir = self._race_dir if self._race_dir and self._race_dir.is_dir() else default_scan_dir
         if not scan_dir or not scan_dir.is_dir():
             return {}
         discovered = discover_race_files(scan_dir, excluded_names=race_discovery_exclusions())
@@ -288,10 +293,13 @@ class LeagueAuditApp(LeagueScorerApp):
             messagebox.showerror("Input not found", f"Input folder does not exist:\n{self._input_dir}", parent=self)
             return
 
+        raw_data_dir = build_input_paths(self._input_dir).raw_data_dir
+        raw_data_dir.mkdir(parents=True, exist_ok=True)
+
         path_str = filedialog.askopenfilename(
             parent=self,
             title="Select Race File To Audit",
-            initialdir=str(self._input_dir),
+            initialdir=str(raw_data_dir),
             filetypes=[("Race workbooks", "*.xlsx *.xlsm *.xls"), ("All files", "*.*")],
         )
         if not path_str:
@@ -299,11 +307,11 @@ class LeagueAuditApp(LeagueScorerApp):
 
         path = Path(path_str)
         try:
-            path.relative_to(self._input_dir)
+            path.relative_to(raw_data_dir)
         except ValueError:
             messagebox.showerror(
                 "Wrong folder",
-                f"Select a race file from the active input folder only:\n{self._input_dir}",
+                f"Select a race file from the active raw data folder only:\n{raw_data_dir}",
                 parent=self,
             )
             return
@@ -329,10 +337,16 @@ class LeagueAuditApp(LeagueScorerApp):
             messagebox.showerror("Input not found", f"Input folder does not exist:\n{self._input_dir}", parent=self)
             return
 
+        paths = build_input_paths(self._input_dir)
+        raw_data_dir = paths.raw_data_dir
+        series_dir = paths.series_dir
+        raw_data_dir.mkdir(parents=True, exist_ok=True)
+        series_dir.mkdir(parents=True, exist_ok=True)
+
         selected_paths = filedialog.askopenfilenames(
             parent=self,
             title="Select Series Files To Consolidate",
-            initialdir=str(self._input_dir),
+            initialdir=str(series_dir),
             filetypes=[("Race workbooks", "*.xlsx *.xlsm *.xls"), ("All files", "*.*")],
         )
         if not selected_paths:
@@ -341,7 +355,8 @@ class LeagueAuditApp(LeagueScorerApp):
         try:
             result = consolidate_series_files(
                 [Path(path_str) for path_str in selected_paths],
-                self._input_dir,
+                series_dir=series_dir,
+                raw_data_dir=raw_data_dir,
             )
         except Exception as exc:
             messagebox.showerror("Series consolidation failed", str(exc), parent=self)
@@ -354,15 +369,21 @@ class LeagueAuditApp(LeagueScorerApp):
             tag="INFO",
         )
         self._append_log(
-            f"INFO      Moved source files into → {result.archive_dir.name}",
+            f"INFO      Consolidated round → {result.round_number}",
             tag="INFO",
         )
+        if result.removed_previous:
+            removed = ", ".join(path.name for path in result.removed_previous)
+            self._append_log(f"WARNING   Removed previous round file(s) → {removed}", tag="WARNING")
+        if result.club_warnings:
+            self._append_log("WARNING   Club inconsistency warnings detected across rounds.", tag="WARNING")
         messagebox.showinfo(
             "Series Consolidated",
             "\n\n".join(
                 [
                     f"Consolidated workbook created:\n{result.consolidated_path}",
-                    f"Source files moved into:\n{result.archive_dir}",
+                    f"Previous round files removed: {len(result.removed_previous)}",
+                    f"Club inconsistency warnings: {len(result.club_warnings)}",
                     "The consolidated workbook is now selected for audit.",
                 ]
             ),
@@ -376,7 +397,7 @@ class LeagueAuditApp(LeagueScorerApp):
         if not self._output_dir:
             messagebox.showerror("No output folder", "Output folder is not configured.", parent=self)
             return
-        (self._output_dir / "audit").mkdir(parents=True, exist_ok=True)
+        ensure_output_subdirs(self._output_dir).audit_workbooks_dir.mkdir(parents=True, exist_ok=True)
 
         selected: dict[int, Path] = {}
         mode = self._audit_mode_var.get().strip().lower()
@@ -406,7 +427,10 @@ class LeagueAuditApp(LeagueScorerApp):
 
         self._append_log("─" * 64, tag="DIVIDER")
         self._append_log(f"INFO      Input   → {self._input_dir}", tag="INFO")
-        self._append_log(f"INFO      Output  → {self._output_dir / 'audit'}", tag="INFO")
+        self._append_log(
+            f"INFO      Output  → {ensure_output_subdirs(self._output_dir).audit_workbooks_dir}",
+            tag="INFO",
+        )
         if mode == "all":
             self._append_log(f"INFO      Scope   → All files ({len(selected)})", tag="INFO")
         else:
@@ -438,7 +462,8 @@ class LeagueAuditApp(LeagueScorerApp):
         try:
             if year is None:
                 raise FatalError("Season year is not configured.")
-            raw_to_preferred, club_info = load_clubs(input_dir / "clubs.xlsx")
+            input_paths = build_input_paths(input_dir)
+            raw_to_preferred, club_info = load_clubs(input_paths.control_dir / "clubs.xlsx")
             preferred_clubs = sorted(club_info)
 
             audited_paths = []
@@ -448,6 +473,8 @@ class LeagueAuditApp(LeagueScorerApp):
                     filepath,
                     raw_to_preferred,
                     preferred_clubs,
+                    audited_dir=input_paths.audited_dir,
+                    control_dir=input_paths.control_dir,
                     overwrite_existing=overwrite_existing,
                 )
                 self._log_queue.put(("log", "INFO", f"INFO      Audited → {audited_path.name}"))

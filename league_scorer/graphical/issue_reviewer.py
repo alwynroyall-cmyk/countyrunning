@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+import sys
 import tkinter as tk
 from pathlib import Path
 from tkinter import messagebox, simpledialog, ttk
@@ -108,17 +109,17 @@ class IssueReviewPanel(tk.Frame):
         if self._back_callback:
             tk.Button(
                 header,
-                text="\u25c4 Dashboard",
+                ttext="🏠 Dashboard",
                 font=("Segoe UI", 10, "bold"),
-                bg=WRRL_GREEN,
-                fg=WRRL_WHITE,
+                bg=WRRL_LIGHT,
+                fg=WRRL_GREEN,
                 relief="flat",
                 padx=10,
                 pady=4,
                 cursor="hand2",
                 command=self._back_callback,
                 activebackground="#1f5632",
-                activeforeground=WRRL_WHITE,
+                activeforeground=WRRL_GREEN,
             ).pack(side="right")
 
         self._count_var = tk.StringVar(value="")
@@ -496,19 +497,19 @@ class IssueReviewPanel(tk.Frame):
 
     def _resolve_source_file(self, race_value: str) -> Path | None:
         """Try to find the input race file matching the Race column value."""
-        if not race_value or not session_config.input_dir:
+        if not race_value or not session_config.raw_data_dir:
             return None
-        input_dir = Path(session_config.input_dir)
-        if not input_dir.exists():
+        raw_data_dir = Path(session_config.raw_data_dir)
+        if not raw_data_dir.exists():
             return None
         # The Race column contains the workbook stem (e.g. "Race 3 - Malmesbury")
         # Try direct stem match first, then partial match
         for suffix in (".xlsx", ".xls", ".xlsm"):
-            exact = input_dir / f"{race_value}{suffix}"
+            exact = raw_data_dir / f"{race_value}{suffix}"
             if exact.exists():
                 return exact
         # Partial match — race column value as substring of filename
-        for f in input_dir.iterdir():
+        for f in raw_data_dir.iterdir():
             if f.suffix.lower() in {".xlsx", ".xls", ".xlsm"}:
                 if race_value.lower() in f.stem.lower() or f.stem.lower() in race_value.lower():
                     return f
@@ -526,9 +527,14 @@ class IssueReviewPanel(tk.Frame):
             messagebox.showerror("File Not Found", f"Source file not found:\n{path}")
             return
         try:
-            os.startfile(str(path))  # Windows
-        except AttributeError:
-            subprocess.run(["open" if os.name == "posix" else "xdg-open", str(path)], check=False)
+            if sys.platform == "win32":
+                os.startfile(str(path))
+            elif sys.platform == "darwin":
+                subprocess.run(["open", str(path)], check=False)
+            else:
+                subprocess.run(["xdg-open", str(path)], check=False)
+        except OSError as exc:
+            messagebox.showerror("Open Failed", f"Could not open file: {exc}", parent=self)
 
     def _go_to_runner_history(self) -> None:
         if not hasattr(self, "_selected_row"):

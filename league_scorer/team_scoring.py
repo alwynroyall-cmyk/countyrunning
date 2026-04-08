@@ -17,7 +17,7 @@ from .models import ClubInfo, RunnerRaceEntry, TeamRaceResult
 
 log = logging.getLogger(__name__)
 
-from .settings import settings
+from .rules import get_team_size, get_max_div_pts
 MIN_DIV_PTS = 1
 
 
@@ -32,7 +32,7 @@ def build_team_scores(
     Mutates runner.team_id ('A', 'B', or '').
     Returns (team_results, updated runners).
     """
-    team_size = settings.get("TEAM_SIZE")
+    team_size = get_team_size()
 
     # Initialise empty gender groups for every club
     club_runners: Dict[str, Dict[str, List[RunnerRaceEntry]]] = {
@@ -98,7 +98,7 @@ def _assign_division_points(teams: List[TeamRaceResult], division: int) -> None:
     if not div_teams:
         return
 
-    max_div_pts = settings.get("MAX_DIV_PTS")
+    max_div_pts = get_max_div_pts()
 
     with_runners = sorted(
         [t for t in div_teams if t.team_score > 0],

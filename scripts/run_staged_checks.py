@@ -16,7 +16,7 @@ import sys
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from openpyxl import load_workbook
 
@@ -26,7 +26,9 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from league_scorer.audit import LeagueAuditor
 from league_scorer.common_files import race_discovery_exclusions
+from league_scorer.input_layout import build_input_paths
 from league_scorer.main import LeagueScorer
+from league_scorer.output_layout import ensure_output_subdirs
 from league_scorer.race_processor import extract_race_number
 from league_scorer.race_validation import validate_race_schema
 from league_scorer.source_loader import discover_race_files, load_race_dataframe
@@ -69,20 +71,8 @@ def _resolve_data_root(explicit: Path | None) -> Path | None:
 
 
 def _find_raw_dir(input_dir: Path) -> Path | None:
-    candidates = [
-        input_dir / "Raw Data",
-        input_dir / "Raw",
-        input_dir / "raw data",
-        input_dir / "raw",
-    ]
-    for candidate in candidates:
-        if candidate.exists() and candidate.is_dir():
-            return candidate
-
-    for child in input_dir.iterdir() if input_dir.exists() else []:
-        if child.is_dir() and child.name.strip().lower() in {"raw data", "raw"}:
-            return child
-    return None
+    candidate = build_input_paths(input_dir).raw_data_dir
+    return candidate if candidate.exists() and candidate.is_dir() else None
 
 
 def _discover_raw_race_files(raw_dir: Path) -> dict[int, list[Path]]:
@@ -122,7 +112,18 @@ def _workbook_fingerprint(path: Path) -> dict[str, Any]:
         wb.close()
 
 
-def run_checks(args: argparse.Namespace) -> tuple[bool, list[StageResult]]:
+def run_checks(
+    args: argparse.Namespace,
+    progress_cb: Callable[[str], None] | None = None,
+) -> tuple[bool, list[StageResult]]:
+    def _progress(message: str) -> None:
+        if progress_cb is None:
+            return
+        try:
+            progress_cb(message)
+        except Exception:
+            return
+
     data_root = _resolve_data_root(args.data_root)
     if data_root is None:
         message = "No data root configured. Set --data-root or configure WRRL data root in app settings."
@@ -132,6 +133,7 @@ def run_checks(args: argparse.Namespace) -> tuple[bool, list[StageResult]]:
 
     input_dir = data_root / str(args.year) / "inputs"
     output_dir = data_root / str(args.year) / "outputs"
+    ensure_output_subdirs(output_dir)
 
     if not input_dir.exists():
         message = f"Input directory not found: {input_dir}"
@@ -142,6 +144,7 @@ def run_checks(args: argparse.Namespace) -> tuple[bool, list[StageResult]]:
     results: list[StageResult] = []
 
     # Stage 1
+    _progress("Stage 1/4: Validating raw ingest workbooks")
     raw_dir = _find_raw_dir(input_dir)
     if raw_dir is None:
         results.append(
@@ -190,7 +193,9 @@ def run_checks(args: argparse.Namespace) -> tuple[bool, list[StageResult]]:
         return False, results
 
     # Stage 2
-    audited_race_files = discover_race_files(input_dir, excluded_names=race_discovery_exclusions())
+    _progress("Stage 2/4: Consolidating raw to audited and running quality gate")
+    audited_dir = build_input_paths(input_dir).audited_dir
+    audited_race_files = discover_race_files(audited_dir, excluded_names=race_discovery_exclusions())
     raw_race_nums = set(raw_races)
     audited_race_nums = set(audited_race_files)
 
@@ -200,7 +205,7 @@ def run_checks(args: argparse.Namespace) -> tuple[bool, list[StageResult]]:
         "audited_files": {k: str(v) for k, v in audited_race_files.items()},
     }
 
-    quality_output_dir = getattr(args, "data_quality_output_dir", Path("output") / "data-quality")
+    quality_output_dir = getattr(args, "data_quality_output_dir", Path("output") / "quality" / "data-quality")
     quality_threshold = float(getattr(args, "quality_gate_threshold", 80.0))
     quality_gate_passed = True
     try:
@@ -245,6 +250,7 @@ def run_checks(args: argparse.Namespace) -> tuple[bool, list[StageResult]]:
         return False, results
 
     # Stage 3
+    _progress("Stage 3/4: Generating audit workbook")
     auditor = LeagueAuditor(input_dir=input_dir, output_dir=output_dir, year=args.year)
     audit_path = auditor.run(race_files=audited_race_files)
 
@@ -265,6 +271,7 @@ def run_checks(args: argparse.Namespace) -> tuple[bool, list[StageResult]]:
     )
 
     # Stage 4
+    _progress("Stage 4/4: Running scoring regression")
     scorer = LeagueScorer(input_dir=input_dir, output_dir=output_dir, year=args.year)
     warnings = scorer.run(race_files=audited_race_files)
 
@@ -277,6 +284,7 @@ def run_checks(args: argparse.Namespace) -> tuple[bool, list[StageResult]]:
         )
         return False, results
 
+    _progress("Stage 4/4: Fingerprinting results workbook")
     fingerprint = _workbook_fingerprint(latest_results)
     baseline_path = Path(args.baseline_file)
     baseline_exists = baseline_path.exists()
@@ -300,6 +308,7 @@ def run_checks(args: argparse.Namespace) -> tuple[bool, list[StageResult]]:
         return True, results
 
     expected = json.loads(baseline_path.read_text(encoding="utf-8"))
+    _progress("Stage 4/4: Comparing results against baseline")
     status = "passed" if expected.get("sheets") == fingerprint.get("sheets") else "failed"
     message = "Results fingerprint matches baseline." if status == "passed" else "Results fingerprint differs from baseline."
 
@@ -436,7 +445,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--report-dir",
         type=Path,
-        default=Path("output") / "staged-checks",
+        default=Path("output") / "quality" / "staged-checks",
     )
     parser.add_argument(
         "--baseline-file",
@@ -446,7 +455,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--data-quality-output-dir",
         type=Path,
-        default=Path("output") / "data-quality",
+        default=Path("output") / "quality" / "data-quality",
     )
     parser.add_argument(
         "--quality-gate-threshold",

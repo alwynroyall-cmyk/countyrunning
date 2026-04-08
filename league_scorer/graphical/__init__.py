@@ -1,9 +1,9 @@
 """
-graphical — GUI and graphical interfaces for the Wiltshire League Management.
+graphical — GUI and graphical interfaces for WRRL League AI.
 """
 
 from .dashboard import launch_dashboard
-from .events_viewer import EventsViewerWindow
+ 
 from .gui import launch
 
-__all__ = ["launch", "launch_dashboard", "EventsViewerWindow"]
+__all__ = ["launch", "launch_dashboard"]

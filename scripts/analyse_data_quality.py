@@ -7,7 +7,7 @@ Focuses on upstream quality indicators that materially affect downstream scoring
 - invalid/missing times
 - schema warnings
 
-Outputs JSON and Markdown reports under output/data-quality/year-<season>/.
+Outputs JSON and Markdown reports under outputs/quality/data-quality/year-<season>/.
 """
 
 from __future__ import annotations
@@ -27,6 +27,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from league_scorer.common_files import race_discovery_exclusions
+from league_scorer.input_layout import build_input_paths
 from league_scorer.normalisation import parse_time_to_seconds
 from league_scorer.race_processor import extract_race_number
 from league_scorer.race_validation import validate_race_schema
@@ -50,14 +51,8 @@ def _resolve_data_root(explicit: Path | None) -> Path | None:
 
 
 def _find_raw_dir(input_dir: Path) -> Path | None:
-    for name in ("Raw Data", "Raw", "raw data", "raw"):
-        candidate = input_dir / name
-        if candidate.exists() and candidate.is_dir():
-            return candidate
-    for child in input_dir.iterdir() if input_dir.exists() else []:
-        if child.is_dir() and child.name.strip().lower() in {"raw", "raw data"}:
-            return child
-    return None
+    candidate = build_input_paths(input_dir).raw_data_dir
+    return candidate if candidate.exists() and candidate.is_dir() else None
 
 
 def _count_blank(value: Any) -> bool:
@@ -266,7 +261,8 @@ def analyse_season(year: int, data_root: Path, output_dir: Path) -> tuple[dict[s
                 continue
 
     audited_profiles: list[dict[str, Any]] = []
-    audited_files = discover_race_files(input_dir, excluded_names=race_discovery_exclusions())
+    audited_dir = build_input_paths(input_dir).audited_dir
+    audited_files = discover_race_files(audited_dir, excluded_names=race_discovery_exclusions())
     for race_num, file in sorted(audited_files.items()):
         try:
             df = load_race_dataframe(file)
@@ -315,7 +311,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Analyse source-to-audited data quality for one season.")
     parser.add_argument("--year", type=int, default=1999)
     parser.add_argument("--data-root", type=Path, default=None)
-    parser.add_argument("--output-dir", type=Path, default=Path("output") / "data-quality")
+    parser.add_argument("--output-dir", type=Path, default=Path("output") / "quality" / "data-quality")
     return parser.parse_args()
 
 

@@ -9,6 +9,7 @@ from typing import Mapping
 import openpyxl
 
 from .common_files import race_discovery_exclusions
+from .input_layout import build_input_paths
 from .issue_tracking import build_issue_identity
 from .manual_data_audit import log_manual_data_changes
 from .manual_edit_service import resolve_runner_field_across_files
@@ -71,14 +72,15 @@ def apply_quick_fix_for_issue(
             issue_identity=issue_identity,
         )
 
+    raw_data_dir = build_input_paths(input_dir).raw_data_dir
     race_files = discover_race_files(
-        input_dir,
+        raw_data_dir,
         excluded_names=race_discovery_exclusions(),
     )
     if not race_files:
         return QuickFixResult(
             success=False,
-            message="No race files found in the active input directory.",
+            message="No race files found in the active raw data directory.",
             issue_identity=issue_identity,
         )
 

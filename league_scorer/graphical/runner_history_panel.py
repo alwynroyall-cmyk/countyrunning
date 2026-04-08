@@ -1,0 +1,460 @@
+import tkinter as tk
+from tkinter import ttk, messagebox
+import pandas as pd
+
+from .dashboard import WRRL_GREEN, WRRL_LIGHT, WRRL_NAVY, WRRL_WHITE
+from .runner_history_helpers import (
+    load_workbook_cache,
+    extract_runner_names,
+    extract_runner_history,
+    detect_conflicts,
+    resolve_club,
+    resolve_gender,
+    resolve_category,
+    sanitise_df_for_export,
+    proper_case,
+)
+
+
+class RunnerHistoryPanel(tk.Frame):
+    def __init__(self, parent, back_callback=None, initial_runner=None, parent_panel=None):
+        super().__init__(parent, bg=WRRL_LIGHT)
+        self._back_callback = back_callback
+        self._initial_runner = initial_runner
+        self._parent_panel = parent_panel
+
+        self._style = ttk.Style(self)
+        self._runner_var = tk.StringVar()
+        self._summary_var = tk.StringVar(value="")
+        self._latest_df = None
+        self._all_runner_names = []
+
+        self._configure_styles()
+        self._build_ui()
+        self._load_runner_options()
+
+        if self._initial_runner:
+            self.select_runner(self._initial_runner)
+            self._initial_runner = None
+
+    # ------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------
+    def _mark_runner_changed(self):
+        if not self._parent_panel:
+            return
+        runner = self._runner_var.get().strip()
+        if not runner:
+            return
+        pc = proper_case(runner)
+        self._parent_panel._changed_runners.add(pc)
+        self._parent_panel._refresh_runner_anomaly_list()
+
+    def _configure_styles(self):
+        self._style.configure(
+            "RunnerHistory.Treeview",
+            background="#ffffff",
+            fieldbackground="#ffffff",
+            foreground="#22313f",
+            rowheight=28,
+            borderwidth=0,
+            font=("Segoe UI", 10),
+        )
+        self._style.configure(
+            "RunnerHistory.Treeview.Heading",
+            background="#dbe5ee",
+            foreground="#22313f",
+            relief="flat",
+            font=("Segoe UI", 10, "bold"),
+        )
+        self._style.map(
+            "RunnerHistory.Treeview",
+            background=[("selected", "#8fb3d1")],
+            foreground=[("selected", "#102030")],
+        )
+
+    # ------------------------------------------------------------
+    # UI
+    # ------------------------------------------------------------
+    def _build_ui(self):
+        header = tk.Frame(self, bg=WRRL_NAVY, padx=14, pady=10)
+        header.pack(fill="x")
+
+        tk.Label(
+            header,
+            text="Runner Results Across Races",
+            font=("Segoe UI", 15, "bold"),
+            bg=WRRL_NAVY,
+            fg=WRRL_WHITE,
+        ).pack(side="left")
+
+        if self._back_callback:
+            tk.Button(
+                header,
+                text="🏠 Dashboard",
+                font=("Segoe UI", 10, "bold"),
+                bg=WRRL_LIGHT,
+                fg=WRRL_GREEN,
+                relief="flat",
+                padx=10,
+                pady=4,
+                cursor="hand2",
+                command=self._back_callback,
+            ).pack(side="right")
+
+        controls = tk.Frame(self, bg=WRRL_LIGHT, padx=14, pady=10)
+        controls.pack(fill="x")
+
+        tk.Label(
+            controls,
+            text="Runner:",
+            font=("Segoe UI", 10, "bold"),
+            bg=WRRL_LIGHT,
+            fg=WRRL_NAVY,
+        ).pack(side="left", padx=(0, 8))
+
+        self._runner_combo = ttk.Combobox(
+            controls,
+            textvariable=self._runner_var,
+            state="normal",
+            width=48,
+        )
+        self._runner_combo.pack(side="left")
+        self._runner_combo.bind("<<ComboboxSelected>>", lambda _e: self._load_runner_history())
+        self._runner_combo.bind("<KeyRelease>", self._on_runner_typed)
+        self._runner_combo.bind("<Return>", self._on_runner_enter)
+
+        tk.Button(
+            controls,
+            text="Refresh",
+            font=("Segoe UI", 10),
+            bg="#dbe1e8",
+            fg=WRRL_NAVY,
+            relief="flat",
+            padx=10,
+            pady=4,
+            cursor="hand2",
+            command=self._load_runner_options,
+        ).pack(side="left", padx=(8, 0))
+
+        tk.Label(
+            self,
+            textvariable=self._summary_var,
+            font=("Segoe UI", 9, "italic"),
+            bg=WRRL_LIGHT,
+            fg="#666666",
+            anchor="w",
+        ).pack(fill="x", padx=14, pady=(0, 6))
+
+        export_bar = tk.Frame(self, bg=WRRL_LIGHT, padx=14, pady=0)
+        export_bar.pack(fill="x", pady=(0, 8))
+
+        tk.Button(
+            export_bar,
+            text="Copy Results",
+            font=("Segoe UI", 9),
+            bg="#dbe1e8",
+            fg=WRRL_NAVY,
+            relief="flat",
+            padx=10,
+            pady=4,
+            cursor="hand2",
+            command=self._copy_results,
+        ).pack(side="left")
+
+        # Resolve controls
+        self._resolve_frame = tk.Frame(self, bg=WRRL_LIGHT, padx=14, pady=6)
+
+        # Club
+        self._club_resolve_row = tk.Frame(self._resolve_frame, bg=WRRL_LIGHT)
+        tk.Label(
+            self._club_resolve_row,
+            text="Resolve Club:",
+            font=("Segoe UI", 10, "bold"),
+            bg=WRRL_LIGHT,
+            fg=WRRL_NAVY,
+        ).pack(side="left", padx=(0, 8))
+        self._club_resolve_var = tk.StringVar()
+        self._club_resolve_combo = ttk.Combobox(
+            self._club_resolve_row,
+            textvariable=self._club_resolve_var,
+            state="readonly",
+            width=28,
+        )
+        self._club_resolve_combo.pack(side="left")
+        tk.Button(
+            self._club_resolve_row,
+            text="Apply Club To All Inputs",
+            font=("Segoe UI", 9, "bold"),
+            bg=WRRL_GREEN,
+            fg=WRRL_WHITE,
+            relief="flat",
+            padx=10,
+            pady=3,
+            cursor="hand2",
+            command=self._resolve_club,
+        ).pack(side="left", padx=(8, 0))
+
+        # Gender
+        self._gender_resolve_row = tk.Frame(self._resolve_frame, bg=WRRL_LIGHT)
+        tk.Label(
+            self._gender_resolve_row,
+            text="Resolve Gender:",
+            font=("Segoe UI", 10, "bold"),
+            bg=WRRL_LIGHT,
+            fg=WRRL_NAVY,
+        ).pack(side="left", padx=(0, 8))
+        self._gender_resolve_var = tk.StringVar()
+        self._gender_resolve_combo = ttk.Combobox(
+            self._gender_resolve_row,
+            textvariable=self._gender_resolve_var,
+            state="readonly",
+            width=10,
+        )
+        self._gender_resolve_combo.pack(side="left")
+        tk.Button(
+            self._gender_resolve_row,
+            text="Apply Gender To All Inputs",
+            font=("Segoe UI", 9, "bold"),
+            bg=WRRL_GREEN,
+            fg=WRRL_WHITE,
+            relief="flat",
+            padx=10,
+            pady=3,
+            cursor="hand2",
+            command=self._resolve_gender,
+        ).pack(side="left", padx=(8, 0))
+
+        # Category
+        self._category_resolve_row = tk.Frame(self._resolve_frame, bg=WRRL_LIGHT)
+        tk.Label(
+            self._category_resolve_row,
+            text="Resolve Category:",
+            font=("Segoe UI", 10, "bold"),
+            bg=WRRL_LIGHT,
+            fg=WRRL_NAVY,
+        ).pack(side="left", padx=(0, 8))
+        self._category_resolve_var = tk.StringVar()
+        self._category_resolve_combo = ttk.Combobox(
+            self._category_resolve_row,
+            textvariable=self._category_resolve_var,
+            state="readonly",
+            width=28,
+        )
+        self._category_resolve_combo.pack(side="left")
+        tk.Button(
+            self._category_resolve_row,
+            text="Apply Category To All Inputs",
+            font=("Segoe UI", 9, "bold"),
+            bg=WRRL_GREEN,
+            fg=WRRL_WHITE,
+            relief="flat",
+            padx=10,
+            pady=3,
+            cursor="hand2",
+            command=self._resolve_category,
+        ).pack(side="left", padx=(8, 0))
+
+        # Table
+        table_frame = tk.Frame(self, bg=WRRL_LIGHT)
+        table_frame.pack(fill="both", expand=True, padx=14, pady=(0, 14))
+
+        self._tree = ttk.Treeview(table_frame, show="headings", style="RunnerHistory.Treeview")
+        self._tree.grid(row=0, column=0, sticky="nsew")
+
+        y_scroll = ttk.Scrollbar(table_frame, orient="vertical", command=self._tree.yview)
+        y_scroll.grid(row=0, column=1, sticky="ns")
+        x_scroll = ttk.Scrollbar(table_frame, orient="horizontal", command=self._tree.xview)
+        x_scroll.grid(row=1, column=0, sticky="ew")
+
+        table_frame.grid_rowconfigure(0, weight=1)
+        table_frame.grid_columnconfigure(0, weight=1)
+
+        self._tree.configure(yscrollcommand=y_scroll.set, xscrollcommand=x_scroll.set)
+        self._tree.tag_configure("odd", background="#ffffff")
+        self._tree.tag_configure("even", background="#eef3f8")
+
+    # ------------------------------------------------------------
+    # Runner list
+    # ------------------------------------------------------------
+    def _load_runner_options(self):
+        cache = load_workbook_cache()
+        if not cache:
+            self._runner_combo["values"] = []
+            self._runner_var.set("")
+            self._summary_var.set("")
+            return
+
+        names = extract_runner_names(cache)
+        self._all_runner_names = names
+        self._runner_combo["values"] = names
+
+        if names:
+            if self._runner_var.get() not in names:
+                self._runner_var.set(names[0])
+            self._load_runner_history()
+
+    def _on_runner_typed(self, _event=None):
+        typed = self._runner_var.get().strip().lower()
+        if not typed:
+            self._runner_combo["values"] = self._all_runner_names
+            return
+
+        starts = [n for n in self._all_runner_names if n.lower().startswith(typed)]
+        contains = [n for n in self._all_runner_names if typed in n.lower() and n not in starts]
+        self._runner_combo["values"] = (starts + contains)[:300]
+
+    def _on_runner_enter(self, _event=None):
+        typed = self._runner_var.get().strip().lower()
+        if not typed:
+            return
+
+        exact = next((n for n in self._all_runner_names if n.lower() == typed), None)
+        if exact:
+            self._runner_var.set(exact)
+            self._load_runner_history()
+            return
+
+        prefix = next((n for n in self._all_runner_names if n.lower().startswith(typed)), None)
+        if prefix:
+            self._runner_var.set(prefix)
+            self._load_runner_history()
+
+    # ------------------------------------------------------------
+    # External API
+    # ------------------------------------------------------------
+    def select_runner(self, runner_name):
+        if not runner_name:
+            return False
+
+        target = runner_name.strip().lower()
+        exact = next((n for n in self._all_runner_names if n.lower() == target), None)
+        if not exact:
+            exact = next((n for n in self._all_runner_names if n.lower().startswith(target)), None)
+        if not exact:
+            return False
+
+        self._runner_var.set(exact)
+        self._mark_runner_changed()
+        self._load_runner_history()
+        return True
+
+    # ------------------------------------------------------------
+    # Load runner history
+    # ------------------------------------------------------------
+    def _load_runner_history(self):
+        selected = self._runner_var.get().strip()
+        if not selected:
+            self._summary_var.set("")
+            return
+
+        cache = load_workbook_cache()
+        if not cache:
+            self._summary_var.set("No results workbook found.")
+            return
+
+        pc = proper_case(selected)
+        df = extract_runner_history(cache, pc)
+        if df.empty:
+            self._summary_var.set("Runner not found in race sheets.")
+            return
+
+        self._latest_df = df.copy()
+        try:
+            total = int(pd.to_numeric(df["Points"], errors="coerce").fillna(0).sum())
+        except Exception:
+            total = 0
+
+        self._summary_var.set(f"{pc}: {len(df)} race row(s), total points {total}.")
+        self._populate_table(df)
+        self._refresh_resolve_controls(df)
+
+    # ------------------------------------------------------------
+    # Table
+    # ------------------------------------------------------------
+    def _populate_table(self, df):
+        self._tree.delete(*self._tree.get_children())
+        cols = list(df.columns)
+        self._tree["columns"] = cols
+
+        for c in cols:
+            self._tree.heading(c, text=c)
+            self._tree.column(c, width=120, anchor="w")
+
+        for i, row in df.iterrows():
+            tags = ("even" if i % 2 else "odd",)
+            self._tree.insert("", "end", values=list(row), tags=tags)
+
+    # ------------------------------------------------------------
+    # Resolve controls
+    # ------------------------------------------------------------
+    def _refresh_resolve_controls(self, df):
+        self._resolve_frame.pack_forget()
+        self._club_resolve_row.pack_forget()
+        self._gender_resolve_row.pack_forget()
+        self._category_resolve_row.pack_forget()
+
+        if df is None or df.empty:
+            return
+
+        conflicts = detect_conflicts(df)
+        if not conflicts:
+            return
+
+        self._resolve_frame.pack(fill="x")
+
+        if "club" in conflicts:
+            vals = conflicts["club"]
+            self._club_resolve_combo["values"] = vals
+            self._club_resolve_var.set(vals[0])
+            self._club_resolve_row.pack(fill="x", pady=(0, 6))
+
+        if "gender" in conflicts:
+            vals = conflicts["gender"]
+            self._gender_resolve_combo["values"] = vals
+            self._gender_resolve_var.set(vals[0])
+            self._gender_resolve_row.pack(fill="x", pady=(0, 6))
+
+        if "category" in conflicts:
+            vals = conflicts["category"]
+            self._category_resolve_combo["values"] = vals
+            self._category_resolve_var.set(vals[0])
+            self._category_resolve_row.pack(fill="x", pady=(0, 6))
+
+    # ------------------------------------------------------------
+    # Resolve actions
+    # ------------------------------------------------------------
+    def _resolve_club(self):
+        runner = proper_case(self._runner_var.get().strip())
+        new_val = self._club_resolve_var.get().strip()
+        resolve_club(runner, new_val)
+        self._mark_runner_changed()
+        self._load_runner_history()
+
+    def _resolve_gender(self):
+        runner = proper_case(self._runner_var.get().strip())
+        new_val = self._gender_resolve_var.get().strip()
+        resolve_gender(runner, new_val)
+        self._mark_runner_changed()
+        self._load_runner_history()
+
+    def _resolve_category(self):
+        runner = proper_case(self._runner_var.get().strip())
+        new_val = self._category_resolve_var.get().strip()
+        resolve_category(runner, new_val)
+        self._mark_runner_changed()
+        self._load_runner_history()
+
+    # ------------------------------------------------------------
+    # Copy results
+    # ------------------------------------------------------------
+    def _copy_results(self):
+        if self._latest_df is None or self._latest_df.empty:
+            messagebox.showinfo("Copy Results", "No results to copy.")
+            return
+
+        df = sanitise_df_for_export(self._latest_df)
+        text = df.to_string(index=False)
+        self.clipboard_clear()
+        self.clipboard_append(text)
+        messagebox.showinfo("Copy Results", "Results copied to clipboard.")

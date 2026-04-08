@@ -1,7 +1,8 @@
-# WRRL League Scorer — Application Health Check Report
+# WRRL League AI — Application Health Check Report
 
-**Date:** June 2025  
-**Version under review:** League-Report-Cleanup @ `37435ee` (= `main`)  
+Historical note: this report reflects a June 2025 baseline, updated progressively through v6.1.0 (April 2026). For release-specific changes, see `documents/release_6_0_0.md` and `documents/release_6_1_0.md`.
+
+**Date:** June 2025 (last updated April 2026 — v6.1.0)  
 **Reviewer:** GitHub Copilot (Claude Sonnet 4.6)
 
 ---
@@ -29,19 +30,20 @@ The application is a well-structured Python scoring system for the Wiltshire Roa
 
 However, several issues still warrant attention before the application is considered production-ready. The most significant now are repository hygiene drift risks (generated artefacts), expanding automated test breadth for scoring edge cases, and keeping documentation aligned with active audit workflows. Version consistency and core GUI placeholder concerns have been addressed in this branch.
 
-**Overall assessment: Good foundation with materially improved coverage and workflow completeness. Continue strengthening regression depth and repository hygiene controls.**
+**Overall assessment: Good foundation with materially improved coverage, workflow completeness, and cross-platform portability. Regression depth and test coverage remain the largest outstanding quality gap.**
 
 | Area | Status |
-|---|---|
+| --- | --- |
 | Processing pipeline correctness | ✅ Sound |
 | Error handling | ✅ Good |
 | GUI — core scorer workflow | ✅ Complete |
 | GUI — View Results / Settings | ✅ Implemented |
-| Version consistency | ⚠️ Mismatch |
+| Version consistency | ✅ Resolved (v6.1.0) |
 | Hardcoded season constants | ⚠️ Not configurable |
-| Dependencies | ⚠️ Stale comment in requirements.txt |
-| Repository hygiene | ❌ No .gitignore, output files committed |
+| Dependencies | ✅ Current |
+| Repository hygiene | ✅ .gitignore in place; output artefacts untracked |
 | Automated testing | ⚠️ Present, expanding |
+| Cross-platform portability | ✅ Windows / macOS / Linux (v6.1.0) |
 
 ---
 
@@ -49,35 +51,51 @@ However, several issues still warrant attention before the application is consid
 
 ### Module Map
 
-```
+```text
 league_scorer/
-  __init__.py              Package entry, v3.1 declaration
-  models.py                All data model dataclasses (RunnerRaceEntry etc.)
-  exceptions.py            FatalError, ValidationError hierarchy
-  session_config.py        Singleton year/path config + .wrrl_prefs.json persistence
-  club_loader.py           Loads clubs.xlsx → {club_name: ClubInfo}
-  events_loader.py         Loads events.xlsx → List[EventRecord]
-  normalisation.py         Runner name deduplication and variant mapping
-  race_processor.py        Parses a single race CSV → List[RunnerRaceEntry]
-  individual_scoring.py    Per-race finishing position → points, gender/category rank
-  team_scoring.py          5-scorer team points (TEAM_SIZE=5, MAX_DIV_PTS=20)
-  season_aggregation.py    Best-6-of-8 cumulative totals (BEST_N=6)
-  output_writer.py         Writes Results.xlsx (5-sheet workbook) + unused clubs.xlsx
-  report_writer.py         Writes per-race DOCX/PDF + combined league update DOCX/PDF
-  main.py                  LeagueScorer orchestration class
+   __init__.py              Package entry, v3.1 declaration
+   models.py                All data model dataclasses (RunnerRaceEntry etc.)
+   exceptions.py            FatalError, ValidationError hierarchy
+   session_config.py        Singleton year/path config + .wrrl_prefs.json persistence
+   club_loader.py           Loads clubs.xlsx → {club_name: ClubInfo}
+   events_loader.py         Loads events.xlsx → List[EventRecord}
+   normalisation.py         Runner name deduplication and variant mapping
+   race_processor.py        Parses a single race CSV → List[RunnerRaceEntry]
+   individual_scoring.py    Per-race finishing position → points, gender/category rank
+   team_scoring.py          5-scorer team points (TEAM_SIZE=5, MAX_DIV_PTS=20)
+   season_aggregation.py    Best-6-of-8 cumulative totals (BEST_N=6)
+   output_writer.py         Writes Results.xlsx (5-sheet workbook) + unused clubs.xlsx
+   report_writer.py         Writes per-race DOCX/PDF + combined league update DOCX/PDF
+   main.py                  LeagueScorer orchestration class
 
-  graphical/
-    __init__.py            Exports: launch, launch_dashboard, EventsViewerWindow
-    dashboard.py           Main tkinter window (config, navigation, branding)
-    gui.py                 LeagueScorerApp panel (race selector, log, run pipeline)
-    events_viewer.py       Toplevel events schedule (sortable Treeview)
-    timeline_generator.py  Pillow-based season timeline PNG generator
+   graphical/
+      __init__.py            Exports: launch, launch_dashboard, EventsViewerWindow
+      dashboard.py           Main tkinter window (config, navigation, branding, _run_workflow helper)
+      gui.py                 LeagueScorerApp panel (race selector, log, run pipeline)
+      audit_gui.py           Audit panel
+      audit_viewer.py        Audit workbook sheet viewer
+      check_all_runners.py   Cross-race blank-club suggestion and bulk apply panel
+      club_editor.py         Per-file runner–club assignment editor
+      club_history_viewer.py Club membership history viewer
+      club_match_dialog.py   Club matching review dialog
+      events_viewer.py       Toplevel events schedule (sortable Treeview)
+      import_helpers.py      Shared import/audit workflow utilities
+      issue_reviewer.py      Actionable audit issue review panel
+      log_viewer.py          Log viewer panel
+      manual_review_dialog.py Manual review dialog
+      manual_review_panel.py Manual review embedded panel
+      raw_archive_diff_viewer.py Side-by-side raw vs archive diff viewer
+      results_viewer.py      Results workbook viewer (cached pd.ExcelFile)
+      results_workbook.py    Results workbook discovery helper
+      runner_history_viewer.py Runner cross-race history panel
+      settings_dialog.py     Settings configuration panel
+      timeline_generator.py  Pillow-based season timeline PNG (cross-platform fonts)
 ```
 
 ### Entry Points
 
 | Entry point | Usage |
-|---|---|
+| --- | --- |
 | `python -m league_scorer` (`__main__.py`) | Headless CLI run |
 | `run_gui.py` | Launches GUI (suitable for IDLE/double-click) |
 | `graphical.launch_dashboard()` | Programmatic GUI launch |
@@ -96,7 +114,7 @@ league_scorer/
 
 ### Flow (per run)
 
-```
+```text
 clubs.xlsx → club_loader
 events.xlsx → events_loader
 Race N CSV → race_processor → normalisation → individual_scoring
@@ -142,7 +160,7 @@ Reads a CSV, validates column presence, maps club names to `ClubInfo`, and emits
 
 ### Exception Hierarchy
 
-```
+```text
 Exception
 └── FatalError      — pipeline abort (unrecoverable)
 └── ValidationError — per-race warning (skipped, pipeline continues)
@@ -157,12 +175,13 @@ The background thread catches `FatalError` and generic `Exception` separately, b
 ### File I/O
 
 - `output_writer.py` does not explicitly catch `OSError` when writing Excel files. An output-path permission error would propagate as an unhandled exception and surface as "Unexpected error" in the GUI log. This is acceptable but worth noting.
-- `session_config.py` correctly silences `OSError` on preferences save (non-fatal).
+- `session_config.py` logs a `WARNING` on `OSError` during preferences save (non-fatal). `settings.py` and `structured_logging.py` similarly log rather than silently swallow.
 - `report_writer.py` wraps `docx2pdf` import in a `try/except ImportError` and the PDF save in a `try/except`, silently skipping PDF generation on failure. **The user receives no prominent warning when PDF output is skipped** (see §11-5).
+- All `pd.ExcelFile` usages in `audit_data_service.py` are now wrapped in `with` context managers. `audit_viewer._load_sheet_options` surfaces load errors via `_show_message` rather than clearing the dropdown silently.
 
 ### Assessment
 
-Error handling is well-structured. The one gap is the silent PDF-skip behaviour.
+Error handling is well-structured and materially improved in v6.1.0. The one remaining gap is the silent PDF-skip behaviour.
 
 ---
 
@@ -171,6 +190,7 @@ Error handling is well-structured. The one gap is the silent PDF-skip behaviour.
 ### `session_config.py` — SessionConfig Singleton
 
 Manages:
+
 - `year` (current season, e.g. 2025)
 - `data_root` (top-level data folder path)
 - Derived paths: `input_dir`, `output_dir`, `events_file`
@@ -185,7 +205,7 @@ Persisted to `~/.wrrl_prefs.json` (home directory) via `save()` / `load()`. The 
 Several business-rule constants are embedded directly in source files rather than centralised or user-configurable:
 
 | Constant | Value | Location | Rule |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `BEST_N` | 6 | `season_aggregation.py` | Best 6 scores count |
 | `MAX_RACES` | 8 | `output_writer.py` | Season has 8 races |
 | `TEAM_SIZE` | 5 | `team_scoring.py` | Top 5 scorers per team |
@@ -198,7 +218,7 @@ These constants are consistent with each other and match real league rules. Howe
 
 In `main.py`, the current year is derived from `output_dir.parent.name` (e.g. `.../2025/outputs` → `2025`). There is a hardcoded fallback to `2026` in two places:
 
-```python
+```text
 year = int(output_dir.parent.name)  # may fall back to 2026
 ```
 
@@ -211,7 +231,7 @@ If the directory naming convention ever changes (e.g. a flat layout), the fallba
 ### Dashboard (`dashboard.py`)
 
 | Button / Feature | Status |
-|---|---|
+| --- | --- |
 | Run Scorer | ✅ Fully implemented |
 | View Events | ✅ Fully implemented (opens EventsViewerWindow) |
 | View Timeline | ✅ Fully implemented (generates PNG, opens in system viewer) |
@@ -223,6 +243,7 @@ If the directory naming convention ever changes (e.g. a flat layout), the fallba
 ### Scorer Panel (`gui.py`)
 
 The scorer panel is fully implemented:
+
 - Race file discovery from input directory
 - Scrollable checkbox selector with Select All / None
 - Background threading with animated progress bar
@@ -245,7 +266,7 @@ Generates a race-progress timeline as a 1500×700 PNG using Pillow. Layout const
 
 ### `requirements.txt`
 
-```
+```text
 pandas>=1.5.0
 openpyxl>=3.0.10
 Pillow>=10.0.0
@@ -257,15 +278,17 @@ docx2pdf>=0.1.8
 
 1. **`docx2pdf>=0.1.8`** is listed as a hard requirement but is treated as optional at runtime (wrapped in `try/except ImportError`). On a system where `docx2pdf` cannot produce PDFs (e.g., no Microsoft Word installed), the install will still succeed but PDF output will silently be skipped. The `requirements.txt` could carry a comment noting the Word dependency, or the package could be moved to an `extras_require` section if a `pyproject.toml` is ever introduced.
 
-2. **Stale project structure comment.** `requirements.txt` contains a block comment listing the project file structure that still references the deleted `scorer.py`:
-   ```
+1. **Stale project structure comment.** `requirements.txt` contains a block comment listing the project file structure that still references the deleted `scorer.py`:
+
+```text
    # league_scorer/scorer.py
-   ```
-   This should be removed.
+```
 
-3. **No version upper bounds.** This is generally acceptable for a single-user application with a managed venv, but `pandas` in particular has had breaking API changes between major versions. Pinning a tested range (e.g. `pandas>=1.5.0,<3.0`) would improve reproducibility.
+This should be removed.
 
-4. **No `tkinter` or `threading` listed.** Both are stdlib modules, so no entry is needed — this is correct.
+1. **No version upper bounds.** This is generally acceptable for a single-user application with a managed venv, but `pandas` in particular has had breaking API changes between major versions. Pinning a tested range (e.g. `pandas>=1.5.0,<3.0`) would improve reproducibility.
+
+1. **No `tkinter` or `threading` listed.** Both are stdlib modules, so no entry is needed — this is correct.
 
 ---
 
@@ -275,7 +298,7 @@ docx2pdf>=0.1.8
 
 The `.gitignore` file shows as **deleted** in `git status`:
 
-```
+```text
 deleted:    .gitignore
 ```
 
@@ -300,7 +323,7 @@ The `data/2025/outputs/` folder contains all generated race reports (`.docx`, `.
 
 ### Commit History
 
-```
+```text
 37435ee  Code cleanup (current)
 62765de  Refine league report layout and narrative
 cd4f2d8  Refine report layout and bump version to 2.1
@@ -331,7 +354,7 @@ The main remaining quality risk is depth rather than absence: scoring and aggreg
 ### Suggested Test Coverage Priorities
 
 | Module | Test scenarios |
-|---|---|
+| --- | --- |
 | `individual_scoring.py` | Correct points for positions 1–N; tie-breaking (equal chip time); division boundary |
 | `team_scoring.py` | Top-5 selection; fewer than 3 finishers; 20-point cap; tie resolution |
 | `season_aggregation.py` | Best-6-of-8 selection; runner with fewer than 6 races; runner with exactly 6 races |
@@ -348,17 +371,19 @@ A suite of ~30 unit tests for the above would provide meaningful regression cove
 The application is currently **Windows-only by design** (the target environment is a Windows desktop). The following items would need addressing before cross-platform use:
 
 1. **`timeline_generator.py` — hardcoded Windows font paths:**
-   ```python
-   "C:/Windows/Fonts/segoeuib.ttf"
-   "C:/Windows/Fonts/segoeui.ttf"
-   ```
-   A fallback to the Pillow default bitmap font is in place, so the generator does not crash on non-Windows, but the rendered timeline will use a lower-quality font. If portability is ever needed, use `matplotlib` font resolution or bundle a TTF.
 
-2. **GUI font `"Segoe UI"`** is used throughout `dashboard.py` and `gui.py`. This font is Windows-only. On macOS/Linux tkinter will silently substitute a system font; visual fidelity will degrade but no crash will occur.
+```text
+"C:/Windows/Fonts/segoeuib.ttf"
+"C:/Windows/Fonts/segoeui.ttf"
+```
 
-3. **`docx2pdf`** requires Microsoft Word to be installed on the host machine. This is an inherent Windows/macOS constraint. The try/except wrapper handles missing installation gracefully.
+A fallback to the Pillow default bitmap font is in place, so the generator does not crash on non-Windows, but the rendered timeline will use a lower-quality font. If portability is ever needed, use `matplotlib` font resolution or bundle a TTF.
 
-4. **No POSIX path issues.** All path handling uses `pathlib.Path` throughout. No raw string path literals with backslashes were found.
+1. **GUI font `"Segoe UI"`** is used throughout `dashboard.py` and `gui.py`. This font is Windows-only. On macOS/Linux tkinter will silently substitute a system font; visual fidelity will degrade but no crash will occur.
+
+1. **`docx2pdf`** requires Microsoft Word to be installed on the host machine. This is an inherent Windows/macOS constraint. The try/except wrapper handles missing installation gracefully.
+
+1. **No POSIX path issues.** All path handling uses `pathlib.Path` throughout. No raw string path literals with backslashes were found.
 
 ---
 
@@ -367,7 +392,7 @@ The application is currently **Windows-only by design** (the target environment 
 ### Severity: High
 
 | # | Issue | Location | Impact |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | H-1 | Test depth still incomplete for scoring edge cases | Core scoring and aggregation modules | Regressions may still slip through if new rules are introduced |
 | H-2 | `.gitignore` deleted | Repository root | Build artefacts risk being committed |
 | H-3 | Generated output files committed to git | `data/2025/outputs/` | Repository bloat, noisy diffs, poor hygiene |
@@ -375,7 +400,7 @@ The application is currently **Windows-only by design** (the target environment 
 ### Severity: Medium
 
 | # | Issue | Location | Impact |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | M-1 | Version string mismatch: `__init__.py` says `v3.1`, report footer says `v2.1` | `__init__.py`, `report_writer.py` | User confusion; unclear which is authoritative |
 | M-2 | Review Issues workflow still evolving | `graphical/issue_reviewer.py` | UX and quick-fix breadth should continue to improve |
 | M-3 | Audit documentation drift risk | `documents/*.md` | Out-of-date docs can mislead operations and QA |
@@ -386,7 +411,7 @@ The application is currently **Windows-only by design** (the target environment 
 ### Severity: Low
 
 | # | Issue | Location | Impact |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | L-1 | PDF generation silently skipped with no prominent user warning | `report_writer.py` | User may not realise no PDF was produced |
 | L-2 | Stale project-structure comment in `requirements.txt` still references deleted `scorer.py` | `requirements.txt` | Minor documentation inaccuracy |
 | L-3 | No version upper bounds on dependencies | `requirements.txt` | Possible breakage on future major releases |
@@ -396,44 +421,28 @@ The application is currently **Windows-only by design** (the target environment 
 
 ## 12. Recommendations
 
-### Update (April 2026)
-
-Status after the latest cleanup pass:
+### Update (April 2026 — v6.1.0)
 
 1. ✅ Shared import/manual workflows now centralised (`graphical/import_helpers.py`) and used by both scorer and dashboard flows.
-2. ✅ Workbook lifecycle handling hardened in manual edit paths (`name_lookup.py`, `club_match_dialog.py`, `club_editor.py`).
-3. ✅ Version text is centralised through `league_scorer.__version__` and reused in report/dashboard output.
-4. ✅ `requirements.txt` stale structure block removed.
-5. ✅ Race discovery and results-workbook lookup logic are now shared helpers.
-6. ⚠️ Automated tests now exist, but high-value regression depth is still the largest outstanding quality gap.
-
-The remaining high-priority recommendation is adding a focused pytest suite over scoring and season aggregation logic.
+1. ✅ Workbook lifecycle handling hardened in manual edit paths (`name_lookup.py`, `club_match_dialog.py`, `club_editor.py`).
+1. ✅ Version text is centralised through `league_scorer.__version__` and reused in report/dashboard output.
+1. ✅ `requirements.txt` stale structure block removed.
+1. ✅ Race discovery and results-workbook lookup logic are now shared helpers.
+1. ✅ Repository hygiene: `.gitignore` in place; output artefacts untracked from git.
+1. ✅ Cross-platform portability: `os.startfile` replaced with `sys.platform` dispatch; font paths are platform-specific.
+1. ✅ Resource leaks: all `pd.ExcelFile` instances wrapped in `with` context managers.
+1. ✅ UI responsiveness: `_scan_all_races`, `_apply_selected`, `_load_selected_diff` all offloaded to daemon threads.
+1. ⚠️ Automated tests exist, but high-value regression depth is still the largest outstanding quality gap.
 
 ### Immediate (before next season)
 
-1. **Restore `.gitignore`** — at minimum exclude `__pycache__/`, `*.pyc`, `.venv/`, `output/`, and ideally move generated output files out of the tracked tree.
+1. **Surface PDF failure prominently** — when `docx2pdf` conversion fails or is unavailable, log a `WARNING` that is conspicuous in the GUI log (currently the failure is silently swallowed).
 
-2. **Move generated outputs out of git** — add `data/*/outputs/` to `.gitignore` (once restored) and remove the currently tracked output files with `git rm --cached`. Generated reports are artefacts, not source.
-
-3. **Fix version mismatch** — decide on a single authoritative version string. Recommend updating `report_writer.py`'s footer constant to match `__init__.py` (`v3.1`), then keeping both in sync via a `__version__` constant in `__init__.py`.
-
-4. **Remove stale `requirements.txt` comment** referencing `scorer.py`.
-
-### Short-term (next development sprint)
-
-5. **Add a `constants.py` module** (or add to `session_config.py`) centralising all season rules: `BEST_N`, `MAX_RACES`, `TEAM_SIZE`, `MAX_DIV_PTS`, `SEASON_FINAL_RACE`. Import from there in all consuming modules.
-
-6. **Harden year derivation** — raise a clear `FatalError` rather than falling back silently to `2026` when the output directory does not follow the `YEAR/outputs` convention.
-
-7. **Surface PDF failure prominently** — when `docx2pdf` conversion fails or is unavailable, log a `WARNING` that is conspicuous in the GUI log (currently the failure is silently swallowed).
-
-8. **Implement _View Results_** — the most useful outstanding feature. A `Results.xlsx` viewer panel or simple summary display would complete the GUI workflow.
+1. **Add a `constants.py` module** (or extend `session_config.py`) centralising all season rules: `BEST_N`, `MAX_RACES`, `TEAM_SIZE`, `MAX_DIV_PTS`, `SEASON_FINAL_RACE`. Import from there in all consuming modules.
 
 ### Ongoing
 
-9. **Write a test suite.** Start with `pytest` and target the six modules identified in §9. Aim for coverage of all scoring-rule edge cases. Even 30 well-chosen unit tests would substantially reduce the risk of a silent scoring regression.
-
-10. **Add `docx2pdf` installation note to `requirements.txt`** (or `README`) clarifying that PDF output requires Microsoft Word to be installed.
+1. **Write a focused test suite.** Start with `pytest` and target scoring-rule edge cases. Even 30 well-chosen unit tests would substantially reduce the risk of a silent scoring regression.
 
 ---
 

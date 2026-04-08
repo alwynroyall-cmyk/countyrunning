@@ -1,6 +1,6 @@
 # CI / PR Policy (Phase 1)
 
-This repository now uses a minimal Windows-only CI workflow:
+This repository uses a minimal CI workflow:
 
 - Workflow: `Windows CI`
 - Job: `test-and-stage-checks`
@@ -20,3 +20,7 @@ The check verifies:
 2. Staged chain checks (1-4) in safe mode for CI environments
 
 This provides a lightweight but real quality gate while keeping tooling minimal.
+
+## Portability Note
+
+The codebase supports Windows, macOS, and Linux as of v6.1.0. The CI workflow currently runs on Windows. If a Linux or macOS runner is added in future, no code changes are required.

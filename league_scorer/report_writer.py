@@ -473,7 +473,9 @@ def _write_league_narrative(doc: Document,
     male_leader = male[0] if male else None
     female_leader = female[0] if female else None
 
-    season_final_race = settings.get("SEASON_FINAL_RACE")
+    from .rules import get_season_final_race
+
+    season_final_race = get_season_final_race()
 
     if highest_race == season_final_race:
         parts = [
@@ -1101,6 +1103,7 @@ def write_race_report(
     images_dir: Optional[Path],
     year: int,
     filepath: Path,
+    pdf_output_dir: Path | None = None,
     source_file: Optional[Path] = None,
 ) -> Optional[str]:
     """Write the per-race scoring card DOCX (+ PDF) styled after the WRRL card."""
@@ -1140,6 +1143,9 @@ def write_race_report(
     try:
         from docx2pdf import convert  # type: ignore
         pdf_path = filepath.with_suffix(".pdf")
+        if pdf_output_dir is not None:
+            pdf_output_dir.mkdir(parents=True, exist_ok=True)
+            pdf_path = Path(pdf_output_dir) / pdf_path.name
         convert(str(filepath), str(pdf_path))
         log.info("Race %d PDF written: %s", race_num, pdf_path.name)
         return None
@@ -1181,7 +1187,7 @@ def _build_cover_header(
     p1.alignment = WD_ALIGN_PARAGRAPH.LEFT
     p1.paragraph_format.left_indent  = Cm(0.4)
     p1.paragraph_format.space_before = Pt(8)
-    r = p1.add_run(f"WRRL League Report  |  Season {year}")
+    r = p1.add_run(f"WRRL League AI Report  |  Season {year}")
     r.bold = True
     r.font.size = Pt(22)
     r.font.color.rgb = _WHITE_RGB
@@ -1190,9 +1196,9 @@ def _build_cover_header(
     p2.paragraph_format.left_indent = Cm(0.4)
     season_final_race = settings.get("SEASON_FINAL_RACE")
     subtitle = (
-        "Wiltshire Road Race League  —  Season Summary"
+        "WRRL League AI  —  Season Summary"
         if highest_race == season_final_race
-        else f"Wiltshire Road Race League  —  Update Race {highest_race}"
+        else f"WRRL League AI  —  Update Race {highest_race}"
     )
     r2 = p2.add_run(subtitle)
     r2.font.size = Pt(10)
@@ -1231,7 +1237,7 @@ def _build_footer(doc: Document, year: int, include_page_numbers: bool = False) 
     center_p = center_cell.paragraphs[0]
     center_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
     from . import __version__
-    center_run = center_p.add_run(f"Wiltshire League Scorer v{__version__}")
+    center_run = center_p.add_run(f"WRRL League AI v{__version__}")
     center_run.font.size = Pt(8)
     center_run.font.color.rgb = RGBColor(0x80, 0x80, 0x90)
 
@@ -1256,6 +1262,7 @@ def write_combined_report(
     unrec_all: List[UnrecognisedClub],
     images_dir: Optional[Path],
     filepath: Path,
+    pdf_output_dir: Path | None = None,
 ) -> Optional[str]:
     """Write the branded combined report to *filepath* (.docx) and attempt PDF.
 
@@ -1330,6 +1337,9 @@ def write_combined_report(
     try:
         from docx2pdf import convert  # type: ignore
         pdf_path = filepath.with_suffix(".pdf")
+        if pdf_output_dir is not None:
+            pdf_output_dir.mkdir(parents=True, exist_ok=True)
+            pdf_path = Path(pdf_output_dir) / pdf_path.name
         convert(str(filepath), str(pdf_path))
         log.info("PDF written: %s", pdf_path.name)
         return None
