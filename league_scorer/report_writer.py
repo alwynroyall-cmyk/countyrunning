@@ -473,7 +473,9 @@ def _write_league_narrative(doc: Document,
     male_leader = male[0] if male else None
     female_leader = female[0] if female else None
 
-    season_final_race = settings.get("SEASON_FINAL_RACE")
+    from .rules import get_season_final_race
+
+    season_final_race = get_season_final_race()
 
     if highest_race == season_final_race:
         parts = [

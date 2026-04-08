@@ -23,7 +23,7 @@ from openpyxl.utils import get_column_letter
 
 log = logging.getLogger(__name__)
 
-from .settings import settings
+from .rules import get_max_races
 _HEADER_FILL = PatternFill("solid", fgColor="4472C4")
 _HEADER_FONT = Font(color="FFFFFF", bold=True)
 _AGG_FILL    = PatternFill("solid", fgColor="D9E1F2")   # light blue tint for aggregate columns
@@ -157,7 +157,7 @@ def write_results_workbook(
     filepath: Path,
 ) -> None:
     """Write Race Summary, Div 1, Div 2, Male, Female, Category Review, and Race N sheets."""
-    max_races = settings.get("MAX_RACES")
+    max_races = get_max_races()
 
     def _format_issue(issue: RaceIssue) -> str:
         if issue.source_row is not None:
