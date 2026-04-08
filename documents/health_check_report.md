@@ -33,7 +33,7 @@ However, several issues still warrant attention before the application is consid
 **Overall assessment: Good foundation with materially improved coverage, workflow completeness, and cross-platform portability. Regression depth and test coverage remain the largest outstanding quality gap.**
 
 | Area | Status |
-|---|---|
+| --- | --- |
 | Processing pipeline correctness | ✅ Sound |
 | Error handling | ✅ Good |
 | GUI — core scorer workflow | ✅ Complete |
@@ -95,7 +95,7 @@ league_scorer/
 ### Entry Points
 
 | Entry point | Usage |
-|---|---|
+| --- | --- |
 | `python -m league_scorer` (`__main__.py`) | Headless CLI run |
 | `run_gui.py` | Launches GUI (suitable for IDLE/double-click) |
 | `graphical.launch_dashboard()` | Programmatic GUI launch |
@@ -204,7 +204,7 @@ Persisted to `~/.wrrl_prefs.json` (home directory) via `save()` / `load()`. The 
 Several business-rule constants are embedded directly in source files rather than centralised or user-configurable:
 
 | Constant | Value | Location | Rule |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `BEST_N` | 6 | `season_aggregation.py` | Best 6 scores count |
 | `MAX_RACES` | 8 | `output_writer.py` | Season has 8 races |
 | `TEAM_SIZE` | 5 | `team_scoring.py` | Top 5 scorers per team |
@@ -230,7 +230,7 @@ If the directory naming convention ever changes (e.g. a flat layout), the fallba
 ### Dashboard (`dashboard.py`)
 
 | Button / Feature | Status |
-|---|---|
+| --- | --- |
 | Run Scorer | ✅ Fully implemented |
 | View Events | ✅ Fully implemented (opens EventsViewerWindow) |
 | View Timeline | ✅ Fully implemented (generates PNG, opens in system viewer) |
@@ -350,7 +350,7 @@ The main remaining quality risk is depth rather than absence: scoring and aggreg
 ### Suggested Test Coverage Priorities
 
 | Module | Test scenarios |
-|---|---|
+| --- | --- |
 | `individual_scoring.py` | Correct points for positions 1–N; tie-breaking (equal chip time); division boundary |
 | `team_scoring.py` | Top-5 selection; fewer than 3 finishers; 20-point cap; tie resolution |
 | `season_aggregation.py` | Best-6-of-8 selection; runner with fewer than 6 races; runner with exactly 6 races |
@@ -386,7 +386,7 @@ The application is currently **Windows-only by design** (the target environment 
 ### Severity: High
 
 | # | Issue | Location | Impact |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | H-1 | Test depth still incomplete for scoring edge cases | Core scoring and aggregation modules | Regressions may still slip through if new rules are introduced |
 | H-2 | `.gitignore` deleted | Repository root | Build artefacts risk being committed |
 | H-3 | Generated output files committed to git | `data/2025/outputs/` | Repository bloat, noisy diffs, poor hygiene |
@@ -394,7 +394,7 @@ The application is currently **Windows-only by design** (the target environment 
 ### Severity: Medium
 
 | # | Issue | Location | Impact |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | M-1 | Version string mismatch: `__init__.py` says `v3.1`, report footer says `v2.1` | `__init__.py`, `report_writer.py` | User confusion; unclear which is authoritative |
 | M-2 | Review Issues workflow still evolving | `graphical/issue_reviewer.py` | UX and quick-fix breadth should continue to improve |
 | M-3 | Audit documentation drift risk | `documents/*.md` | Out-of-date docs can mislead operations and QA |
@@ -405,7 +405,7 @@ The application is currently **Windows-only by design** (the target environment 
 ### Severity: Low
 
 | # | Issue | Location | Impact |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | L-1 | PDF generation silently skipped with no prominent user warning | `report_writer.py` | User may not realise no PDF was produced |
 | L-2 | Stale project-structure comment in `requirements.txt` still references deleted `scorer.py` | `requirements.txt` | Minor documentation inaccuracy |
 | L-3 | No version upper bounds on dependencies | `requirements.txt` | Possible breakage on future major releases |
