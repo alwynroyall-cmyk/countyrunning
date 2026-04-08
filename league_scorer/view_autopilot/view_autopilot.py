@@ -34,6 +34,7 @@ class ViewAutopilotPanel(tk.Frame):
         tk.Button(top_frame, text="Open Manual Audit", command=self._open_manual_audit, bg="#e9f0f7").pack(side="left", padx=6)
         tk.Button(top_frame, text="Open Season Audit", command=self._open_season_audit, bg="#e9f0f7").pack(side="left", padx=6)
         tk.Button(top_frame, text="Open Data Quality Report", command=self._open_data_quality_report, bg="#e9f0f7").pack(side="left", padx=6)
+        tk.Button(top_frame, text="Open Staged Checks", command=self._open_staged_checks_report, bg="#e9f0f7").pack(side="left", padx=6)
         tk.Label(top_frame, textvariable=self._status_var, bg="#f7f9fb", fg="#55666f").pack(side="right")
 
         middle = tk.PanedWindow(self, orient="horizontal")
@@ -173,6 +174,33 @@ class ViewAutopilotPanel(tk.Frame):
             md_files = sorted(qdir.glob("*.md"), key=lambda p: p.stat().st_mtime, reverse=True)
             if not md_files:
                 messagebox.showwarning("No Files", "No markdown data-quality reports found.", parent=self)
+                return
+            target = md_files[0]
+        try:
+            if sys.platform == "win32":
+                os.startfile(str(target))
+            elif sys.platform == "darwin":
+                subprocess.run(["open", str(target)], check=False)
+            else:
+                subprocess.run(["xdg-open", str(target)], check=False)
+        except OSError as exc:
+            messagebox.showerror("Open Failed", str(exc), parent=self)
+
+    def _open_staged_checks_report(self) -> None:
+        """Open the staged checks markdown report (staged_checks_report.md)."""
+        if session_config.output_dir is None:
+            messagebox.showwarning("Not Configured", "Output directory is not configured.", parent=self)
+            return
+        paths = build_output_paths(session_config.output_dir)
+        staged_dir = paths.quality_staged_checks_dir
+        if not staged_dir.exists():
+            messagebox.showwarning("Not Found", "No staged-checks folder present.", parent=self)
+            return
+        target = staged_dir / "staged_checks_report.md"
+        if not target.exists():
+            md_files = sorted(staged_dir.glob("*.md"), key=lambda p: p.stat().st_mtime, reverse=True)
+            if not md_files:
+                messagebox.showwarning("No Files", "No staged-check markdown reports found.", parent=self)
                 return
             target = md_files[0]
         try:
