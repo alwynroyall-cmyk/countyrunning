@@ -18,6 +18,7 @@ from ..session_config import config as session_config
 from ..structured_logging import log_event
 from ..manual_edit_service import _find_columns, _atomic_save
 from ..name_lookup import load_name_corrections
+from ..manual_data_audit import log_manual_data_changes
 
 
 def _ensure_raes_output_dir() -> Path | None:
@@ -221,11 +222,13 @@ def apply_field_to_files(files: List[Path], runner: str, field_type: str, target
                     audit.append({
                         "timestamp": datetime.datetime.utcnow().isoformat() + "Z",
                         "file": str(path),
+                        "file_path": str(path),
                         "sheet": sname,
                         "runner": runner,
                         "field": field_type,
                         "old_value": old,
                         "new_value": target_value,
+                        "row_idx": row_idx,
                     })
             if changed:
                 _atomic_save(wb, path)
@@ -253,6 +256,19 @@ def apply_field_to_files(files: List[Path], runner: str, field_type: str, target
             changes_file.write_text(json.dumps(existing, indent=2), encoding="utf-8")
         except Exception:
             pass
+
+    # Also append RAES changes to the Manual Data Audit workbook so they
+    # are recorded the same way other manual processes are.
+    try:
+        if audit:
+            err = log_manual_data_changes(audit, source="RAES", action="raes_applied_field")
+            if err:
+                log_event("raes_manual_audit_error", year=session_config.year, error=err)
+            else:
+                log_event("raes_manual_audit_logged", year=session_config.year, file_changes=len(audit))
+    except Exception:
+        # non-fatal for RAES — if auditing fails we still return normal audit
+        pass
 
     # Mark data as dirty so autopilot/UI know a run is required.
     # Note: we set both a generic `autopilot/dirty` flag and a `raes/dirty` flag

@@ -1366,26 +1366,38 @@ class LeagueScorerDashboard(tk.Tk):
             subprocess.run(["xdg-open", str(path)], check=False)
 
     def _on_view_autopilot_report(self) -> None:
-        """Open the latest autopilot markdown report in the default editor/app."""
+        """Show autopilot run reports panel allowing selection and viewing of reports."""
         if not self._require_configured("View Autopilot Report"):
             return
-        if session_config.output_dir is None:
-            messagebox.showerror("Output Not Configured", "Output folder is not configured.", parent=self)
-            return
-
-        report_path = self._resolve_autopilot_report_path()
-        if report_path is None or not report_path.exists():
-            messagebox.showwarning(
-                "Report Not Found",
-                f"No autopilot report found for season {session_config.year}.\nRun Autopilot first.",
-                parent=self,
-            )
-            return
-
-        try:
-            self._open_file_in_system(report_path)
-        except Exception as exc:
-            messagebox.showerror("Open Failed", str(exc), parent=self)
+        # Show as an inline panel (like View Results)
+        if session_config.output_dir:
+            sort_existing_output_files(session_config.output_dir)
+        self._home_frame.pack_forget()
+        from ..view_autopilot import ViewAutopilotPanel
+        panel = ViewAutopilotPanel(self._page_container)
+        panel.pack(fill="both", expand=True)
+        self._results_panel = panel
+        def on_close():
+            if hasattr(self, "_results_panel"):
+                self._results_panel.destroy()
+                del self._results_panel
+            self._home_frame.pack(fill="both", expand=True)
+        # Always-visible return control (top-right overlay)
+        close_btn = tk.Button(
+            panel,
+            text="🏠 Dashboard",
+            command=on_close,
+            font=("Segoe UI", 10, "bold"),
+            bg=WRRL_LIGHT,
+            fg=WRRL_GREEN,
+            relief="flat",
+            padx=10,
+            pady=4,
+            cursor="hand2",
+            activebackground="#1f5632",
+            activeforeground=WRRL_GREEN,
+        )
+        close_btn.place(relx=1.0, x=-12, y=10, anchor="ne")
 
     def _on_load_events(self) -> None:
         """Browse for and load an events XLSX file."""
