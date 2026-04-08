@@ -23,4 +23,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from league_scorer.graphical import launch_dashboard
 
 if __name__ == "__main__":
-    launch_dashboard()
+    try:
+        launch_dashboard()
+    except KeyboardInterrupt:
+        # Allow Ctrl+C from the terminal to exit cleanly without a traceback
+        print("Interrupted; exiting.")
+        sys.exit(0)
