@@ -53,43 +53,43 @@ However, several issues still warrant attention before the application is consid
 
 ```text
 league_scorer/
-  __init__.py              Package entry, v3.1 declaration
-  models.py                All data model dataclasses (RunnerRaceEntry etc.)
-  exceptions.py            FatalError, ValidationError hierarchy
-  session_config.py        Singleton year/path config + .wrrl_prefs.json persistence
-  club_loader.py           Loads clubs.xlsx → {club_name: ClubInfo}
-  events_loader.py         Loads events.xlsx → List[EventRecord]
-  normalisation.py         Runner name deduplication and variant mapping
-  race_processor.py        Parses a single race CSV → List[RunnerRaceEntry]
-  individual_scoring.py    Per-race finishing position → points, gender/category rank
-  team_scoring.py          5-scorer team points (TEAM_SIZE=5, MAX_DIV_PTS=20)
-  season_aggregation.py    Best-6-of-8 cumulative totals (BEST_N=6)
-  output_writer.py         Writes Results.xlsx (5-sheet workbook) + unused clubs.xlsx
-  report_writer.py         Writes per-race DOCX/PDF + combined league update DOCX/PDF
-  main.py                  LeagueScorer orchestration class
+   __init__.py              Package entry, v3.1 declaration
+   models.py                All data model dataclasses (RunnerRaceEntry etc.)
+   exceptions.py            FatalError, ValidationError hierarchy
+   session_config.py        Singleton year/path config + .wrrl_prefs.json persistence
+   club_loader.py           Loads clubs.xlsx → {club_name: ClubInfo}
+   events_loader.py         Loads events.xlsx → List[EventRecord}
+   normalisation.py         Runner name deduplication and variant mapping
+   race_processor.py        Parses a single race CSV → List[RunnerRaceEntry]
+   individual_scoring.py    Per-race finishing position → points, gender/category rank
+   team_scoring.py          5-scorer team points (TEAM_SIZE=5, MAX_DIV_PTS=20)
+   season_aggregation.py    Best-6-of-8 cumulative totals (BEST_N=6)
+   output_writer.py         Writes Results.xlsx (5-sheet workbook) + unused clubs.xlsx
+   report_writer.py         Writes per-race DOCX/PDF + combined league update DOCX/PDF
+   main.py                  LeagueScorer orchestration class
 
-  graphical/
-    __init__.py            Exports: launch, launch_dashboard, EventsViewerWindow
-    dashboard.py           Main tkinter window (config, navigation, branding, _run_workflow helper)
-    gui.py                 LeagueScorerApp panel (race selector, log, run pipeline)
-    audit_gui.py           Audit panel
-    audit_viewer.py        Audit workbook sheet viewer
-    check_all_runners.py   Cross-race blank-club suggestion and bulk apply panel
-    club_editor.py         Per-file runner–club assignment editor
-    club_history_viewer.py Club membership history viewer
-    club_match_dialog.py   Club matching review dialog
-    events_viewer.py       Toplevel events schedule (sortable Treeview)
-    import_helpers.py      Shared import/audit workflow utilities
-    issue_reviewer.py      Actionable audit issue review panel
-    log_viewer.py          Log viewer panel
-    manual_review_dialog.py Manual review dialog
-    manual_review_panel.py Manual review embedded panel
-    raw_archive_diff_viewer.py Side-by-side raw vs archive diff viewer
-    results_viewer.py      Results workbook viewer (cached pd.ExcelFile)
-    results_workbook.py    Results workbook discovery helper
-    runner_history_viewer.py Runner cross-race history panel
-    settings_dialog.py     Settings configuration panel
-    timeline_generator.py  Pillow-based season timeline PNG (cross-platform fonts)
+   graphical/
+      __init__.py            Exports: launch, launch_dashboard, EventsViewerWindow
+      dashboard.py           Main tkinter window (config, navigation, branding, _run_workflow helper)
+      gui.py                 LeagueScorerApp panel (race selector, log, run pipeline)
+      audit_gui.py           Audit panel
+      audit_viewer.py        Audit workbook sheet viewer
+      check_all_runners.py   Cross-race blank-club suggestion and bulk apply panel
+      club_editor.py         Per-file runner–club assignment editor
+      club_history_viewer.py Club membership history viewer
+      club_match_dialog.py   Club matching review dialog
+      events_viewer.py       Toplevel events schedule (sortable Treeview)
+      import_helpers.py      Shared import/audit workflow utilities
+      issue_reviewer.py      Actionable audit issue review panel
+      log_viewer.py          Log viewer panel
+      manual_review_dialog.py Manual review dialog
+      manual_review_panel.py Manual review embedded panel
+      raw_archive_diff_viewer.py Side-by-side raw vs archive diff viewer
+      results_viewer.py      Results workbook viewer (cached pd.ExcelFile)
+      results_workbook.py    Results workbook discovery helper
+      runner_history_viewer.py Runner cross-race history panel
+      settings_dialog.py     Settings configuration panel
+      timeline_generator.py  Pillow-based season timeline PNG (cross-platform fonts)
 ```
 
 ### Entry Points
