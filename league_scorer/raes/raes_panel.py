@@ -121,18 +121,18 @@ class RAESPanel(tk.Frame):
         refresh_btn = tk.Button(btn_row, text="Refresh List", command=self._refresh_list, bg=WRRL_LIGHT, relief="groove")
         refresh_btn.pack(side="left")
 
-        # Toggle: show runners with no club (Male/Female sheets)
-        self._show_noclub_var = tk.BooleanVar(value=False)
-        noclub_cb = tk.Checkbutton(
+        # Toggle: show all runners (include non-league / zero-point runners)
+        self._show_all_var = tk.BooleanVar(value=False)
+        show_all_cb = tk.Checkbutton(
             btn_row,
-            text="Show runners with no club",
-            variable=self._show_noclub_var,
+            text="Show all runners (include non-league/zero points)",
+            variable=self._show_all_var,
             bg=WRRL_LIGHT,
             activebackground=WRRL_LIGHT,
             relief="flat",
             command=self._refresh_list,
         )
-        noclub_cb.pack(side="left", padx=(8, 0))
+        show_all_cb.pack(side="left", padx=(8, 0))
 
         # Anomaly count label
         self._count_var = tk.StringVar(value="Anomalies: 0")
@@ -181,42 +181,15 @@ class RAESPanel(tk.Frame):
         self._scan_queue = q
 
         # Capture toggle state for the background worker
-        show_noclub_local = bool(self._show_noclub_var.get())
+        show_all_local = bool(self._show_all_var.get())
 
         def worker():
             try:
                 # Read the UI toggle state in the worker closure
-                show_noclub = show_noclub_local
-                # Base rows from anomalies
-                rows = build_raes_runner_rows()
-
-                # If requested, merge in runners that have no club in the
-                # results workbook (these are often non-league runners).
-                if show_noclub:
-                    try:
-                        state = scan_workbook_for_runner_state()
-                        processed_map = load_processed_state()
-                        # existing runner names (proper-case) to avoid dupes
-                        existing = {r["runner"].lower() for r in rows}
-                        for norm, info in state.items():
-                            if info.get("club"):
-                                continue
-                            # skip if already present
-                            if norm in existing:
-                                continue
-                            # display name using any raw name, proper-cased
-                            raw = next(iter(info.get("raw_names", {norm})))
-                            display = proper_case(raw)
-                            rows.append({
-                                "runner": display,
-                                "anomalies": "",
-                                "details": "",
-                                "processed": bool(processed_map.get(display)),
-                            })
-                        # keep rows sorted
-                        rows.sort(key=lambda r: r["runner"].lower())
-                    except Exception:
-                        pass
+                show_all = show_all_local
+                # Base rows from anomalies; pass `show_all` to include
+                # zero-point/non-league runners when requested.
+                rows = build_raes_runner_rows(show_all_local)
 
                 workbook = find_latest_results_workbook(session_config.output_dir) if session_config.output_dir else None
                 q.put((rows, workbook))
