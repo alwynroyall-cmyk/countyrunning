@@ -29,22 +29,21 @@ class ViewAutopilotPanel(tk.Frame):
         top_frame = tk.Frame(self, bg="#f7f9fb")
         top_frame.pack(fill="x", padx=10)
 
-        tk.Button(top_frame, text="Refresh", command=self._refresh_list, bg="#e9f0f7").pack(side="left")
-        tk.Button(top_frame, text="Open Folder", command=self._open_folder, bg="#e9f0f7").pack(side="left", padx=6)
+        # Keep direct openers for workbooks only; markdown reports are listed below
         tk.Button(top_frame, text="Open Manual Audit", command=self._open_manual_audit, bg="#e9f0f7").pack(side="left", padx=6)
         tk.Button(top_frame, text="Open Season Audit", command=self._open_season_audit, bg="#e9f0f7").pack(side="left", padx=6)
-        tk.Button(top_frame, text="Open Data Quality Report", command=self._open_data_quality_report, bg="#e9f0f7").pack(side="left", padx=6)
-        tk.Button(top_frame, text="Open Staged Checks", command=self._open_staged_checks_report, bg="#e9f0f7").pack(side="left", padx=6)
         tk.Label(top_frame, textvariable=self._status_var, bg="#f7f9fb", fg="#55666f").pack(side="right")
 
         middle = tk.PanedWindow(self, orient="horizontal")
         middle.pack(fill="both", expand=True, padx=10, pady=10)
 
-        # File list
+        # File list (will include markdown reports from multiple output locations)
         list_frame = tk.Frame(middle, bg="#f7f9fb")
-        self._tree = ttk.Treeview(list_frame, columns=("modified", "size"), show="headings", selectmode="browse")
+        self._tree = ttk.Treeview(list_frame, columns=("name", "modified", "size"), show="headings", selectmode="browse")
+        self._tree.heading("name", text="Name")
         self._tree.heading("modified", text="Modified")
         self._tree.heading("size", text="Size")
+        self._tree.column("name", width=320, anchor="w")
         self._tree.column("modified", width=140, anchor="w")
         self._tree.column("size", width=80, anchor="e")
         self._tree.pack(fill="both", expand=True, side="left")
@@ -52,6 +51,7 @@ class ViewAutopilotPanel(tk.Frame):
         scrollbar.pack(side="right", fill="y")
         self._tree.configure(yscrollcommand=scrollbar.set)
         self._tree.bind("<Double-1>", lambda e: self._open_selected())
+        self._tree.bind("<<TreeviewSelect>>", lambda e: self._on_tree_select())
 
         middle.add(list_frame, minsize=200)
 
@@ -78,19 +78,38 @@ class ViewAutopilotPanel(tk.Frame):
     def _refresh_list(self) -> None:
         self._tree.delete(*self._tree.get_children())
         self._files = []
-        self._reports_dir = self._resolve_reports_dir()
-        if self._reports_dir is None:
-            self._status_var.set("No autopilot run directory found")
-            return
-        md_files = sorted(self._reports_dir.glob("*.md"), key=lambda p: p.stat().st_mtime, reverse=True)
-        for p in md_files:
-            mtime = p.stat().st_mtime
-            size = p.stat().st_size
-            self._tree.insert("", "end", iid=str(p.name), values=(p.name, p.stat().st_mtime, size))
-            self._files.append(p)
+        # collect markdown reports from multiple well-known locations
+        paths = []
+        base = build_output_paths(session_config.output_dir) if session_config.output_dir else None
+        if base:
+            # autopilot runs for this year
+            ap = base.autopilot_runs_dir / f"year-{session_config.year}"
+            paths.append(ap)
+            # data quality for this year
+            dq = base.quality_data_dir / f"year-{session_config.year}"
+            paths.append(dq)
+            # staged checks
+            sc = base.quality_staged_checks_dir
+            paths.append(sc)
+
+        md_set = {}
+        for p in paths:
+            if not p or not p.exists():
+                continue
+            for f in p.glob("*.md"):
+                md_set[str(f.resolve())] = f
+
+        md_files = sorted(md_set.values(), key=lambda p: p.stat().st_mtime, reverse=True)
+        for f in md_files:
+            mtime = f.stat().st_mtime
+            size = f.stat().st_size
+            iid = str(f.resolve())
+            self._tree.insert("", "end", iid=iid, values=(f.name, mtime, size))
+            self._files.append(f)
         self._status_var.set(f"{len(self._files)} reports")
         if self._files:
-            self._tree.selection_set(str(self._files[0].name))
+            first_iid = str(self._files[0].resolve())
+            self._tree.selection_set(first_iid)
             self._show_preview(self._files[0])
 
     def _open_folder(self) -> None:
@@ -217,8 +236,8 @@ class ViewAutopilotPanel(tk.Frame):
         sel = self._tree.selection()
         if not sel:
             return
-        name = sel[0]
-        path = self._reports_dir / name
+        iid = sel[0]
+        path = Path(iid)
         try:
             if sys.platform == "win32":
                 os.startfile(str(path))
@@ -228,6 +247,15 @@ class ViewAutopilotPanel(tk.Frame):
                 subprocess.run(["xdg-open", str(path)], check=False)
         except OSError as exc:
             messagebox.showerror("Open Failed", str(exc), parent=self)
+
+    def _on_tree_select(self) -> None:
+        sel = self._tree.selection()
+        if not sel:
+            return
+        iid = sel[0]
+        path = Path(iid)
+        if path.exists():
+            self._show_preview(path)
 
     def _show_preview(self, path: Path) -> None:
         try:
