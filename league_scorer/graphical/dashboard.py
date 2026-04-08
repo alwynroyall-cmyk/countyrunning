@@ -44,6 +44,7 @@ WRRL_NAVY = "#3a4658"      # Dark navy blue from shield
 WRRL_GREEN = "#2d7a4a"     # Forest green from shield
 WRRL_LIGHT = "#f5f5f5"     # Light gray for text background
 WRRL_WHITE = "#ffffff"     # Pure white for text
+WRRL_AMBER = "#e6a817"    # Amber used as a warning accent
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -485,7 +486,9 @@ class LeagueScorerDashboard(tk.Tk):
             button_frame.grid_columnconfigure(col, weight=1)
 
         # Column 1
-        self._create_action_button(
+        # Keep a reference to the Run Autopilot card so we can update its
+        # visual state when data are dirty (RAES/autopilot dirty flag).
+        self._run_autopilot_card = self._create_action_button(
             button_frame, "Run Autopilot", "Run audit, safe auto-fixes, and staged checks", self._on_run_autopilot, 0, 0, tone="primary"
         )
         self._create_action_button(
@@ -677,6 +680,28 @@ class LeagueScorerDashboard(tk.Tk):
             colour = WRRL_GREEN if is_current else "#d94f4f"
             self._freshness_light.itemconfig(self._freshness_dot, fill=colour)
             self._freshness_var.set(detail)
+            # Also update Run Autopilot action card to visually reflect the same
+            # freshness/dirty state so the prominent action is consistent.
+            try:
+                if hasattr(self, "_run_autopilot_card") and self._run_autopilot_card.winfo_exists():
+                    # Find the title and subtitle labels inside the card
+                    children = self._run_autopilot_card.winfo_children()
+                    title_lbl = children[0] if len(children) > 0 else None
+                    subtitle_lbl = children[1] if len(children) > 1 else None
+                    if is_current:
+                        self._run_autopilot_card.config(bg=WRRL_GREEN)
+                        if title_lbl is not None:
+                            title_lbl.config(bg=WRRL_GREEN, fg=WRRL_WHITE)
+                        if subtitle_lbl is not None:
+                            subtitle_lbl.config(bg=WRRL_GREEN, fg="#d9efe2")
+                    else:
+                        self._run_autopilot_card.config(bg=WRRL_AMBER)
+                        if title_lbl is not None:
+                            title_lbl.config(bg=WRRL_AMBER, fg=WRRL_NAVY)
+                        if subtitle_lbl is not None:
+                            subtitle_lbl.config(bg=WRRL_AMBER, fg="#6f5a10")
+            except Exception:
+                pass
 
     def _compute_data_freshness(self) -> tuple[bool, str]:
         if not session_config.input_dir:
@@ -812,6 +837,9 @@ class LeagueScorerDashboard(tk.Tk):
             widget.bind("<Button-1>", lambda _e: command())
             widget.bind("<Enter>", _on_enter)
             widget.bind("<Leave>", _on_leave)
+
+        # Return the card so callers can keep a reference for dynamic updates.
+        return card
 
     # ── footer section ────────────────────────────────────────────────────────
 
