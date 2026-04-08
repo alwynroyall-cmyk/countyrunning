@@ -558,19 +558,43 @@ class LeagueScorerDashboard(tk.Tk):
         # Pulse state for Run Autopilot card
         self._run_card_pulsing = False
         self._run_card_pulse_on = False
+        self._run_card_pulse_active = False
+        # Start a periodic refresh so the home page reflects external changes
+        try:
+            self.after(1000, self._refresh_config_panel)
+        except Exception:
+            pass
 
     def _run_card_pulse(self) -> None:
-        """Animate the Run Autopilot card when data are dirty.
+                    # stop pulsing if it was running
+                    try:
+                        self._run_card_pulsing = False
+                    except Exception:
+                        pass
 
         Toggles between `WRRL_AMBER` and `WRRL_AMBER_LIGHT` while pulsing is
         enabled. Reschedules itself via `after`.
         """
         try:
             if not getattr(self, "_run_card_pulsing", False):
+                    # start pulsing (if not already active)
+                    try:
+                        if not getattr(self, "_run_card_pulse_active", False):
+                            self._run_card_pulsing = True
+                            self._run_card_pulse_on = False
+                            self._run_card_pulse()
+                    except Exception:
+                        pass
+                # stop pulsing; mark inactive
+                self._run_card_pulse_active = False
                 return
             card = getattr(self, "_run_autopilot_card", None)
             if card is None or not card.winfo_exists():
+                self._run_card_pulsing = False
+                self._run_card_pulse_active = False
                 return
+            # mark active
+            self._run_card_pulse_active = True
             self._run_card_pulse_on = not self._run_card_pulse_on
             bg = WRRL_AMBER_LIGHT if self._run_card_pulse_on else WRRL_AMBER
             # Update card and inner labels safely
@@ -587,6 +611,7 @@ class LeagueScorerDashboard(tk.Tk):
                 pass
         finally:
             try:
+                # schedule next pulse
                 self.after(600, self._run_card_pulse)
             except Exception:
                 pass
