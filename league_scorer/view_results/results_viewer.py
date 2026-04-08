@@ -1,3 +1,4 @@
+import re
 import subprocess
 import sys
 import tkinter as tk
@@ -6,7 +7,7 @@ from tkinter import ttk, messagebox, filedialog
 import pandas as pd
 from pathlib import Path
 from ..session_config import config as session_config
-from .results_workbook import find_latest_results_workbook
+from ..graphical.results_workbook import find_latest_results_workbook
 
 
 class ResultsViewerPanel(tk.Frame):
@@ -281,13 +282,48 @@ class ResultsViewerPanel(tk.Frame):
     def _populate_table(self, df):
         self._tree.delete(*self._tree.get_children())
         display_df, numeric_columns = self._format_dataframe(df)
+
+        # Rename race-related columns for Div 1 / Div 2 views
+        if self._current_option in ("div1", "div2"):
+            col_rename = {}
+            for col in list(display_df.columns):
+                new = col
+                # Race N Men/Female Score -> R{N} Men / R{N} Women
+                m = re.match(r"Race\s*(\d+)\s*(Men|Female|Women)(?:\s*Score)?$", col, re.IGNORECASE)
+                if m:
+                    n = m.group(1)
+                    gender = m.group(2)
+                    gender_norm = "M" if gender.lower().startswith("men") else "F"
+                    new = f"R{n} {gender_norm}"
+                else:
+                    # Race N aggregate -> R{N} Score
+                    m2 = re.match(r"Race\s*(\d+)\s*aggregate$", col, re.IGNORECASE)
+                    if m2:
+                        n = m2.group(1)
+                        new = f"R{n} Sc"
+                    else:
+                        # Race N Team Points -> R{N} Pts
+                        m3 = re.match(r"Race\s*(\d+)\s*Team\s*Points$", col, re.IGNORECASE)
+                        if m3:
+                            n = m3.group(1)
+                            new = f"R{n} Pts"
+                if new != col:
+                    col_rename[col] = new
+            if col_rename:
+                display_df = display_df.rename(columns=col_rename)
+                # update numeric columns names to the renamed variants
+                numeric_columns = {col_rename.get(c, c) for c in numeric_columns}
         self._tree["columns"] = list(display_df.columns)
 
         header_font = tkfont.Font(font=("Segoe UI", 10, "bold"))
         body_font = tkfont.Font(font=("Segoe UI", 10))
 
         for col in display_df.columns:
-            anchor = "e" if col in numeric_columns else "w"
+            # centre the position column in all views
+            if col.lower() == "position":
+                anchor = "center"
+            else:
+                anchor = "e" if col in numeric_columns else "w"
             width = self._measure_column_width(display_df, col, header_font, body_font)
             self._tree.heading(col, text=col, anchor=anchor)
             self._tree.column(col, width=width, minwidth=width, stretch=False, anchor=anchor)
@@ -334,15 +370,38 @@ class ResultsViewerPanel(tk.Frame):
         return display_df, numeric_columns
 
     def _measure_column_width(self, df, column, header_font, body_font):
+        # Determine a uniform target width derived from any 'R# M' / 'R# F' column
+        mf_col = None
+        for colname in df.columns:
+            if re.match(r"^R\d+\s+[MF]$", str(colname)):
+                mf_col = colname
+                break
+
+        if mf_col is not None:
+            header_width = header_font.measure(str(mf_col))
+            max_text_width = header_width
+            for v in df[mf_col].tolist():
+                max_text_width = max(max_text_width, body_font.measure(str(v)))
+            base = min(max(max_text_width + 24, 72), 110)
+            # make uniform width slightly smaller (10% reduction) but never smaller
+            # than the header width plus padding
+            raw = int(base * 1.2 * 0.9)
+            target = max(raw, header_width + 12, 36)
+            return target
+
+        # Fallback: compute width for this column if no M/F columns were found
         max_text_width = header_font.measure(str(column))
         for value in df[column].tolist():
             max_text_width = max(max_text_width, body_font.measure(str(value)))
 
         if column.lower() in {"name", "club", "item", "notes"}:
             return min(max(max_text_width + 28, 140), 260)
+
         if "race" in column.lower() or "points" in column.lower() or "score" in column.lower() or column.lower() == "position":
-            return min(max(max_text_width + 24, 72), 110)
-        return min(max(max_text_width + 24, 90), 180)
+            fallback = min(max_text_width + 24, 110)
+            return max(int(fallback * 0.9), header_font.measure(str(column)) + 12)
+        fallback = min(max_text_width + 24, 180)
+        return max(int(fallback * 0.9), header_font.measure(str(column)) + 12)
 
     def _export_to_clipboard(self):
         """Copy the current table to clipboard as tab-separated values."""

@@ -1491,7 +1491,7 @@ class LeagueScorerDashboard(tk.Tk):
         if session_config.output_dir:
             sort_existing_output_files(session_config.output_dir)
         self._home_frame.pack_forget()
-        from .results_viewer import ResultsViewerPanel
+        from ..view_results import ResultsViewerPanel
         panel = ResultsViewerPanel(self._page_container)
         panel.pack(fill="both", expand=True)
         self._results_panel = panel
