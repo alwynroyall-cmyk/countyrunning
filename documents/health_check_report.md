@@ -51,7 +51,7 @@ However, several issues still warrant attention before the application is consid
 
 ### Module Map
 
-```
+```text
 league_scorer/
   __init__.py              Package entry, v3.1 declaration
   models.py                All data model dataclasses (RunnerRaceEntry etc.)
@@ -114,7 +114,7 @@ league_scorer/
 
 ### Flow (per run)
 
-```
+```text
 clubs.xlsx → club_loader
 events.xlsx → events_loader
 Race N CSV → race_processor → normalisation → individual_scoring
@@ -160,7 +160,7 @@ Reads a CSV, validates column presence, maps club names to `ClubInfo`, and emits
 
 ### Exception Hierarchy
 
-```
+```text
 Exception
 └── FatalError      — pipeline abort (unrecoverable)
 └── ValidationError — per-race warning (skipped, pipeline continues)
@@ -217,7 +217,7 @@ These constants are consistent with each other and match real league rules. Howe
 
 In `main.py`, the current year is derived from `output_dir.parent.name` (e.g. `.../2025/outputs` → `2025`). There is a hardcoded fallback to `2026` in two places:
 
-```python
+```text
 year = int(output_dir.parent.name)  # may fall back to 2026
 ```
 
@@ -264,7 +264,7 @@ Generates a race-progress timeline as a 1500×700 PNG using Pillow. Layout const
 
 ### `requirements.txt`
 
-```
+```text
 pandas>=1.5.0
 openpyxl>=3.0.10
 Pillow>=10.0.0
@@ -277,9 +277,9 @@ docx2pdf>=0.1.8
 1. **`docx2pdf>=0.1.8`** is listed as a hard requirement but is treated as optional at runtime (wrapped in `try/except ImportError`). On a system where `docx2pdf` cannot produce PDFs (e.g., no Microsoft Word installed), the install will still succeed but PDF output will silently be skipped. The `requirements.txt` could carry a comment noting the Word dependency, or the package could be moved to an `extras_require` section if a `pyproject.toml` is ever introduced.
 
 2. **Stale project structure comment.** `requirements.txt` contains a block comment listing the project file structure that still references the deleted `scorer.py`:
-   ```
+```text
    # league_scorer/scorer.py
-   ```
+```
    This should be removed.
 
 3. **No version upper bounds.** This is generally acceptable for a single-user application with a managed venv, but `pandas` in particular has had breaking API changes between major versions. Pinning a tested range (e.g. `pandas>=1.5.0,<3.0`) would improve reproducibility.
@@ -294,7 +294,7 @@ docx2pdf>=0.1.8
 
 The `.gitignore` file shows as **deleted** in `git status`:
 
-```
+```text
 deleted:    .gitignore
 ```
 
@@ -319,7 +319,7 @@ The `data/2025/outputs/` folder contains all generated race reports (`.docx`, `.
 
 ### Commit History
 
-```
+```text
 37435ee  Code cleanup (current)
 62765de  Refine league report layout and narrative
 cd4f2d8  Refine report layout and bump version to 2.1
@@ -367,10 +367,10 @@ A suite of ~30 unit tests for the above would provide meaningful regression cove
 The application is currently **Windows-only by design** (the target environment is a Windows desktop). The following items would need addressing before cross-platform use:
 
 1. **`timeline_generator.py` — hardcoded Windows font paths:**
-   ```python
-   "C:/Windows/Fonts/segoeuib.ttf"
-   "C:/Windows/Fonts/segoeui.ttf"
-   ```
+```text
+"C:/Windows/Fonts/segoeuib.ttf"
+"C:/Windows/Fonts/segoeui.ttf"
+```
    A fallback to the Pillow default bitmap font is in place, so the generator does not crash on non-Windows, but the rendered timeline will use a lower-quality font. If portability is ever needed, use `matplotlib` font resolution or bundle a TTF.
 
 2. **GUI font `"Segoe UI"`** is used throughout `dashboard.py` and `gui.py`. This font is Windows-only. On macOS/Linux tkinter will silently substitute a system font; visual fidelity will degrade but no crash will occur.
