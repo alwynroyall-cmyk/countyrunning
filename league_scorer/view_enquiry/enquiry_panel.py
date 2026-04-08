@@ -1523,6 +1523,30 @@ class RunnerClubEnquiryPanel(tk.Frame):
                     self._club_races_vars["TeamB_Summary"].set("")
                 except Exception:
                     pass
+            # Also mirror these values into the Club - Runners left panel variables so both panels show the same summary
+            try:
+                # copy simple fields
+                self._club_vars["ClubName"].set(self._club_races_vars.get("ClubName", tk.StringVar()).get())
+                self._club_vars["Members"].set(self._club_races_vars.get("Members", tk.StringVar()).get())
+                self._club_vars["TotalPoints"].set(self._club_races_vars.get("TotalPoints", tk.StringVar()).get())
+                # copy male/female and team summaries if present
+                try:
+                    self._club_vars["MaleScore"].set(self._club_races_vars.get("MaleScore", tk.StringVar()).get())
+                except Exception:
+                    pass
+                try:
+                    self._club_vars["FemaleScore"].set(self._club_races_vars.get("FemaleScore", tk.StringVar()).get())
+                except Exception:
+                    pass
+                try:
+                    self._club_vars["TeamA_Label"].set(self._club_races_vars.get("TeamA_Label", tk.StringVar()).get())
+                    self._club_vars["TeamB_Label"].set(self._club_races_vars.get("TeamB_Label", tk.StringVar()).get())
+                    self._club_vars["TeamA_Summary"].set(self._club_races_vars.get("TeamA_Summary", tk.StringVar()).get())
+                    self._club_vars["TeamB_Summary"].set(self._club_races_vars.get("TeamB_Summary", tk.StringVar()).get())
+                except Exception:
+                    pass
+            except Exception:
+                pass
         except Exception:
             pass
 
