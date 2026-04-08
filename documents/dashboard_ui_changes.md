@@ -1,4 +1,4 @@
-**Dashboard UI: Run Autopilot Dirty State Visuals**
+# Dashboard UI: Run Autopilot Dirty State Visuals
 
 - Added an amber state to the `Run Autopilot` action card when RAES or autopilot writes a `dirty` flag.
 - The header run button and the small header status dot are now consistent with the RAES "DATA DIRTY" message.
