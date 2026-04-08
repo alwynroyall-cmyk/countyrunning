@@ -1691,9 +1691,9 @@ class LeagueScorerDashboard(tk.Tk):
         if not self._require_configured("Runner/Club Enquiry"):
             return
         self._home_frame.pack_forget()
-        from .runner_history_viewer import RunnerHistoryPanel
+        from ..view_enquiry.enquiry_panel import RunnerClubEnquiryPanel
 
-        panel = RunnerHistoryPanel(
+        panel = RunnerClubEnquiryPanel(
             self._page_container,
             back_callback=self._on_view_runner_history_back,
         )
@@ -1738,8 +1738,8 @@ class LeagueScorerDashboard(tk.Tk):
         if hasattr(self, "_issue_review_panel"):
             self._issue_review_panel.destroy()
             del self._issue_review_panel
-        from .runner_history_viewer import RunnerHistoryPanel
-        panel = RunnerHistoryPanel(
+        from ..view_enquiry.enquiry_panel import RunnerClubEnquiryPanel
+        panel = RunnerClubEnquiryPanel(
             self._page_container,
             back_callback=self._on_view_runner_history_back,
             initial_runner=runner_name,
