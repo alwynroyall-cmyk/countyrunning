@@ -32,6 +32,7 @@ class ViewAutopilotPanel(tk.Frame):
         tk.Button(top_frame, text="Refresh", command=self._refresh_list, bg="#e9f0f7").pack(side="left")
         tk.Button(top_frame, text="Open Folder", command=self._open_folder, bg="#e9f0f7").pack(side="left", padx=6)
         tk.Button(top_frame, text="Open Manual Audit", command=self._open_manual_audit, bg="#e9f0f7").pack(side="left", padx=6)
+        tk.Button(top_frame, text="Open Season Audit", command=self._open_season_audit, bg="#e9f0f7").pack(side="left", padx=6)
         tk.Label(top_frame, textvariable=self._status_var, bg="#f7f9fb", fg="#55666f").pack(side="right")
 
         middle = tk.PanedWindow(self, orient="horizontal")
@@ -121,6 +122,37 @@ class ViewAutopilotPanel(tk.Frame):
                 subprocess.run(["open", str(audit_path)], check=False)
             else:
                 subprocess.run(["xdg-open", str(audit_path)], check=False)
+        except OSError as exc:
+            messagebox.showerror("Open Failed", str(exc), parent=self)
+
+    def _open_season_audit(self) -> None:
+        """Open the most recent season audit workbook from the audit workbooks folder."""
+        if session_config.output_dir is None:
+            messagebox.showwarning("Not Configured", "Output directory is not configured.", parent=self)
+            return
+        paths = build_output_paths(session_config.output_dir)
+        audit_dir = paths.audit_workbooks_dir
+        if not audit_dir.exists():
+            messagebox.showwarning("Not Found", "No audit workbooks folder present.", parent=self)
+            return
+        xlsx_files = sorted(audit_dir.glob("*.xlsx"), key=lambda p: p.stat().st_mtime, reverse=True)
+        if not xlsx_files:
+            messagebox.showwarning("No Files", "No audit workbook files found.", parent=self)
+            return
+        # Prefer files that contain the season/year in the name
+        preferred = None
+        for p in xlsx_files:
+            if str(session_config.year) in p.name:
+                preferred = p
+                break
+        target = preferred or xlsx_files[0]
+        try:
+            if sys.platform == "win32":
+                os.startfile(str(target))
+            elif sys.platform == "darwin":
+                subprocess.run(["open", str(target)], check=False)
+            else:
+                subprocess.run(["xdg-open", str(target)], check=False)
         except OSError as exc:
             messagebox.showerror("Open Failed", str(exc), parent=self)
 
