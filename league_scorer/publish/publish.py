@@ -114,42 +114,62 @@ def publish_results(year: int, data_root: Path | None, report_dir: Path) -> int:
         print(f"Wrote: {md_path}", flush=True)
         return 1
 
-    print("PROGRESS:STAGE:2:Publishing final results", flush=True)
-    scorer = LeagueScorer(input_dir=input_dir, output_dir=output_dir, year=year)
+    # Publish for GUI should *not* re-run the scorer — it should only
+    # ensure DOCX publish artefacts are converted to PDF. This routine
+    # scans the publish DOCX folders and converts any missing/stale PDFs.
+    print("PROGRESS:STAGE:2:Converting DOCX -> PDF", flush=True)
 
+    output_paths = build_output_paths(output_dir)
+
+    conversion_pairs = [
+        (output_paths.publish_docx_league_updates_dir, output_paths.publish_pdf_league_updates_dir),
+        (output_paths.publish_docx_race_cards_dir, output_paths.publish_pdf_race_cards_dir),
+    ]
+
+    converted = 0
+    skipped = 0
+    warnings: list[str] = []
+
+    # Ensure PDF conversion runs even if WRRL_DISABLE_PDF is set in the
+    # environment elsewhere — temporarily clear it for this conversion
+    # process and restore the previous value afterwards.
     previous_disable_pdf = os.environ.get("WRRL_DISABLE_PDF")
     if previous_disable_pdf is not None:
         os.environ.pop("WRRL_DISABLE_PDF", None)
+
     try:
-        warnings = scorer.run(race_files=race_files)
-    except Exception as exc:
-        if previous_disable_pdf is not None:
-            os.environ["WRRL_DISABLE_PDF"] = previous_disable_pdf
-        payload = {
-            "generated_at": generated_at,
-            "success": False,
-            "settings": {"year": year, "data_root": str(data_root_resolved), "input_dir": str(input_dir), "output_dir": str(output_dir)},
-            "summary": {"audited_race_count": len(race_files), "results_workbook": "", "warning_count": 0, "warnings": []},
-            "error": {"message": str(exc)},
-        }
-        json_path, md_path = _write_report(report_dir, year, payload)
-        print(f"ERROR: {exc}", flush=True)
-        print(f"Wrote: {json_path}", flush=True)
-        print(f"Wrote: {md_path}", flush=True)
-        return 1
+        from docx2pdf import convert  # type: ignore
+    except Exception:
+        convert = None  # type: ignore
 
-    if previous_disable_pdf is not None:
+    for docx_dir, pdf_dir in conversion_pairs:
+        try:
+            if not docx_dir.exists():
+                continue
+            pdf_dir.mkdir(parents=True, exist_ok=True)
+            for docx in sorted(docx_dir.glob("*.docx")):
+                target_pdf = pdf_dir / docx.with_suffix(".pdf").name
+                try:
+                    # Skip conversion if PDF is up-to-date
+                    if target_pdf.exists() and target_pdf.stat().st_mtime >= docx.stat().st_mtime:
+                        skipped += 1
+                        continue
+                    if convert is None:
+                        warnings.append(f"docx2pdf not available: {docx.name}")
+                        continue
+                    convert(str(docx), str(target_pdf))
+                    converted += 1
+                except Exception as exc:
+                    warnings.append(f"{docx.name}: PDF conversion skipped ({exc})")
+        except Exception:
+            # Non-fatal: continue to next folder
+            continue
+
+    # Restore env var state
+    if previous_disable_pdf is None:
+        os.environ.pop("WRRL_DISABLE_PDF", None)
+    else:
         os.environ["WRRL_DISABLE_PDF"] = previous_disable_pdf
-
-    print("PROGRESS:STAGE_DONE:2", flush=True)
-
-    print("PROGRESS:STAGE:3:Writing publish summary", flush=True)
-    results_workbook = None
-    publish_dir = build_output_paths(output_dir).publish_xlsx_standings_dir
-    if publish_dir.exists():
-        candidates = sorted(publish_dir.glob("*.xlsx"), key=lambda item: item.stat().st_mtime, reverse=True)
-        if candidates:
-            results_workbook = candidates[0]
 
     payload = {
         "generated_at": generated_at,
@@ -162,16 +182,21 @@ def publish_results(year: int, data_root: Path | None, report_dir: Path) -> int:
         },
         "summary": {
             "audited_race_count": len(race_files),
-            "results_workbook": str(results_workbook) if results_workbook is not None else "",
+            "results_workbook": "",
+            "converted_pdf_count": converted,
+            "skipped_pdf_count": skipped,
             "warning_count": len(warnings),
             "warnings": warnings,
         },
         "error": None,
     }
+
     json_path, md_path = _write_report(report_dir, year, payload)
-    print("PROGRESS:STAGE_DONE:3", flush=True)
-    print("Publish results success: True", flush=True)
-    print(f"Warnings: {len(warnings)}", flush=True)
+    print("PROGRESS:STAGE_DONE:2", flush=True)
+    print(f"Converted PDFs: {converted}", flush=True)
+    print(f"Skipped PDFs: {skipped}", flush=True)
+    if warnings:
+        print(f"Warnings: {len(warnings)}", flush=True)
     print(f"Wrote: {json_path}", flush=True)
     print(f"Wrote: {md_path}", flush=True)
     return 0

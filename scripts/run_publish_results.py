@@ -10,8 +10,18 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 from typing import Any
+import sys
 
-from league_scorer.publish.publish import publish_results
+
+# When this script is executed directly from the `scripts/` folder by the
+# GUI (which runs the script path), Python's import search path may not
+# include the repository root. Ensure the repo root is on `sys.path` so
+# `import league_scorer` resolves to the local package.
+_repo_root = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(_repo_root))
+
+# Now import the local publish function
+from league_scorer.publish.publish import publish_results  # noqa: E402
 
 
 def parse_args() -> argparse.Namespace:
