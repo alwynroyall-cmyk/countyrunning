@@ -358,17 +358,36 @@ class RunnerClubEnquiryPanel(tk.Frame):
         club_right = tk.Frame(club_content, bg="#f7f9fb")
         club_right.pack(side="left", fill="both", expand=True)
 
-        # Club summary
+        # Club summary — copy of the Club - Races left panel (image, runners, aggregated scores, male/female, team summaries)
         self._club_vars = {
             "ClubName": tk.StringVar(value=""),
             "Members": tk.StringVar(value=""),
             "TotalPoints": tk.StringVar(value=""),
+            "MaleScore": tk.StringVar(value=""),
+            "FemaleScore": tk.StringVar(value=""),
+            "TeamA_Label": tk.StringVar(value=""),
+            "TeamB_Label": tk.StringVar(value=""),
+            "TeamA_Summary": tk.StringVar(value=""),
+            "TeamB_Summary": tk.StringVar(value=""),
         }
-        tk.Label(club_left, textvariable=self._club_vars["ClubName"], bg="#ffffff", font=("Segoe UI", 12, "bold")).pack(anchor="w")
-        tk.Label(club_left, text="Members:", bg="#ffffff", font=("Segoe UI", 10, "bold")).pack(anchor="w", pady=(12,0))
-        tk.Label(club_left, textvariable=self._club_vars["Members"], bg="#ffffff", font=("Segoe UI", 12)).pack(anchor="w")
-        tk.Label(club_left, text="Total Points:", bg="#ffffff", font=("Segoe UI", 10, "bold")).pack(anchor="w", pady=(12,0))
-        tk.Label(club_left, textvariable=self._club_vars["TotalPoints"], bg="#ffffff", font=("Segoe UI", 12)).pack(anchor="w")
+        # optional header image
+        self._club_image_photo = None
+        self._club_image_label = tk.Label(club_left, bg="#ffffff")
+        self._club_image_label.pack(fill="x", pady=(0,8))
+
+        tk.Label(club_left, textvariable=self._club_vars["ClubName"], bg="#ffffff", font=("Segoe UI", 13, "bold")).pack(anchor="w", pady=(6,0))
+        tk.Label(club_left, text="Runners:", bg="#ffffff", font=("Segoe UI", 10, "bold")).pack(anchor="w", pady=(12,0))
+        tk.Label(club_left, textvariable=self._club_vars["Members"], bg="#ffffff", font=("Segoe UI", 11)).pack(anchor="w")
+        tk.Label(club_left, text="Aggregated Scores:", bg="#ffffff", font=("Segoe UI", 10, "bold")).pack(anchor="w", pady=(12,0))
+        tk.Label(club_left, textvariable=self._club_vars["TotalPoints"], bg="#ffffff", font=("Segoe UI", 11)).pack(anchor="w")
+        tk.Label(club_left, text="Male Scorers:", bg="#ffffff", font=("Segoe UI", 10, "bold")).pack(anchor="w", pady=(10,0))
+        tk.Label(club_left, textvariable=self._club_vars["MaleScore"], bg="#ffffff", font=("Segoe UI", 11)).pack(anchor="w")
+        tk.Label(club_left, text="Female Scorers:", bg="#ffffff", font=("Segoe UI", 10, "bold")).pack(anchor="w", pady=(8,0))
+        tk.Label(club_left, textvariable=self._club_vars["FemaleScore"], bg="#ffffff", font=("Segoe UI", 11)).pack(anchor="w")
+        tk.Label(club_left, textvariable=self._club_vars["TeamA_Label"], bg="#ffffff", font=("Segoe UI", 10, "bold")).pack(anchor="w", pady=(10,0))
+        tk.Label(club_left, textvariable=self._club_vars["TeamA_Summary"], bg="#ffffff", font=("Segoe UI", 10), justify="left", anchor="w").pack(anchor="w")
+        tk.Label(club_left, textvariable=self._club_vars["TeamB_Label"], bg="#ffffff", font=("Segoe UI", 10, "bold")).pack(anchor="w", pady=(8,0))
+        tk.Label(club_left, textvariable=self._club_vars["TeamB_Summary"], bg="#ffffff", font=("Segoe UI", 10), justify="left", anchor="w").pack(anchor="w")
 
         mcols = ["Member", "Category", "Points", "Races"]
         self._club_tree = ttk.Treeview(club_right, columns=mcols, show="headings")
