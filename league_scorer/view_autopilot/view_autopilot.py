@@ -1,6 +1,7 @@
 import os
 import subprocess
 import sys
+from datetime import datetime
 import tkinter as tk
 import tkinter.font as tkfont
 from tkinter import ttk, messagebox
@@ -104,7 +105,7 @@ class ViewAutopilotPanel(tk.Frame):
             mtime = f.stat().st_mtime
             size = f.stat().st_size
             iid = str(f.resolve())
-            self._tree.insert("", "end", iid=iid, values=(f.name, mtime, size))
+            self._tree.insert("", "end", iid=iid, values=(f.name, self._format_mtime(mtime), size))
             self._files.append(f)
         self._status_var.set(f"{len(self._files)} reports")
         if self._files:
@@ -266,3 +267,10 @@ class ViewAutopilotPanel(tk.Frame):
         self._preview.delete("1.0", "end")
         self._preview.insert("1.0", text[:20000])
         self._preview.configure(state="disabled")
+
+    def _format_mtime(self, mtime: float) -> str:
+        try:
+            dt = datetime.fromtimestamp(float(mtime))
+            return dt.strftime("%d-%m-%Y %H:%M:%S")
+        except Exception:
+            return str(mtime)
