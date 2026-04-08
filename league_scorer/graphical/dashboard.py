@@ -45,6 +45,7 @@ WRRL_GREEN = "#2d7a4a"     # Forest green from shield
 WRRL_LIGHT = "#f5f5f5"     # Light gray for text background
 WRRL_WHITE = "#ffffff"     # Pure white for text
 WRRL_AMBER = "#e6a817"    # Amber used as a warning accent
+WRRL_AMBER_LIGHT = "#f7e082"  # lighter amber for pulsing
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -554,6 +555,41 @@ class LeagueScorerDashboard(tk.Tk):
 
         # Add small, dark, subtle buttons to the bottom, styled like the header
         self._add_bottom_action_buttons()
+        # Pulse state for Run Autopilot card
+        self._run_card_pulsing = False
+        self._run_card_pulse_on = False
+
+    def _run_card_pulse(self) -> None:
+        """Animate the Run Autopilot card when data are dirty.
+
+        Toggles between `WRRL_AMBER` and `WRRL_AMBER_LIGHT` while pulsing is
+        enabled. Reschedules itself via `after`.
+        """
+        try:
+            if not getattr(self, "_run_card_pulsing", False):
+                return
+            card = getattr(self, "_run_autopilot_card", None)
+            if card is None or not card.winfo_exists():
+                return
+            self._run_card_pulse_on = not self._run_card_pulse_on
+            bg = WRRL_AMBER_LIGHT if self._run_card_pulse_on else WRRL_AMBER
+            # Update card and inner labels safely
+            try:
+                children = card.winfo_children()
+                title_lbl = children[0] if len(children) > 0 else None
+                subtitle_lbl = children[1] if len(children) > 1 else None
+                card.config(bg=bg)
+                if title_lbl is not None:
+                    title_lbl.config(bg=bg)
+                if subtitle_lbl is not None:
+                    subtitle_lbl.config(bg=bg)
+            except Exception:
+                pass
+        finally:
+            try:
+                self.after(600, self._run_card_pulse)
+            except Exception:
+                pass
     def _add_bottom_action_buttons(self):
         """Add small, dark, subtle action buttons to the bottom area, styled like the header."""
         bottom_frame = tk.Frame(self._home_frame, bg=WRRL_NAVY, pady=10)
