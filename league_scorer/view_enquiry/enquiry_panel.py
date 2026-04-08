@@ -873,6 +873,20 @@ class RunnerClubEnquiryPanel(tk.Frame):
             cleaned.append(s)
 
         self._club_combo["values"] = cleaned
+        # set combobox width to fit the longest club name (small padding), capped to avoid excessive width
+        try:
+            if cleaned:
+                max_len = max(len(s) for s in cleaned)
+            else:
+                max_len = len("Chippenham Harriers")
+            width = min(max_len + 2, 60)
+            try:
+                self._club_combo.config(width=width)
+            except Exception:
+                # ttk on some platforms may not support width; fallback to geometry via pack options
+                pass
+        except Exception:
+            pass
 
     def _on_club_selected(self):
         club = self._club_var.get().strip()
