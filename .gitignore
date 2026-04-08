@@ -1,3 +1,43 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+.Python
+env/
+.venv/
+venv/
+
+# Virtual environment
+.venv/
+
+# Pytest / cache
+.pytest_cache/
+.mypy_cache/
+
+# Editor directories
+.vscode/
+.vscode/*
+*.sublime-workspace
+*.sublime-project
+
+# macOS
+.DS_Store
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+
+# Outputs and generated reports (do not track generated files)
+output/
+data/*/outputs/
+output/**
+
+# Temporary Excel / docx / pdf outputs created by the app
+# (if you need to check in a canonical sample, add it explicitly)
+*.xlsx
+*.docx
+*.pdf
 __pycache__/
 *.py[cod]
 ~$*
