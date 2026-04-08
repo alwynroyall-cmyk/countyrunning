@@ -344,7 +344,8 @@ class RunnerClubEnquiryPanel(tk.Frame):
         tk.Label(club_search, text="Club:", bg="#f7f9fb").pack(side="left")
         self._club_var = tk.StringVar()
         self._club_combo = ttk.Combobox(club_search, textvariable=self._club_var)
-        self._club_combo.pack(side="left", padx=(8,8), fill="x", expand=True)
+        # don't expand to full width; keep combobox sized to content
+        self._club_combo.pack(side="left", padx=(8,8))
         self._club_combo.bind("<<ComboboxSelected>>", lambda e: self._on_club_selected())
 
         # Club content: left summary, right members
@@ -871,6 +872,12 @@ class RunnerClubEnquiryPanel(tk.Frame):
                 continue
             seen.add(key)
             cleaned.append(s)
+
+        # remove stray single-letter entries like 'A' or 'B' (not clubs)
+        try:
+            cleaned = [s for s in cleaned if not (len(s.strip()) == 1 and s.strip().upper() in ("A", "B"))]
+        except Exception:
+            pass
 
         self._club_combo["values"] = cleaned
         # set combobox width to fit the longest club name (small padding), capped to avoid excessive width
