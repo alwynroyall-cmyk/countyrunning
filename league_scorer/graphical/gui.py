@@ -571,6 +571,16 @@ class LeagueScorerApp(tk.Frame):
                 self._dirty_indicator.config(text="●", fg="red")
             else:
                 self._dirty_indicator.config(text="●", fg="green")
+            # Also update the run button colour to match freshness state so
+            # the prominent action reflects that data are dirty.
+            try:
+                if is_dirty:
+                    # Use amber to warn the user rather than disabling the button
+                    self._run_btn.config(bg=AMBER)
+                else:
+                    self._run_btn.config(bg=GREEN)
+            except Exception:
+                pass
         except Exception:
             # On error, show amber circle
             try:
