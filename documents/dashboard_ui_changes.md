@@ -10,4 +10,3 @@ Files changed:
 
 - `league_scorer/graphical/dashboard.py` — added pulsing behaviour, amber colours, and dynamic updates.
 - `league_scorer/graphical/gui.py` — header run button now turns amber when dirty.
-

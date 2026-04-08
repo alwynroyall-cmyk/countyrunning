@@ -190,6 +190,7 @@ Error handling is well-structured and materially improved in v6.1.0. The one rem
 ### `session_config.py` — SessionConfig Singleton
 
 Manages:
+
 - `year` (current season, e.g. 2025)
 - `data_root` (top-level data folder path)
 - Derived paths: `input_dir`, `output_dir`, `events_file`
@@ -242,6 +243,7 @@ If the directory naming convention ever changes (e.g. a flat layout), the fallba
 ### Scorer Panel (`gui.py`)
 
 The scorer panel is fully implemented:
+
 - Race file discovery from input directory
 - Scrollable checkbox selector with Select All / None
 - Background threading with animated progress bar
@@ -276,15 +278,17 @@ docx2pdf>=0.1.8
 
 1. **`docx2pdf>=0.1.8`** is listed as a hard requirement but is treated as optional at runtime (wrapped in `try/except ImportError`). On a system where `docx2pdf` cannot produce PDFs (e.g., no Microsoft Word installed), the install will still succeed but PDF output will silently be skipped. The `requirements.txt` could carry a comment noting the Word dependency, or the package could be moved to an `extras_require` section if a `pyproject.toml` is ever introduced.
 
-2. **Stale project structure comment.** `requirements.txt` contains a block comment listing the project file structure that still references the deleted `scorer.py`:
+1. **Stale project structure comment.** `requirements.txt` contains a block comment listing the project file structure that still references the deleted `scorer.py`:
+
 ```text
    # league_scorer/scorer.py
 ```
-   This should be removed.
 
-3. **No version upper bounds.** This is generally acceptable for a single-user application with a managed venv, but `pandas` in particular has had breaking API changes between major versions. Pinning a tested range (e.g. `pandas>=1.5.0,<3.0`) would improve reproducibility.
+This should be removed.
 
-4. **No `tkinter` or `threading` listed.** Both are stdlib modules, so no entry is needed — this is correct.
+1. **No version upper bounds.** This is generally acceptable for a single-user application with a managed venv, but `pandas` in particular has had breaking API changes between major versions. Pinning a tested range (e.g. `pandas>=1.5.0,<3.0`) would improve reproducibility.
+
+1. **No `tkinter` or `threading` listed.** Both are stdlib modules, so no entry is needed — this is correct.
 
 ---
 
@@ -367,17 +371,19 @@ A suite of ~30 unit tests for the above would provide meaningful regression cove
 The application is currently **Windows-only by design** (the target environment is a Windows desktop). The following items would need addressing before cross-platform use:
 
 1. **`timeline_generator.py` — hardcoded Windows font paths:**
+
 ```text
 "C:/Windows/Fonts/segoeuib.ttf"
 "C:/Windows/Fonts/segoeui.ttf"
 ```
-   A fallback to the Pillow default bitmap font is in place, so the generator does not crash on non-Windows, but the rendered timeline will use a lower-quality font. If portability is ever needed, use `matplotlib` font resolution or bundle a TTF.
 
-2. **GUI font `"Segoe UI"`** is used throughout `dashboard.py` and `gui.py`. This font is Windows-only. On macOS/Linux tkinter will silently substitute a system font; visual fidelity will degrade but no crash will occur.
+A fallback to the Pillow default bitmap font is in place, so the generator does not crash on non-Windows, but the rendered timeline will use a lower-quality font. If portability is ever needed, use `matplotlib` font resolution or bundle a TTF.
 
-3. **`docx2pdf`** requires Microsoft Word to be installed on the host machine. This is an inherent Windows/macOS constraint. The try/except wrapper handles missing installation gracefully.
+1. **GUI font `"Segoe UI"`** is used throughout `dashboard.py` and `gui.py`. This font is Windows-only. On macOS/Linux tkinter will silently substitute a system font; visual fidelity will degrade but no crash will occur.
 
-4. **No POSIX path issues.** All path handling uses `pathlib.Path` throughout. No raw string path literals with backslashes were found.
+1. **`docx2pdf`** requires Microsoft Word to be installed on the host machine. This is an inherent Windows/macOS constraint. The try/except wrapper handles missing installation gracefully.
+
+1. **No POSIX path issues.** All path handling uses `pathlib.Path` throughout. No raw string path literals with backslashes were found.
 
 ---
 
@@ -418,25 +424,25 @@ The application is currently **Windows-only by design** (the target environment 
 ### Update (April 2026 — v6.1.0)
 
 1. ✅ Shared import/manual workflows now centralised (`graphical/import_helpers.py`) and used by both scorer and dashboard flows.
-2. ✅ Workbook lifecycle handling hardened in manual edit paths (`name_lookup.py`, `club_match_dialog.py`, `club_editor.py`).
-3. ✅ Version text is centralised through `league_scorer.__version__` and reused in report/dashboard output.
-4. ✅ `requirements.txt` stale structure block removed.
-5. ✅ Race discovery and results-workbook lookup logic are now shared helpers.
-6. ✅ Repository hygiene: `.gitignore` in place; output artefacts untracked from git.
-7. ✅ Cross-platform portability: `os.startfile` replaced with `sys.platform` dispatch; font paths are platform-specific.
-8. ✅ Resource leaks: all `pd.ExcelFile` instances wrapped in `with` context managers.
-9. ✅ UI responsiveness: `_scan_all_races`, `_apply_selected`, `_load_selected_diff` all offloaded to daemon threads.
-10. ⚠️ Automated tests exist, but high-value regression depth is still the largest outstanding quality gap.
+1. ✅ Workbook lifecycle handling hardened in manual edit paths (`name_lookup.py`, `club_match_dialog.py`, `club_editor.py`).
+1. ✅ Version text is centralised through `league_scorer.__version__` and reused in report/dashboard output.
+1. ✅ `requirements.txt` stale structure block removed.
+1. ✅ Race discovery and results-workbook lookup logic are now shared helpers.
+1. ✅ Repository hygiene: `.gitignore` in place; output artefacts untracked from git.
+1. ✅ Cross-platform portability: `os.startfile` replaced with `sys.platform` dispatch; font paths are platform-specific.
+1. ✅ Resource leaks: all `pd.ExcelFile` instances wrapped in `with` context managers.
+1. ✅ UI responsiveness: `_scan_all_races`, `_apply_selected`, `_load_selected_diff` all offloaded to daemon threads.
+1. ⚠️ Automated tests exist, but high-value regression depth is still the largest outstanding quality gap.
 
 ### Immediate (before next season)
 
 1. **Surface PDF failure prominently** — when `docx2pdf` conversion fails or is unavailable, log a `WARNING` that is conspicuous in the GUI log (currently the failure is silently swallowed).
 
-2. **Add a `constants.py` module** (or extend `session_config.py`) centralising all season rules: `BEST_N`, `MAX_RACES`, `TEAM_SIZE`, `MAX_DIV_PTS`, `SEASON_FINAL_RACE`. Import from there in all consuming modules.
+1. **Add a `constants.py` module** (or extend `session_config.py`) centralising all season rules: `BEST_N`, `MAX_RACES`, `TEAM_SIZE`, `MAX_DIV_PTS`, `SEASON_FINAL_RACE`. Import from there in all consuming modules.
 
 ### Ongoing
 
-3. **Write a focused test suite.** Start with `pytest` and target scoring-rule edge cases. Even 30 well-chosen unit tests would substantially reduce the risk of a silent scoring regression.
+1. **Write a focused test suite.** Start with `pytest` and target scoring-rule edge cases. Even 30 well-chosen unit tests would substantially reduce the risk of a silent scoring regression.
 
 ---
 

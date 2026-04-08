@@ -6,8 +6,8 @@ This document describes the application's call structure, entry points, and a de
 
 ## Entry points
 
-- [__main__.py](__main__.py): CLI entry that typically dispatches to `league_scorer/main.py` for batch runs.
-- [run_gui.py](run_gui.py): GUI launcher that initializes the graphical interface in `league_scorer/graphical/gui.py`.
+- [__main__.py](../__main__.py): CLI entry that typically dispatches to `league_scorer/main.py` for batch runs.
+- [run_gui.py](../run_gui.py): GUI launcher that initializes the graphical interface in `league_scorer/graphical/gui.py`.
 - `scripts/` (e.g., `scripts/run_full_autopilot.py`): specialized automation scripts that call core modules directly.
 
 ## High-level flow
