@@ -1,26 +1,24 @@
 WRRL League AI
 ===============
 
-Release: 7.0.0
+Release: 8.0.1
 
 Overview
 --------
 WRRL League AI is a desktop scoring and audit workflow for Wiltshire Road Running League seasons.
 It supports race ingestion, audit cleansing, issue review, scoring, staged checks, and report output.
 
-Key Changes In 7.0.0
+Key Changes In 8.0.1
 --------------------
-- Structured season input folders under inputs/:
-	- raw_data
-	- series
-	- control
-	- audited
-	- raw_data_archive
-- Structured season output folders under outputs/ (publish/audit/quality/autopilot).
-- Autopilot now rebuilds audited files from raw_data and enforces provenance.
-- Autopilot now archives raw files to raw_data_archive (write-once by filename).
-- Settings panel includes Set Up New Season.
-- Autopilot completion dialog is more user-friendly and includes Review Messages.
+- Club report generation is now supported as DOCX output for all clubs.
+- Simplified publish output layout:
+	- outputs/publish/docx/
+	- outputs/publish/pdf/
+	- outputs/publish/standings/
+	- outputs/publish/review-packs/
+- Audit and quality execution artifacts remain under outputs/audit/ and outputs/quality/.
+- Legacy publish/xlsx layout is now migrated into the new publish structure.
+- Autopilot now uses a cleaner completion flow when club reports are generated after final publish.
 
 Run
 ---
