@@ -12,11 +12,11 @@ from ..output_layout import build_output_paths
 
 
 def find_latest_results_workbook(output_dir: Path | None) -> Path | None:
-    """Return latest standings workbook from outputs/publish/xlsx/standings."""
+    """Return latest standings workbook from outputs/publish/standings."""
     if not output_dir or not output_dir.exists():
         return None
 
-    standings_dir = build_output_paths(output_dir).publish_xlsx_standings_dir
+    standings_dir = build_output_paths(output_dir).publish_standings_dir
     if not standings_dir.exists():
         return None
 

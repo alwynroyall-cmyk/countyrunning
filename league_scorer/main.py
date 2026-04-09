@@ -277,17 +277,17 @@ class LeagueScorer:
             race_files=self.selected_race_files,
             all_unrec_clubs=self.all_unrec_clubs,
             race_issues=self.all_race_issues,
-            filepath=output_paths.publish_xlsx_standings_dir / standings_filename(highest, self.year),
+            filepath=output_paths.publish_standings_dir / standings_filename(highest, self.year),
         )
 
         write_category_mismatch_todo(
             all_race_runners=self.all_race_runners,
-            filepath=output_paths.publish_xlsx_review_packs_dir / category_review_filename(highest, self.year),
+            filepath=output_paths.publish_review_packs_dir / category_review_filename(highest, self.year),
         )
 
         write_time_qry_todo(
             all_race_runners=self.all_race_runners,
-            filepath=output_paths.publish_xlsx_review_packs_dir / time_query_review_filename(highest, self.year),
+            filepath=output_paths.publish_review_packs_dir / time_query_review_filename(highest, self.year),
         )
 
         images_dir = Path(__file__).parent / "images"

@@ -162,7 +162,7 @@ def main() -> int:
 
     print("PROGRESS:STAGE:3:Writing provisional summary", flush=True)
     results_workbook = None
-    publish_dir = build_output_paths(output_dir).publish_xlsx_standings_dir
+    publish_dir = build_output_paths(output_dir).publish_standings_dir
     if publish_dir.exists():
         candidates = sorted(publish_dir.glob("*.xlsx"), key=lambda item: item.stat().st_mtime, reverse=True)
         if candidates:

@@ -221,7 +221,7 @@ class ResultsViewerPanel(tk.Frame):
         results_path = self._find_results_workbook()
         self._current_results_path = results_path
         if results_path is None:
-            self._show_message("No standings workbook found in outputs/publish/xlsx/standings.")
+            self._show_message("No standings workbook found in outputs/publish/standings.")
             return
         xl = self._get_xl(results_path)
         if xl is None:

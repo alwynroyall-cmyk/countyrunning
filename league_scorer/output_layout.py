@@ -16,8 +16,8 @@ class OutputPaths:
     publish_docx_league_updates_dir: Path
     publish_pdf_race_cards_dir: Path
     publish_pdf_league_updates_dir: Path
-    publish_xlsx_standings_dir: Path
-    publish_xlsx_review_packs_dir: Path
+    publish_standings_dir: Path
+    publish_review_packs_dir: Path
     audit_workbooks_dir: Path
     audit_manual_changes_dir: Path
     quality_data_dir: Path
@@ -46,8 +46,8 @@ def build_output_paths(output_dir: Path) -> OutputPaths:
         publish_docx_league_updates_dir=publish_dir / "docx" / "league-updates",
         publish_pdf_race_cards_dir=publish_dir / "pdf" / "race-cards",
         publish_pdf_league_updates_dir=publish_dir / "pdf" / "league-updates",
-        publish_xlsx_standings_dir=publish_dir / "xlsx" / "standings",
-        publish_xlsx_review_packs_dir=publish_dir / "xlsx" / "review-packs",
+        publish_standings_dir=publish_dir / "standings",
+        publish_review_packs_dir=publish_dir / "review-packs",
         audit_workbooks_dir=audit_dir / "workbooks",
         audit_manual_changes_dir=audit_dir / "manual-changes",
         quality_data_dir=quality_dir / "data-quality",
@@ -66,8 +66,8 @@ def ensure_output_subdirs(output_dir: Path) -> OutputPaths:
     paths.publish_docx_league_updates_dir.mkdir(parents=True, exist_ok=True)
     paths.publish_pdf_race_cards_dir.mkdir(parents=True, exist_ok=True)
     paths.publish_pdf_league_updates_dir.mkdir(parents=True, exist_ok=True)
-    paths.publish_xlsx_standings_dir.mkdir(parents=True, exist_ok=True)
-    paths.publish_xlsx_review_packs_dir.mkdir(parents=True, exist_ok=True)
+    paths.publish_standings_dir.mkdir(parents=True, exist_ok=True)
+    paths.publish_review_packs_dir.mkdir(parents=True, exist_ok=True)
     paths.audit_workbooks_dir.mkdir(parents=True, exist_ok=True)
     paths.audit_manual_changes_dir.mkdir(parents=True, exist_ok=True)
     paths.quality_data_dir.mkdir(parents=True, exist_ok=True)
@@ -120,6 +120,13 @@ def sort_existing_output_files(output_dir: Path) -> OutputSortResult:
     moved_count += _move_tree_contents(paths.output_dir / "staged-checks", paths.quality_staged_checks_dir, moved_files)
     moved_count += _move_tree_contents(paths.output_dir / "data-quality", paths.quality_data_dir, moved_files)
 
+    # Lift legacy publish/xlsx folders into the new publish layout.
+    legacy_publish_xlsx = paths.publish_dir / "xlsx"
+    moved_count += _move_tree_contents(legacy_publish_xlsx / "standings", paths.publish_standings_dir, moved_files)
+    moved_count += _move_tree_contents(legacy_publish_xlsx / "review-packs", paths.publish_review_packs_dir, moved_files)
+    if legacy_publish_xlsx.exists() and legacy_publish_xlsx.is_dir() and not any(legacy_publish_xlsx.iterdir()):
+        legacy_publish_xlsx.rmdir()
+
     return OutputSortResult(moved_count=moved_count, skipped_count=skipped_count, moved_files=moved_files)
 
 
@@ -158,9 +165,9 @@ def _destination_for_output_file(file_path: Path, paths: OutputPaths) -> Path | 
 
     if suffix == ".xlsx":
         if "results" in name or "season standings" in name:
-            return paths.publish_xlsx_standings_dir
+            return paths.publish_standings_dir
         if "category" in name or "time qry" in name or "time query" in name:
-            return paths.publish_xlsx_review_packs_dir
+            return paths.publish_review_packs_dir
         if "audit" in name:
             return paths.audit_workbooks_dir
         return None

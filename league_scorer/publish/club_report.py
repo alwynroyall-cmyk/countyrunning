@@ -15,9 +15,11 @@ import logging
 
 from PIL import Image, ImageDraw, ImageFont
 from docx import Document
+from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
-from docx.shared import Inches, Pt
+from docx.shared import Cm, Inches, Pt
 
 from league_scorer.main import LeagueScorer
 from league_scorer.season_aggregation import build_individual_season, build_team_season
@@ -25,11 +27,13 @@ from scripts.run_full_autopilot import _resolve_data_root, _season_paths
 from league_scorer.output_layout import build_output_paths
 from league_scorer.report_writer import (
     _apply_document_font_defaults,
-    _build_cover_header,
     _section_heading,
     _sub_heading,
     _cell_text,
     _build_footer,
+    _set_cell_bg,
+    _NAVY_HEX,
+    _WHITE_RGB,
 )
 
 log = logging.getLogger(__name__)
@@ -79,6 +83,43 @@ def _team_average_breakdown(a_rec, b_rec) -> tuple[str, str]:
     a_text = f"Team A average scores: Male {a_male_avg:.1f}, Female {a_female_avg:.1f}"
     b_text = f"Team B average scores: Male {b_male_avg:.1f}, Female {b_female_avg:.1f}"
     return a_text, b_text
+
+
+def _build_club_header(doc: Document, year: int, club: str, images_dir: Path | None) -> None:
+    tbl = doc.add_table(rows=1, cols=2)
+    logo_cell = tbl.rows[0].cells[0]
+    title_cell = tbl.rows[0].cells[1]
+    logo_cell.width = Cm(3.0)
+    title_cell.width = Cm(15.0)
+
+    _set_cell_bg(logo_cell, _NAVY_HEX)
+    _set_cell_bg(title_cell, _NAVY_HEX)
+
+    shield_path = (images_dir / "WRRL shield concept.png") if images_dir else None
+    if shield_path and shield_path.exists():
+        p = logo_cell.paragraphs[0]
+        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        run = p.add_run()
+        run.add_picture(str(shield_path), width=Cm(2.8))
+
+    title_cell.paragraphs[0].clear()
+    p1 = title_cell.paragraphs[0]
+    p1.alignment = WD_ALIGN_PARAGRAPH.LEFT
+    p1.paragraph_format.left_indent = Cm(0.4)
+    p1.paragraph_format.space_before = Pt(8)
+    r1 = p1.add_run(f"WRRL | Season Summary {year}")
+    r1.bold = True
+    r1.font.size = Pt(20)
+    r1.font.color.rgb = _WHITE_RGB
+
+    p2 = title_cell.add_paragraph()
+    p2.paragraph_format.left_indent = Cm(0.4)
+    r2 = p2.add_run(club.upper())
+    r2.bold = True
+    r2.font.size = Pt(18)
+    r2.font.color.rgb = _WHITE_RGB
+
+    # No lower subtitle line; header is intentionally minimal.
 
 
 def _best_single_race_performers(recs: list, top_n: int = 2) -> list[tuple[str, int, int]]:
@@ -242,13 +283,12 @@ def generate_club_reports(year: int, data_root: Path | None, report_dir: Path) -
     section.bottom_margin = Cm(1.5)
 
     images_dir = Path(__file__).parent.parent / "images"
-    _build_cover_header(doc, year=year, highest_race=highest, images_dir=images_dir)
 
     clubs = sorted(scorer.club_info.keys(), key=lambda s: s.lower())
     all_race_teams = scorer.all_race_teams
 
     for club in clubs:
-        _section_heading(doc, f"{club}")
+        _build_club_header(doc, year, club, images_dir)
 
         _sub_heading(doc, "Summary")
         tbl = doc.add_table(rows=0, cols=2)
