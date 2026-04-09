@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 import json
 import logging
+import traceback
 
 from PIL import Image, ImageDraw, ImageFont
 from docx import Document
@@ -21,11 +22,11 @@ from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Cm, Inches, Pt
 
-from league_scorer.main import LeagueScorer
-from league_scorer.season_aggregation import build_individual_season, build_team_season
-from scripts.run_full_autopilot import _resolve_data_root, _season_paths
-from league_scorer.output_layout import build_output_paths
-from league_scorer.report_writer import (
+from league_scorer.process.main import LeagueScorer
+from league_scorer.process.season_aggregation import build_individual_season, build_team_season
+from scripts.autopilot.run_full_autopilot import _resolve_data_root, _season_paths
+from league_scorer.output.output_layout import build_output_paths
+from league_scorer.output.report_writer import (
     _apply_document_font_defaults,
     _section_heading,
     _sub_heading,
@@ -259,8 +260,19 @@ def generate_club_reports(year: int, data_root: Path | None, report_dir: Path) -
 
     input_dir, output_dir = _season_paths(data_root_resolved, year)
 
-    scorer = LeagueScorer(input_dir=input_dir, output_dir=output_dir, year=year)
-    warnings = scorer.run()
+    try:
+        scorer = LeagueScorer(input_dir=input_dir, output_dir=output_dir, year=year)
+        warnings = scorer.run()
+    except Exception as exc:
+        error_message = f"Club report generation failed: {exc}"
+        log.exception(error_message)
+        return _write_club_report_error(
+            report_dir=report_dir,
+            year=year,
+            data_root_resolved=str(data_root_resolved),
+            generated_at=generated_at,
+            error_message=error_message,
+        )
 
     male_recs, female_recs = build_individual_season(scorer.all_race_runners)
     div1_teams, div2_teams = build_team_season(scorer.all_race_teams, scorer.club_info)
@@ -426,7 +438,7 @@ def generate_club_reports(year: int, data_root: Path | None, report_dir: Path) -
                 for cell in row.cells:
                     _shade_cell(cell, "EFEFEF")
 
-        from league_scorer.report_writer import _page_break
+        from league_scorer.output.report_writer import _page_break
         _page_break(doc)
 
         _sub_heading(doc, "Profile Charts")
@@ -466,7 +478,7 @@ def generate_club_reports(year: int, data_root: Path | None, report_dir: Path) -
     _build_footer(doc, year, include_page_numbers=True)
 
     output_paths = build_output_paths(output_dir)
-    club_doc_dir = output_paths.publish_docx_league_updates_dir.parent / "club-reports"
+    club_doc_dir = output_paths.publish_docx_club_reports_dir
     club_doc_dir.mkdir(parents=True, exist_ok=True)
     docx_path = club_doc_dir / f"club_reports_{year}.docx"
     doc.save(str(docx_path))
@@ -491,6 +503,8 @@ def generate_club_reports(year: int, data_root: Path | None, report_dir: Path) -
         "data_root": str(data_root_resolved),
         "docx": str(docx_path),
         "warnings": warnings,
+        "success": True,
+        "error": None,
     }
     json_path = report_root / "club_reports.json"
     md_path = report_root / "club_reports.md"
@@ -502,4 +516,32 @@ Generated: %s
 See the DOCX output for full per-club details.
 """ % (generated_at,), encoding="utf-8")
 
+    try:
+        from league_scorer.output.output_layout import package_publish_artifacts
+        package_publish_artifacts(output_dir)
+    except Exception:
+        pass
+
     return 0
+
+
+def _write_club_report_error(report_dir: Path, year: int, data_root_resolved: str, generated_at: str, error_message: str) -> int:
+    report_root = Path(report_dir) / f"year-{year}"
+    report_root.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "generated_at": generated_at,
+        "year": year,
+        "data_root": data_root_resolved,
+        "docx": "",
+        "warnings": [],
+        "success": False,
+        "error": {"message": error_message},
+    }
+    json_path = report_root / "club_reports.json"
+    md_path = report_root / "club_reports.md"
+    json_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    md_path.write_text(
+        f"# Club Reports\n\nGenerated: {generated_at}\n\nError: {error_message}\n",
+        encoding="utf-8",
+    )
+    return 1

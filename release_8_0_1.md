@@ -10,6 +10,7 @@ This release updates the club reporting workflow, simplifies published output la
 - Updated club report headers to show `WRRL | Season Summary {year}` plus the club name.
 - Simplified published output structure to:
   - `outputs/publish/docx/`
+  - `outputs/publish/docx/club-reports/`
   - `outputs/publish/pdf/`
   - `outputs/publish/standings/`
   - `outputs/publish/review-packs/`

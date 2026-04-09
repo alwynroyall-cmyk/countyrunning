@@ -13,15 +13,21 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+import traceback
 
-from league_scorer.main import LeagueScorer
-from league_scorer.common_files import race_discovery_exclusions
-from league_scorer.input_layout import build_input_paths
-from league_scorer.output_layout import build_output_paths, ensure_output_subdirs, sort_existing_output_files
-from league_scorer.source_loader import discover_race_files
+from league_scorer.process.main import LeagueScorer
+from league_scorer.input.common_files import race_discovery_exclusions
+from league_scorer.input.input_layout import build_input_paths
+from league_scorer.output.output_layout import (
+    build_output_paths,
+    ensure_output_subdirs,
+    package_publish_artifacts,
+    sort_existing_output_files,
+)
+from league_scorer.input.source_loader import discover_race_files
 
 # Reuse helper functions from the scripts package
-from scripts.run_full_autopilot import _race_names_for_progress, _resolve_data_root, _season_paths
+from scripts.autopilot.run_full_autopilot import _race_names_for_progress, _resolve_data_root, _season_paths
 
 
 def _to_markdown(payload: dict[str, Any]) -> str:
@@ -114,62 +120,87 @@ def publish_results(year: int, data_root: Path | None, report_dir: Path) -> int:
         print(f"Wrote: {md_path}", flush=True)
         return 1
 
-    # Publish for GUI should *not* re-run the scorer — it should only
-    # ensure DOCX publish artefacts are converted to PDF. This routine
-    # scans the publish DOCX folders and converts any missing/stale PDFs.
-    print("PROGRESS:STAGE:2:Converting DOCX -> PDF", flush=True)
-
-    output_paths = build_output_paths(output_dir)
-
-    conversion_pairs = [
-        (output_paths.publish_docx_league_updates_dir, output_paths.publish_pdf_league_updates_dir),
-        (output_paths.publish_docx_race_cards_dir, output_paths.publish_pdf_race_cards_dir),
-    ]
-
-    converted = 0
-    skipped = 0
-    warnings: list[str] = []
-
-    # Ensure PDF conversion runs even if WRRL_DISABLE_PDF is set in the
-    # environment elsewhere — temporarily clear it for this conversion
-    # process and restore the previous value afterwards.
-    previous_disable_pdf = os.environ.get("WRRL_DISABLE_PDF")
-    if previous_disable_pdf is not None:
-        os.environ.pop("WRRL_DISABLE_PDF", None)
-
     try:
-        from docx2pdf import convert  # type: ignore
-    except Exception:
-        convert = None  # type: ignore
+        # Publish for GUI should *not* re-run the scorer — it should only
+        # ensure DOCX publish artefacts are converted to PDF. This routine
+        # scans the publish DOCX folders and converts any missing/stale PDFs.
+        print("PROGRESS:STAGE:2:Converting DOCX -> PDF", flush=True)
 
-    for docx_dir, pdf_dir in conversion_pairs:
+        output_paths = build_output_paths(output_dir)
+
+        conversion_pairs = [
+            (output_paths.publish_docx_league_updates_dir, output_paths.publish_pdf_league_updates_dir),
+            (output_paths.publish_docx_race_cards_dir, output_paths.publish_pdf_race_cards_dir),
+        ]
+
+        converted = 0
+        skipped = 0
+        warnings: list[str] = []
+
+        # Ensure PDF conversion runs even if WRRL_DISABLE_PDF is set in the
+        # environment elsewhere — temporarily clear it for this conversion
+        # process and restore the previous value afterwards.
+        previous_disable_pdf = os.environ.get("WRRL_DISABLE_PDF")
+        if previous_disable_pdf is not None:
+            os.environ.pop("WRRL_DISABLE_PDF", None)
+
         try:
-            if not docx_dir.exists():
-                continue
-            pdf_dir.mkdir(parents=True, exist_ok=True)
-            for docx in sorted(docx_dir.glob("*.docx")):
-                target_pdf = pdf_dir / docx.with_suffix(".pdf").name
-                try:
-                    # Skip conversion if PDF is up-to-date
-                    if target_pdf.exists() and target_pdf.stat().st_mtime >= docx.stat().st_mtime:
-                        skipped += 1
-                        continue
-                    if convert is None:
-                        warnings.append(f"docx2pdf not available: {docx.name}")
-                        continue
-                    convert(str(docx), str(target_pdf))
-                    converted += 1
-                except Exception as exc:
-                    warnings.append(f"{docx.name}: PDF conversion skipped ({exc})")
+            from docx2pdf import convert  # type: ignore
         except Exception:
-            # Non-fatal: continue to next folder
-            continue
+            convert = None  # type: ignore
 
-    # Restore env var state
-    if previous_disable_pdf is None:
-        os.environ.pop("WRRL_DISABLE_PDF", None)
-    else:
-        os.environ["WRRL_DISABLE_PDF"] = previous_disable_pdf
+        for docx_dir, pdf_dir in conversion_pairs:
+            try:
+                if not docx_dir.exists():
+                    continue
+                pdf_dir.mkdir(parents=True, exist_ok=True)
+                for docx in sorted(docx_dir.glob("*.docx")):
+                    target_pdf = pdf_dir / docx.with_suffix(".pdf").name
+                    try:
+                        # Skip conversion if PDF is up-to-date
+                        if target_pdf.exists() and target_pdf.stat().st_mtime >= docx.stat().st_mtime:
+                            skipped += 1
+                            continue
+                        if convert is None:
+                            warnings.append(f"docx2pdf not available: {docx.name}")
+                            continue
+                        convert(str(docx), str(target_pdf))
+                        converted += 1
+                    except Exception as exc:
+                        warnings.append(f"{docx.name}: PDF conversion skipped ({exc})")
+            except Exception:
+                # Non-fatal: continue to next folder
+                continue
+        if previous_disable_pdf is None:
+            os.environ.pop("WRRL_DISABLE_PDF", None)
+        else:
+            os.environ["WRRL_DISABLE_PDF"] = previous_disable_pdf
+    except Exception as exc:
+        error_message = f"Publish failed: {exc}"
+        tb = traceback.format_exc()
+        print(error_message, flush=True)
+        print(tb, flush=True)
+        payload = {
+            "generated_at": generated_at,
+            "success": False,
+            "settings": {
+                "year": year,
+                "data_root": str(data_root_resolved),
+                "input_dir": str(input_dir),
+                "output_dir": str(output_dir),
+            },
+            "summary": {
+                "audited_race_count": len(race_files),
+                "results_workbook": "",
+                "warning_count": 0,
+                "warnings": [],
+            },
+            "error": {"message": error_message, "traceback": tb},
+        }
+        json_path, md_path = _write_report(report_dir, year, payload)
+        print(f"Wrote: {json_path}", flush=True)
+        print(f"Wrote: {md_path}", flush=True)
+        return 1
 
     payload = {
         "generated_at": generated_at,
@@ -190,6 +221,11 @@ def publish_results(year: int, data_root: Path | None, report_dir: Path) -> int:
         },
         "error": None,
     }
+
+    try:
+        package_publish_artifacts(output_dir)
+    except Exception as exc:
+        warnings.append(f"Publish package creation skipped: {exc}")
 
     json_path, md_path = _write_report(report_dir, year, payload)
     print("PROGRESS:STAGE_DONE:2", flush=True)
