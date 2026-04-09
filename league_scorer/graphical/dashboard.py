@@ -493,7 +493,13 @@ class LeagueScorerDashboard(tk.Tk):
             button_frame, "Run Autopilot", "Run audit, safe auto-fixes, and staged checks", self._on_run_autopilot, 0, 0, tone="primary"
         )
         self._create_action_button(
-            button_frame, "Publish Results", "Publish final results from audited files (includes PDF packs)", self._on_publish_results, 1, 0, tone="primary"
+            button_frame,
+            "Publish Results",
+            "Publish final results from audited files (includes PDF packs and Club Reports)",
+            self._on_publish_results,
+            1,
+            0,
+            tone="primary",
         )
         self._create_action_button(
             button_frame, "⬇ Fetch Results", "Download results from Race Roster into this season", self._on_import_raceroster, 2, 0, tone="primary"
@@ -1084,17 +1090,51 @@ class LeagueScorerDashboard(tk.Tk):
             if dlg.winfo_exists():
                 dlg.grab_release()
                 dlg.destroy()
-            review_path = self._resolve_publish_results_report_path()
-            self._show_workflow_result_dialog(
-                title="Publish Results Complete",
-                success=(code == 0),
-                review_path=review_path if review_path is not None and review_path.exists() else None,
-                success_headline="Final publish complete",
-                failure_headline="Final publish stopped",
-                success_body="Published final results from audited files, including PDF outputs.",
-                failure_body="The final publish did not finish cleanly.\nReview the summary for details before retrying.",
-                review_button_text="Review Summary",
-            )
+            if code != 0:
+                review_path = self._resolve_publish_results_report_path()
+                self._show_workflow_result_dialog(
+                    title="Publish Results Complete",
+                    success=False,
+                    review_path=review_path if review_path is not None and review_path.exists() else None,
+                    success_headline="Final publish complete",
+                    failure_headline="Final publish stopped",
+                    success_body="Published final results from audited files, including PDF outputs.",
+                    failure_body="The final publish did not finish cleanly.\nReview the summary for details before retrying.",
+                    review_button_text="Review Summary",
+                )
+
+            # If publish succeeded, run club reporting as a follow-up task.
+            if code == 0:
+                try:
+                    # Prepare progress dialog for club reports
+                    club_dlg = _AutopilotProgressDialog(
+                        self,
+                        year=session_config.year,
+                        window_title="Club Reports",
+                        header_text="WRRL Club Reports",
+                        stage_labels=["Generate Club Reports", "Write Summary"],
+                        initial_status="Initialising club reports...",
+                    )
+
+                    def _show_club_result(code2: int, stdout2: str, stderr2: str) -> None:
+                        if club_dlg.winfo_exists():
+                            club_dlg.grab_release()
+                            club_dlg.destroy()
+                        if code2 == 0:
+                            messagebox.showinfo("Club Reports Complete", "Club reports generated successfully.", parent=self)
+                        else:
+                            messagebox.showwarning("Club Reports", "Club reports did not complete successfully.", parent=self)
+
+                    self._run_workflow(
+                        script_name="run_publish_club_reports.py",
+                        dlg=club_dlg,
+                        extra_cmd_args=[],
+                        error_title="Club Reports Failed",
+                        show_result_fn=_show_club_result,
+                    )
+                except Exception:
+                    # Non-fatal: ignore and continue
+                    pass
 
         self._run_workflow(
             script_name="run_publish_results.py",
