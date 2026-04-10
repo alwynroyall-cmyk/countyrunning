@@ -177,7 +177,7 @@ def load_events(path: Path | str) -> EventsSchedule:
                 val = row[col_index[attr]]
                 if val is None:
                     return ""
-                if isinstance(val, datetime.datetime):
+                if isinstance(val, (datetime.datetime, datetime.date)):
                     return f"{val.day} {val.strftime('%b %Y')}"
                 if isinstance(val, (int, float)):
                     # Keep numerics as plain numbers (no currency prefix).

@@ -77,11 +77,12 @@ def _find_raw_dir(input_dir: Path) -> Path | None:
 
 def _discover_raw_race_files(raw_dir: Path) -> dict[int, list[Path]]:
     by_race: dict[int, list[Path]] = {}
-    for file in sorted(raw_dir.rglob("*.xlsx")):
-        race_num = extract_race_number(file.stem)
-        if race_num is None:
-            continue
-        by_race.setdefault(race_num, []).append(file)
+    for pattern in ("*.xlsx", "*.xlsm", "*.xls", "*.csv"):
+        for file in sorted(raw_dir.rglob(pattern)):
+            race_num = extract_race_number(file.stem)
+            if race_num is None:
+                continue
+            by_race.setdefault(race_num, []).append(file)
     return by_race
 
 

@@ -1,5 +1,6 @@
+import importlib
+team_scoring = importlib.import_module("league_scorer.team_scoring")
 from league_scorer.models import ClubInfo, RunnerRaceEntry
-from league_scorer.team_scoring import build_team_scores
 
 
 def _runner(name: str, gender: str, points: int) -> RunnerRaceEntry:
@@ -19,9 +20,8 @@ def _runner(name: str, gender: str, points: int) -> RunnerRaceEntry:
 
 
 def test_build_team_scores_uses_settings(monkeypatch):
-    from league_scorer import team_scoring
-
-    monkeypatch.setattr(team_scoring.settings, "get", lambda key: {"TEAM_SIZE": 2, "MAX_DIV_PTS": 20}[key])
+    monkeypatch.setattr(team_scoring, "get_team_size", lambda: 2)
+    monkeypatch.setattr(team_scoring, "get_max_div_pts", lambda: 20)
 
     club_info = {"Club A": ClubInfo(preferred_name="Club A", div_a=1, div_b=2)}
     runners = [
@@ -33,7 +33,7 @@ def test_build_team_scores_uses_settings(monkeypatch):
         _runner("F3", "F", 95),
     ]
 
-    teams, updated = build_team_scores(runners, club_info, race_number=1)
+    teams, updated = team_scoring.build_team_scores(runners, club_info, race_number=1)
 
     assert len(teams) == 2
     a_team = next(t for t in teams if t.team_id == "A")

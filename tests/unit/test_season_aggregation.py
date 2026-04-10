@@ -1,5 +1,6 @@
+import importlib
+season_aggregation = importlib.import_module("league_scorer.season_aggregation")
 from league_scorer.models import RunnerRaceEntry, TeamRaceResult, ClubInfo
-from league_scorer.season_aggregation import build_individual_season, build_team_season
 
 
 def _runner(name: str, gender: str, race: int, points: int):
@@ -19,9 +20,7 @@ def _runner(name: str, gender: str, race: int, points: int):
 
 
 def test_build_individual_season_uses_best_n(monkeypatch):
-    from league_scorer import season_aggregation
-
-    monkeypatch.setattr(season_aggregation.settings, "get", lambda key: 2 if key == "BEST_N" else None)
+    monkeypatch.setattr(season_aggregation, "get_best_n", lambda: 2)
 
     all_races = {
         1: [_runner("Alex", "M", 1, 100)],
@@ -29,16 +28,14 @@ def test_build_individual_season_uses_best_n(monkeypatch):
         3: [_runner("Alex", "M", 3, 80)],
     }
 
-    male, female = build_individual_season(all_races)
+    male, female = season_aggregation.build_individual_season(all_races)
     assert len(female) == 0
     assert male[0].name == "Alex"
     assert male[0].total_points == 190
 
 
 def test_build_team_season_uses_best_n(monkeypatch):
-    from league_scorer import season_aggregation
-
-    monkeypatch.setattr(season_aggregation.settings, "get", lambda key: 2 if key == "BEST_N" else None)
+    monkeypatch.setattr(season_aggregation, "get_best_n", lambda: 2)
 
     club_info = {"Club A": ClubInfo(preferred_name="Club A", div_a=1, div_b=2)}
     all_teams = {
@@ -47,6 +44,6 @@ def test_build_team_season_uses_best_n(monkeypatch):
         3: [TeamRaceResult("Club A", "A", 1, 3, team_points=10, team_score=100)],
     }
 
-    div1, div2 = build_team_season(all_teams, club_info)
+    div1, div2 = season_aggregation.build_team_season(all_teams, club_info)
     assert len(div2) == 1
     assert div1[0].total_points == 38

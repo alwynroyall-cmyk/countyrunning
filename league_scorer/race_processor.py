@@ -75,173 +75,25 @@ def process_race_file(
 
     for idx, row in df.iterrows():
         row_num = idx + 2  # 1-based with header
-
-        # ── Name ──
-        name_raw = row.get(col_map["Name"])
-        name_s = "" if name_raw is None else str(name_raw).strip()
-        if not name_s or name_s.lower() == "nan":
-            missing_time_seconds = parse_time_to_seconds(row.get(time_col))
-            if missing_time_seconds is not None:
-                raw_gender = row.get(col_map["Gender"])
-                raw_gender_text = "" if raw_gender is None else str(raw_gender).strip()
-                raw_club_val = row.get(col_map["Club"])
-                raw_club_text = "" if raw_club_val is None else str(raw_club_val).strip()
-                raw_cat_val = row.get(col_map["Category"])
-                raw_cat_text = "" if raw_cat_val is None else str(raw_cat_val).strip()
-                issue_notes.append(
-                    RaceIssue(
-                        "warning",
-                        "Missing runner name with valid time",
-                        row_num,
-                        "AUD-ROW-005",
-                        raw_club=raw_club_text,
-                        gender=raw_gender_text,
-                        raw_category=raw_cat_text,
-                        time_str=time_display(row.get(time_col)),
-                    )
-                )
-            skipped += 1
-            continue
-        name = name_s
-
-        # ── Club / eligibility ──
-        raw_club_val = row.get(col_map["Club"])
-        raw_club = "" if raw_club_val is None else str(raw_club_val).strip()
-        if raw_club.lower() == "nan":
-            raw_club = ""
-
-        preferred_club = raw_to_preferred.get(raw_club.lower()) if raw_club else None
-        eligible = preferred_club is not None
-
-        raw_gender_val = row.get(col_map["Gender"])
-        raw_cat_val = row.get(col_map["Category"])
-        raw_cat = (
-            ""
-            if (raw_cat_val is None or str(raw_cat_val).strip().lower() == "nan")
-            else str(raw_cat_val).strip()
+        runner = _parse_race_row(
+            row=row,
+            row_num=row_num,
+            race_number=race_number,
+            col_map=col_map,
+            time_col=time_col,
+            raw_to_preferred=raw_to_preferred,
+            cat_tracker=cat_tracker,
+            unrec_tracker=unrec_tracker,
+            issue_notes=issue_notes,
         )
-        raw_time_val = row.get(time_col)
-
-        if not eligible:
-            key = raw_club.lower()
-            display_name, count = unrec_tracker.get(key, (raw_club or "(blank)", 0))
-            unrec_tracker[key] = (display_name, count + 1)
-            if raw_club:
-                log.debug(
-                    "  Row %d (%s): unrecognised club '%s' — excluded",
-                    row_num, name, raw_club,
-                )
-
-            gender_display = "" if raw_gender_val is None else str(raw_gender_val).strip()
-            time_seconds = parse_time_to_seconds(raw_time_val)
-            disp_time = time_display(raw_time_val) if time_seconds is not None else (
-                "" if raw_time_val is None else str(raw_time_val).strip()
-            )
-
-            runners.append(
-                RunnerRaceEntry(
-                    name=name,
-                    raw_club=raw_club,
-                    preferred_club=None,
-                    gender=gender_display,
-                    raw_category=raw_cat,
-                    normalised_category=raw_cat,
-                    time_str=disp_time,
-                    time_seconds=time_seconds if time_seconds is not None else math.inf,
-                    race_number=race_number,
-                    eligible=False,
-                    source_row=row_num,
-                )
-            )
-            continue
-
-        # ── Gender ──
-        gender = normalise_gender(raw_gender_val)
-        if gender is None:
-            issue_notes.append(
-                RaceIssue(
-                    "warning",
-                    f"invalid gender '{raw_gender_val}'",
-                    row_num,
-                    "AUD-ROW-001",
-                    runner_name=name,
-                    raw_club=raw_club,
-                    raw_category=raw_cat,
-                )
-            )
-            log.warning(
-                "  Row %d (%s): invalid gender '%s' — row skipped",
-                row_num, name, raw_gender_val,
-            )
+        if runner is None:
             skipped += 1
             continue
-
-        # ── Time ──
-        time_seconds = parse_time_to_seconds(raw_time_val)
-        if time_seconds is None:
-            issue_notes.append(
-                RaceIssue(
-                    "warning",
-                    f"invalid time '{raw_time_val}'",
-                    row_num,
-                    "AUD-ROW-002",
-                    runner_name=name,
-                    raw_club=raw_club,
-                    gender=gender or "",
-                    raw_category=raw_cat,
-                )
-            )
-            log.warning(
-                "  Row %d (%s): invalid time '%s' — row skipped",
-                row_num, name, raw_time_val,
-            )
-            skipped += 1
-            continue
-        disp_time = time_display(raw_time_val)
-
-        # ── Category ──
-        norm_cat, cat_notes = normalise_category(raw_cat)
-        row_warnings: List[str] = []
-        if cat_notes:
-            issue_notes.append(
-                RaceIssue(
-                    "warning",
-                    cat_notes,
-                    row_num,
-                    "AUD-ROW-003" if raw_cat == "" else "AUD-ROW-004",
-                    runner_name=name,
-                    raw_club=raw_club,
-                    gender=gender,
-                    raw_category=raw_cat,
-                    time_str=disp_time,
-                )
-            )
-            row_warnings.append(cat_notes)
-
-        cat_key = raw_cat.lower()
-        _, _, cat_count = cat_tracker.get(cat_key, ("", "", 0))
-        cat_tracker[cat_key] = (norm_cat, cat_notes, cat_count + 1)
-
-        runners.append(
-            RunnerRaceEntry(
-                name=name,
-                raw_club=raw_club,
-                preferred_club=preferred_club,
-                gender=gender,
-                raw_category=raw_cat,
-                normalised_category=norm_cat,
-                time_str=disp_time,
-                time_seconds=time_seconds,
-                race_number=race_number,
-                eligible=eligible,
-                source_row=row_num,
-                warnings=row_warnings,
-            )
-        )
+        runners.append(runner)
 
     log.info("  Parsed %d runner rows (%d skipped)", len(runners), skipped)
 
-    # ── Deduplication ──
+    # ── Deduplication ───────────────────────────────────────────────────────
     runners = _deduplicate(runners, race_number, issue_notes)
 
     # ── Build report objects ──
@@ -261,6 +113,208 @@ def process_race_file(
     ]
 
     return runners, cat_records, unrec_clubs, issue_notes
+
+
+def _parse_race_row(
+    row,
+    row_num: int,
+    race_number: int,
+    col_map: Dict[str, str],
+    time_col: str,
+    raw_to_preferred: Dict[str, str],
+    cat_tracker: Dict[str, Tuple[str, str, int]],
+    unrec_tracker: Dict[str, Tuple[str, int]],
+    issue_notes: List[RaceIssue],
+) -> Optional[RunnerRaceEntry]:
+    name = _clean_text(row.get(col_map["Name"]))
+    if not name:
+        return _handle_blank_name_row(row, row_num, col_map, time_col, issue_notes)
+
+    raw_club = _clean_text(row.get(col_map["Club"]))
+    preferred_club = raw_to_preferred.get(raw_club.lower()) if raw_club else None
+    eligible = preferred_club is not None
+
+    raw_cat = _clean_text(row.get(col_map["Category"]))
+    raw_gender_val = row.get(col_map["Gender"])
+    raw_time_val = row.get(time_col)
+
+    if not eligible:
+        return _build_ineligible_runner(
+            name=name,
+            raw_club=raw_club,
+            raw_gender_val=raw_gender_val,
+            raw_cat=raw_cat,
+            raw_time_val=raw_time_val,
+            race_number=race_number,
+            row_num=row_num,
+            unrec_tracker=unrec_tracker,
+            issue_notes=issue_notes,
+        )
+
+    gender = normalise_gender(raw_gender_val)
+    if gender is None:
+        _add_row_issue(
+            issue_notes,
+            kind="warning",
+            message=f"invalid gender '{raw_gender_val}'",
+            row_num=row_num,
+            code="AUD-ROW-001",
+            runner_name=name,
+            raw_club=raw_club,
+            raw_category=raw_cat,
+        )
+        log.warning(
+            "  Row %d (%s): invalid gender '%s' — row skipped",
+            row_num, name, raw_gender_val,
+        )
+        return None
+
+    time_seconds = parse_time_to_seconds(raw_time_val)
+    if time_seconds is None:
+        _add_row_issue(
+            issue_notes,
+            kind="warning",
+            message=f"invalid time '{raw_time_val}'",
+            row_num=row_num,
+            code="AUD-ROW-002",
+            runner_name=name,
+            raw_club=raw_club,
+            gender=gender,
+            raw_category=raw_cat,
+        )
+        log.warning(
+            "  Row %d (%s): invalid time '%s' — row skipped",
+            row_num, name, raw_time_val,
+        )
+        return None
+
+    disp_time = time_display(raw_time_val)
+    norm_cat, cat_notes = normalise_category(raw_cat)
+    row_warnings: List[str] = []
+    if cat_notes:
+        _add_row_issue(
+            issue_notes,
+            kind="warning",
+            message=cat_notes,
+            row_num=row_num,
+            code="AUD-ROW-003" if raw_cat == "" else "AUD-ROW-004",
+            runner_name=name,
+            raw_club=raw_club,
+            gender=gender,
+            raw_category=raw_cat,
+            time_str=disp_time,
+        )
+        row_warnings.append(cat_notes)
+
+    _track_category(cat_tracker, raw_cat, norm_cat, cat_notes)
+    return RunnerRaceEntry(
+        name=name,
+        raw_club=raw_club,
+        preferred_club=preferred_club,
+        gender=gender,
+        raw_category=raw_cat,
+        normalised_category=norm_cat,
+        time_str=disp_time,
+        time_seconds=time_seconds,
+        race_number=race_number,
+        eligible=True,
+        source_row=row_num,
+        warnings=row_warnings,
+    )
+
+
+def _handle_blank_name_row(
+    row,
+    row_num: int,
+    col_map: Dict[str, str],
+    time_col: str,
+    issue_notes: List[RaceIssue],
+) -> Optional[RunnerRaceEntry]:
+    missing_time_seconds = parse_time_to_seconds(row.get(time_col))
+    if missing_time_seconds is not None:
+        _add_row_issue(
+            issue_notes,
+            kind="warning",
+            message="Missing runner name with valid time",
+            row_num=row_num,
+            code="AUD-ROW-005",
+            raw_club=_clean_text(row.get(col_map["Club"])),
+            gender=_clean_text(row.get(col_map["Gender"])),
+            raw_category=_clean_text(row.get(col_map["Category"])),
+            time_str=time_display(row.get(time_col)),
+        )
+    return None
+
+
+def _build_ineligible_runner(
+    name: str,
+    raw_club: str,
+    raw_gender_val,
+    raw_cat: str,
+    raw_time_val,
+    race_number: int,
+    row_num: int,
+    unrec_tracker: Dict[str, Tuple[str, int]],
+    issue_notes: List[RaceIssue],
+) -> RunnerRaceEntry:
+    key = raw_club.lower()
+    display_name, count = unrec_tracker.get(key, (raw_club or "(blank)", 0))
+    unrec_tracker[key] = (display_name, count + 1)
+    if raw_club:
+        log.debug(
+            "  Row %d (%s): unrecognised club '%s' — excluded",
+            row_num, name, raw_club,
+        )
+
+    gender_display = _clean_text(raw_gender_val)
+    time_seconds = parse_time_to_seconds(raw_time_val)
+    disp_time = (
+        time_display(raw_time_val)
+        if time_seconds is not None
+        else (_clean_text(raw_time_val) if raw_time_val is not None else "")
+    )
+    return RunnerRaceEntry(
+        name=name,
+        raw_club=raw_club,
+        preferred_club=None,
+        gender=gender_display,
+        raw_category=raw_cat,
+        normalised_category=raw_cat,
+        time_str=disp_time,
+        time_seconds=time_seconds if time_seconds is not None else math.inf,
+        race_number=race_number,
+        eligible=False,
+        source_row=row_num,
+    )
+
+
+def _track_category(
+    cat_tracker: Dict[str, Tuple[str, str, int]],
+    raw_cat: str,
+    norm_cat: str,
+    cat_notes: str,
+) -> None:
+    cat_key = raw_cat.lower()
+    _, _, cat_count = cat_tracker.get(cat_key, ("", "", 0))
+    cat_tracker[cat_key] = (norm_cat, cat_notes, cat_count + 1)
+
+
+def _add_row_issue(
+    issue_notes: List[RaceIssue],
+    kind: str,
+    message: str,
+    row_num: int,
+    code: str,
+    **kwargs,
+) -> None:
+    issue_notes.append(RaceIssue("warning", message, row_num, code, **kwargs))
+
+
+def _clean_text(value) -> str:
+    if value is None:
+        return ""
+    text = str(value).strip()
+    return "" if text.lower() == "nan" else text
 
 
 # ──────────────────────────────────────────────────────────── deduplication ──

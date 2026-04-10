@@ -253,12 +253,13 @@ def analyse_season(year: int, data_root: Path, output_dir: Path) -> tuple[dict[s
     raw_profiles: list[dict[str, Any]] = []
 
     if raw_dir and raw_dir.exists():
-        for raw_file in sorted(raw_dir.rglob("*.xlsx")):
-            try:
-                raw_df = load_race_dataframe(raw_file)
-                raw_profiles.append(_profile_dataframe(raw_df, raw_file))
-            except Exception:
-                continue
+        for pattern in ("*.xlsx", "*.xlsm", "*.xls", "*.csv"):
+            for raw_file in sorted(raw_dir.rglob(pattern)):
+                try:
+                    raw_df = load_race_dataframe(raw_file)
+                    raw_profiles.append(_profile_dataframe(raw_df, raw_file))
+                except Exception:
+                    continue
 
     audited_profiles: list[dict[str, Any]] = []
     audited_dir = build_input_paths(input_dir).audited_dir

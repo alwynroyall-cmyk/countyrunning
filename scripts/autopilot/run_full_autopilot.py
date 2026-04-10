@@ -25,24 +25,24 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from league_scorer.autopilot.audit import LeagueAuditor
-from league_scorer.autopilot.audit_cleanser import create_cleansed_race_file
-from league_scorer.autopilot.audit_data_service import ACTIONABLE_COLUMNS, load_actionable_issues
-from league_scorer.autopilot.archive_service import ensure_archived_in_inputs
-from league_scorer.input.club_loader import load_clubs
-from league_scorer.input.common_files import race_discovery_exclusions
+from league_scorer.audit import LeagueAuditor
+from league_scorer.audit_cleanser import create_cleansed_race_file
+from league_scorer.audit_data_service import ACTIONABLE_COLUMNS, load_actionable_issues
+from league_scorer.archive_service import ensure_archived_in_inputs
+from league_scorer.club_loader import load_clubs
+from league_scorer.common_files import race_discovery_exclusions
 from league_scorer.input.input_layout import build_input_paths, ensure_input_subdirs, sort_existing_input_files
 from league_scorer.output.output_layout import ensure_output_subdirs
-from league_scorer.autopilot.issue_resolution_service import (
+from league_scorer.issue_resolution_service import (
     apply_quick_fix_for_issue,
     quick_fix_requires_input,
     supports_quick_fix,
 )
-from league_scorer.process.race_processor import extract_race_number
+from league_scorer.race_processor import extract_race_number
 from league_scorer.input.source_loader import discover_race_files
 import shutil
-from scripts.autopilot import run_staged_checks as staged_checks
-from league_scorer.autopilot.series_consolidation import consolidate_series_files
+from scripts import run_staged_checks as staged_checks
+from league_scorer.series_consolidation import consolidate_series_files
 import re
 
 

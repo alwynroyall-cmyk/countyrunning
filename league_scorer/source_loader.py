@@ -31,13 +31,13 @@ _HEADER_TOKENS = {
 def discover_race_files(input_dir: Path, excluded_names: Iterable[str] = ()) -> Dict[int, Path]:
     """Return discovered race files keyed by race number.
 
-    Preference order is .xlsx, .xlsm, then .xls so existing cleaned workbooks
+    Preference order is .xlsx, .xlsm, .xls, then .csv so existing cleaned workbooks
     continue to win when both a raw and cleaned copy are present.
     """
     excluded = {name.lower() for name in excluded_names}
     found: Dict[int, tuple[int, Path]] = {}
 
-    for rank, pattern in enumerate(("*.xlsx", "*.xlsm", "*.xls")):
+    for rank, pattern in enumerate(("*.xlsx", "*.xlsm", "*.xls", "*.csv")):
         for filepath in sorted(input_dir.glob(pattern)):
             if filepath.name.lower() in excluded:
                 continue
@@ -72,14 +72,19 @@ def discover_race_files(input_dir: Path, excluded_names: Iterable[str] = ()) -> 
 
 
 def load_race_dataframe(filepath: Path) -> pd.DataFrame:
-    """Load a race file from native Excel or HTML-table disguised as .xls."""
+    """Load a race file from Excel, CSV, or HTML-table disguised as .xls."""
+    suffix = filepath.suffix.lower()
     errors = []
 
+    if suffix == ".csv":
+        return _normalise_loaded_dataframe(pd.read_csv(filepath, dtype=str))
+
+    engine = "openpyxl" if suffix in {".xlsx", ".xlsm"} else "xlrd"
     try:
-        df = pd.read_excel(filepath, engine="openpyxl")
+        df = pd.read_excel(filepath, engine=engine)
         return _normalise_loaded_dataframe(df)
     except Exception as exc:
-        errors.append(f"openpyxl: {exc}")
+        errors.append(f"{engine}: {exc}")
 
     if not _looks_like_html_table(filepath):
         raise ValueError("; ".join(errors))
@@ -124,7 +129,8 @@ def _should_promote_first_row(df: pd.DataFrame) -> bool:
         for value in df.iloc[0].tolist()
         if str(value).strip() and str(value).strip().lower() != "nan"
     }
-    return len(header_values & _HEADER_TOKENS) >= 4
+    header_matches = header_values & _HEADER_TOKENS
+    return len(header_matches) >= 2
 
 
 def _looks_like_html_table(filepath: Path) -> bool:

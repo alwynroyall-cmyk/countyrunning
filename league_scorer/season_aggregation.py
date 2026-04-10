@@ -21,7 +21,6 @@ from .models import (
 log = logging.getLogger(__name__)
 
 from .rules import get_best_n
-from league_scorer.config.settings import settings
 
 
 # ───────────────────────────────────────────────────────────── individuals ───
@@ -34,7 +33,24 @@ def build_individual_season(
     Returns (male_records, female_records), each sorted by position.
     Category is fixed at the runner's first appearance.
     """
-    # (lower_name, preferred_club) → RunnerSeasonRecord
+    season_map = _build_runner_season_map(all_race_runners)
+    best_n = get_best_n()
+    _compute_runner_totals(season_map, best_n)
+
+    male, female = _split_runner_records_by_gender(season_map)
+    _rank_runners(male)
+    _rank_runners(female)
+
+    log.info(
+        "Individual season: %d male, %d female runners",
+        len(male), len(female),
+    )
+    return male, female
+
+
+def _build_runner_season_map(
+    all_race_runners: Dict[int, List[RunnerRaceEntry]],
+) -> Dict[Tuple[str, str], RunnerSeasonRecord]:
     season_map: Dict[Tuple[str, str], RunnerSeasonRecord] = {}
 
     for race_num in sorted(all_race_runners):
@@ -43,36 +59,36 @@ def build_individual_season(
                 continue
 
             key = (r.name.lower(), r.preferred_club)
-
             if key not in season_map:
                 season_map[key] = RunnerSeasonRecord(
                     name=r.name,
                     preferred_club=r.preferred_club,
                     gender=r.gender,
-                    category=r.normalised_category,  # fixed at first appearance
+                    category=r.normalised_category,
                 )
 
-            rec = season_map[key]
-            rec.race_times[race_num] = r.time_str
-            rec.race_points[race_num] = r.points
+            record = season_map[key]
+            record.race_times[race_num] = r.time_str
+            record.race_points[race_num] = r.points
 
-    # Compute season totals
-    best_n = get_best_n()
+    return season_map
+
+
+def _compute_runner_totals(
+    season_map: Dict[Tuple[str, str], RunnerSeasonRecord],
+    best_n: int,
+) -> None:
     for rec in season_map.values():
         sorted_scores = sorted(rec.race_points.values(), reverse=True)
         rec.total_points = sum(sorted_scores[:best_n])
         rec.races_completed = len(sorted_scores)
 
+
+def _split_runner_records_by_gender(
+    season_map: Dict[Tuple[str, str], RunnerSeasonRecord],
+) -> Tuple[List[RunnerSeasonRecord], List[RunnerSeasonRecord]]:
     male = [r for r in season_map.values() if r.gender == "M"]
     female = [r for r in season_map.values() if r.gender == "F"]
-
-    _rank_runners(male)
-    _rank_runners(female)
-
-    log.info(
-        "Individual season: %d male, %d female runners",
-        len(male), len(female),
-    )
     return male, female
 
 
@@ -128,7 +144,23 @@ def build_team_season(
     Aggregate team race results into season records.
     Returns (div1_teams, div2_teams), each sorted by position.
     """
-    # Initialise a record for every (club × A/B) pair
+    season_map = _build_team_season_map(club_info)
+    _populate_team_results(all_race_teams, season_map)
+
+    best_n = get_best_n()
+    _compute_team_totals(season_map, best_n)
+
+    div1, div2 = _split_team_records_by_division(season_map)
+    _rank_teams(div1)
+    _rank_teams(div2)
+
+    log.info("Team season: %d Div-1 teams, %d Div-2 teams", len(div1), len(div2))
+    return div1, div2
+
+
+def _build_team_season_map(
+    club_info: Dict[str, ClubInfo],
+) -> Dict[Tuple[str, str], TeamSeasonRecord]:
     season_map: Dict[Tuple[str, str], TeamSeasonRecord] = {}
     for preferred_club, info in club_info.items():
         for team_id, div in (("A", info.div_a), ("B", info.div_b)):
@@ -137,16 +169,24 @@ def build_team_season(
                 team_id=team_id,
                 division=div,
             )
+    return season_map
 
-    # Fill in race results
+
+def _populate_team_results(
+    all_race_teams: Dict[int, List[TeamRaceResult]],
+    season_map: Dict[Tuple[str, str], TeamSeasonRecord],
+) -> None:
     for race_num, race_teams in all_race_teams.items():
         for t in race_teams:
             key = (t.preferred_club, t.team_id)
             if key in season_map:
                 season_map[key].race_results[race_num] = t
 
-    # Compute best-6 season totals
-    best_n = get_best_n()
+
+def _compute_team_totals(
+    season_map: Dict[Tuple[str, str], TeamSeasonRecord],
+    best_n: int,
+) -> None:
     for rec in season_map.values():
         pts_list = sorted(
             (t.team_points for t in rec.race_results.values()),
@@ -154,13 +194,12 @@ def build_team_season(
         )
         rec.total_points = sum(pts_list[:best_n])
 
+
+def _split_team_records_by_division(
+    season_map: Dict[Tuple[str, str], TeamSeasonRecord],
+) -> Tuple[List[TeamSeasonRecord], List[TeamSeasonRecord]]:
     div1 = [r for r in season_map.values() if r.division == 1]
     div2 = [r for r in season_map.values() if r.division == 2]
-
-    _rank_teams(div1)
-    _rank_teams(div2)
-
-    log.info("Team season: %d Div-1 teams, %d Div-2 teams", len(div1), len(div2))
     return div1, div2
 
 
@@ -168,7 +207,7 @@ def _rank_teams(teams: List[TeamSeasonRecord]) -> None:
     """
     Sort teams by:
       1. total_points descending       — primary
-            2. race aggregate descending     — tiebreaker (higher score = better)
+      2. race aggregate descending     — tiebreaker (higher score = better)
     Shared position only assigned when BOTH total_points AND aggregate are equal.
     """
     teams.sort(

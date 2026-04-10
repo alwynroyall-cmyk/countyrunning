@@ -1,8 +1,15 @@
+import pandas as pd
+from openpyxl import load_workbook
+
 from league_scorer.models import RunnerRaceEntry
 from league_scorer.output_writer import (
     _is_race_over_5k_name,
+    _sanitise_df_for_export,
     build_category_mismatch_todo_df,
     build_time_qry_todo_df,
+    write_category_mismatch_todo,
+    write_time_qry_todo,
+    write_unrecognised_clubs,
 )
 
 
@@ -243,6 +250,81 @@ def test_build_time_qry_todo_df_includes_qry_and_invalid_rows():
     assert len(df) == 2
     assert list(df["Name"]) == ["Jordan Zero", "Taylor Query"]
     assert list(df["Status"]) == ["Invalid", "QRY"]
+
+
+def test_sanitise_df_for_export_prefixes_formula_values():
+    df = _sanitise_df_for_export(
+        pd.DataFrame({"Value": ["=1+1", "+2", "-3", "@cmd", "safe"]})
+    )
+
+    assert df.loc[0, "Value"] == "'=1+1"
+    assert df.loc[1, "Value"] == "'+2"
+    assert df.loc[2, "Value"] == "'-3"
+    assert df.loc[3, "Value"] == "'@cmd"
+    assert df.loc[4, "Value"] == "safe"
+
+
+def test_write_unrecognised_clubs_creates_sheet(tmp_path):
+    filepath = tmp_path / "unused_clubs.xlsx"
+    write_unrecognised_clubs(
+        [
+            type("U", (), {"raw_club_name": "Guest Club", "occurrences": 2}),
+        ],
+        filepath,
+    )
+
+    wb = load_workbook(filepath, read_only=True, data_only=True)
+    assert wb.sheetnames == ["Unused Clubs"]
+    ws = wb.active
+    assert [cell.value for cell in ws[1]] == ["Raw Club Name", "Occurrences", "Action"]
+    assert [cell.value for cell in ws[2]] == ["Guest Club", 2, "Excluded"]
+
+
+def test_write_category_mismatch_todo_writes_header_only_when_empty(tmp_path):
+    filepath = tmp_path / "category_mismatch.xlsx"
+    write_category_mismatch_todo({}, filepath)
+
+    wb = load_workbook(filepath, read_only=True, data_only=True)
+    assert wb.sheetnames == ["Category Mismatch TODO"]
+    ws = wb.active
+    assert [cell.value for cell in ws[1]] == [
+        "Issue Type",
+        "Name",
+        "Club",
+        "Gender",
+        "Races Completed",
+        "Categories Seen",
+        "Clubs Seen",
+        "Suggested Category",
+        "Suggested Club",
+        "Race Category Sequence",
+        "Race Club Sequence",
+        "Source Category Values",
+        "Source Club Values",
+        "Next Step",
+    ]
+
+
+def test_write_time_qry_todo_writes_header_only_when_empty(tmp_path):
+    filepath = tmp_path / "time_qry.xlsx"
+    write_time_qry_todo({}, filepath)
+
+    wb = load_workbook(filepath, read_only=True, data_only=True)
+    assert wb.sheetnames == ["Time QRY TODO"]
+    ws = wb.active
+    assert [cell.value for cell in ws[1]] == [
+        "Issue Type",
+        "Race",
+        "Source Row",
+        "Name",
+        "Raw Club",
+        "Club",
+        "Gender",
+        "Category",
+        "Current Time",
+        "Status",
+        "Next Step",
+    ]
 
 
 def test_is_race_over_5k_name_scope_for_results_sheets():

@@ -33,6 +33,8 @@ class ViewAutopilotPanel(tk.Frame):
         # Keep direct openers for workbooks only; markdown reports are listed below
         tk.Button(top_frame, text="Open Manual Audit", command=self._open_manual_audit, bg="#e9f0f7").pack(side="left", padx=6)
         tk.Button(top_frame, text="Open Season Audit", command=self._open_season_audit, bg="#e9f0f7").pack(side="left", padx=6)
+        tk.Button(top_frame, text="Open Folder", command=self._open_folder, bg="#e9f0f7").pack(side="left", padx=6)
+        tk.Button(top_frame, text="Refresh", command=self._refresh_list, bg="#e9f0f7").pack(side="left", padx=6)
         tk.Label(top_frame, textvariable=self._status_var, bg="#f7f9fb", fg="#55666f").pack(side="right")
 
         middle = tk.PanedWindow(self, orient="horizontal")
@@ -62,10 +64,14 @@ class ViewAutopilotPanel(tk.Frame):
         self._preview.pack(fill="both", expand=True)
         middle.add(preview_frame, minsize=320)
 
-        btn_frame = tk.Frame(self, bg="#f7f9fb")
-        btn_frame.pack(fill="x", padx=10, pady=(0, 8))
-        tk.Button(btn_frame, text="Open Selected", command=self._open_selected, bg="#dbe8f5").pack(side="left")
-        tk.Button(btn_frame, text="Close", command=self.master.focus_set, bg="#f0f0f0").pack(side="right")
+        hint = tk.Label(
+            self,
+            text="Double-click a report to open it. Use Open Folder to see all files in Explorer.",
+            font=("Segoe UI", 9),
+            bg="#f7f9fb",
+            fg="#55666f",
+        )
+        hint.pack(fill="x", padx=10, pady=(0, 8))
 
     def _resolve_reports_dir(self) -> Optional[Path]:
         if session_config.output_dir is None:
@@ -107,7 +113,11 @@ class ViewAutopilotPanel(tk.Frame):
             iid = str(f.resolve())
             self._tree.insert("", "end", iid=iid, values=(f.name, self._format_mtime(mtime), size))
             self._files.append(f)
-        self._status_var.set(f"{len(self._files)} reports")
+        count = len(self._files)
+        if self._reports_dir is None:
+            self._reports_dir = self._resolve_reports_dir()
+        location = str(self._reports_dir) if self._reports_dir is not None else "No reports folder"
+        self._status_var.set(f"{count} reports  •  {location}")
         if self._files:
             first_iid = str(self._files[0].resolve())
             self._tree.selection_set(first_iid)

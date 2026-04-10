@@ -4,6 +4,7 @@ settings.py — Centralised league configuration and settings management.
 This module holds all league rule constants and provides a simple interface for loading/saving settings.
 """
 import json
+import logging
 from pathlib import Path
 from typing import Any, Dict
 

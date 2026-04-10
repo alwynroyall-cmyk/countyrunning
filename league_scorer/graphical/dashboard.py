@@ -1493,7 +1493,7 @@ class LeagueScorerDashboard(tk.Tk):
         if session_config.output_dir:
             sort_existing_output_files(session_config.output_dir)
         self._home_frame.pack_forget()
-        from ..views.autopilot import ViewAutopilotPanel
+        from ..view_autopilot import ViewAutopilotPanel
         panel = ViewAutopilotPanel(self._page_container)
         panel.pack(fill="both", expand=True)
         self._results_panel = panel
@@ -1623,7 +1623,7 @@ class LeagueScorerDashboard(tk.Tk):
         if session_config.output_dir:
             sort_existing_output_files(session_config.output_dir)
         self._home_frame.pack_forget()
-        from ..views.results import ResultsViewerPanel
+        from ..view_results import ResultsViewerPanel
         panel = ResultsViewerPanel(self._page_container)
         panel.pack(fill="both", expand=True)
         self._results_panel = panel
@@ -1811,7 +1811,7 @@ class LeagueScorerDashboard(tk.Tk):
         if not self._require_configured("Runner/Club Enquiry"):
             return
         self._home_frame.pack_forget()
-        from ..views.enquiry.enquiry_panel import RunnerClubEnquiryPanel
+        from ..view_enquiry import RunnerClubEnquiryPanel
 
         panel = RunnerClubEnquiryPanel(
             self._page_container,
@@ -1858,7 +1858,7 @@ class LeagueScorerDashboard(tk.Tk):
         if hasattr(self, "_issue_review_panel"):
             self._issue_review_panel.destroy()
             del self._issue_review_panel
-        from ..views.enquiry.enquiry_panel import RunnerClubEnquiryPanel
+        from ..view_enquiry import RunnerClubEnquiryPanel
         panel = RunnerClubEnquiryPanel(
             self._page_container,
             back_callback=self._on_view_runner_history_back,
