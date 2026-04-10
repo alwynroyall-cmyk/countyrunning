@@ -21,6 +21,7 @@ from league_scorer.input.input_layout import build_input_paths
 from league_scorer.output.output_layout import (
     build_output_paths,
     ensure_output_subdirs,
+    export_publish_pdfs,
     package_publish_artifacts,
     sort_existing_output_files,
 )
@@ -32,7 +33,7 @@ from scripts.autopilot.run_full_autopilot import _race_names_for_progress, _reso
 
 def _to_markdown(payload: dict[str, Any]) -> str:
     lines = [
-        "# WRRL League AI Publish Results",
+        "# WRRL Admin Suite Publish Results",
         "",
         f"Generated: {payload['generated_at']}",
         f"Year: {payload['settings']['year']}",
@@ -73,8 +74,16 @@ def _write_report(report_dir: Path, year: int, payload: dict[str, Any]) -> tuple
     return json_path, md_path
 
 
-def publish_results(year: int, data_root: Path | None, report_dir: Path) -> int:
+def publish_results(
+    year: int,
+    data_root: Path | None,
+    report_dir: Path,
+    export_pdf_dir: Path | None = None,
+) -> int:
     """Publish final results for `year` using `data_root` and write reports to `report_dir`.
+
+    If *export_pdf_dir* is provided, all published PDF files are copied into that
+    folder after conversion and packaging.
 
     Returns an exit code (0 success, non-zero failure). Prints progress lines
     and summary messages to stdout/stderr to preserve the original CLI behaviour.
@@ -227,10 +236,22 @@ def publish_results(year: int, data_root: Path | None, report_dir: Path) -> int:
     except Exception as exc:
         warnings.append(f"Publish package creation skipped: {exc}")
 
+    exported_count = 0
+    if export_pdf_dir is not None:
+        try:
+            export_path = export_publish_pdfs(output_dir, export_pdf_dir, flatten=True)
+            exported_count = sum(1 for _ in export_path.glob("**/*.pdf"))
+        except Exception as exc:
+            warnings.append(f"Publish PDF export skipped: {exc}")
+
+    payload["summary"]["exported_pdf_count"] = exported_count
+
     json_path, md_path = _write_report(report_dir, year, payload)
     print("PROGRESS:STAGE_DONE:2", flush=True)
     print(f"Converted PDFs: {converted}", flush=True)
     print(f"Skipped PDFs: {skipped}", flush=True)
+    if export_pdf_dir is not None:
+        print(f"Exported PDFs: {exported_count}", flush=True)
     if warnings:
         print(f"Warnings: {len(warnings)}", flush=True)
     print(f"Wrote: {json_path}", flush=True)

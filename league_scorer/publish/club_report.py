@@ -108,13 +108,16 @@ def _build_club_header(doc: Document, year: int, club: str, images_dir: Path | N
     p1.alignment = WD_ALIGN_PARAGRAPH.LEFT
     p1.paragraph_format.left_indent = Cm(0.4)
     p1.paragraph_format.space_before = Pt(8)
-    r1 = p1.add_run(f"WRRL | Season Summary {year}")
+    r1 = p1.add_run(f"WRRL Season {year}")
     r1.bold = True
     r1.font.size = Pt(20)
     r1.font.color.rgb = _WHITE_RGB
 
     p2 = title_cell.add_paragraph()
+    p2.alignment = WD_ALIGN_PARAGRAPH.LEFT
     p2.paragraph_format.left_indent = Cm(0.4)
+    p2.paragraph_format.space_before = Pt(2)
+    p2.paragraph_format.space_after = Pt(2)
     r2 = p2.add_run(club.upper())
     r2.bold = True
     r2.font.size = Pt(18)

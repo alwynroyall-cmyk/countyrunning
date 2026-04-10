@@ -8,6 +8,7 @@ from pathlib import Path
 from league_scorer.output.output_layout import (
     build_output_paths,
     ensure_output_subdirs,
+    export_publish_pdfs,
     package_publish_artifacts,
 )
 from league_scorer.publish import club_report, publish
@@ -80,6 +81,84 @@ def test_publish_package_artifacts_copies_publish_files(tmp_path: Path) -> None:
 
     for expected_file in expected:
         assert expected_file.exists()
+
+
+def test_export_publish_pdfs_copies_all_pdfs_to_single_folder(tmp_path: Path) -> None:
+    output_dir = tmp_path / "outputs"
+    output_paths = ensure_output_subdirs(output_dir)
+
+    sample_pdfs = [
+        output_paths.publish_pdf_league_updates_dir / "Season Update.pdf",
+        output_paths.publish_pdf_race_cards_dir / "Race 1 - Scoring Card.pdf",
+    ]
+    for sample in sample_pdfs:
+        sample.write_text("placeholder", encoding="utf-8")
+
+    export_dir = tmp_path / "exported_pdfs"
+    result_path = export_publish_pdfs(output_dir, export_dir, flatten=True)
+
+    assert result_path == export_dir
+    assert (export_dir / "Season Update.pdf").exists()
+    assert (export_dir / "Race 1 - Scoring Card.pdf").exists()
+
+
+def test_export_publish_pdfs_includes_standings_and_club_report_pdf(tmp_path: Path) -> None:
+    output_dir = tmp_path / "outputs"
+    output_paths = ensure_output_subdirs(output_dir)
+
+    # Create published PDF files in the normal publish folders.
+    (output_paths.publish_pdf_league_updates_dir / "Season Update.pdf").write_text("placeholder", encoding="utf-8")
+    (output_paths.publish_pdf_race_cards_dir / "Race 1 - Scoring Card.pdf").write_text("placeholder", encoding="utf-8")
+
+    # Create the club report PDF under the club-reports docx folder.
+    club_pdf = output_paths.publish_docx_club_reports_dir / "club_reports_1999.pdf"
+    club_pdf.write_text("placeholder", encoding="utf-8")
+
+    # Create the season standings workbook.
+    standings = output_paths.publish_standings_dir / "Season Standings R01 1999.xlsx"
+    standings.write_text("placeholder", encoding="utf-8")
+
+    export_dir = tmp_path / "exported_pdfs"
+    result_path = export_publish_pdfs(output_dir, export_dir, flatten=True)
+
+    assert result_path == export_dir
+    assert (export_dir / "Season Update.pdf").exists()
+    assert (export_dir / "Race 1 - Scoring Card.pdf").exists()
+    assert (export_dir / "club_reports_1999.pdf").exists()
+    assert (export_dir / "Season Standings R01 1999.xlsx").exists()
+
+
+def test_publish_results_can_export_pdfs_to_a_single_folder(tmp_path: Path) -> None:
+    data_root = tmp_path / "data"
+    year = 1999
+    year_root = data_root / str(year)
+    audited_dir = year_root / "inputs" / "audited"
+    audited_dir.mkdir(parents=True, exist_ok=True)
+    (audited_dir / "Race 1 - audited.xlsx").write_text("placeholder", encoding="utf-8")
+
+    output_dir = year_root / "outputs"
+    output_paths = ensure_output_subdirs(output_dir)
+    output_paths.publish_pdf_league_updates_dir.mkdir(parents=True, exist_ok=True)
+    output_paths.publish_pdf_race_cards_dir.mkdir(parents=True, exist_ok=True)
+    (output_paths.publish_pdf_league_updates_dir / "Season Update.pdf").write_text("placeholder", encoding="utf-8")
+    (output_paths.publish_pdf_race_cards_dir / "Race 1 - Scoring Card.pdf").write_text("placeholder", encoding="utf-8")
+
+    report_dir = tmp_path / "reports"
+    report_dir.mkdir(parents=True, exist_ok=True)
+    export_pdf_dir = tmp_path / "exported_pdfs"
+
+    result = publish.publish_results(
+        year=year,
+        data_root=data_root,
+        report_dir=report_dir,
+        export_pdf_dir=export_pdf_dir,
+    )
+
+    assert result == 0
+    assert (export_pdf_dir / "Season Update.pdf").exists()
+    assert (export_pdf_dir / "Race 1 - Scoring Card.pdf").exists()
+    report_path = report_dir / f"year-{year}"
+    assert (report_path / "publish_results.json").exists()
 
 
 def test_publish_package_artifacts_preserves_nested_structure_when_not_flattened(tmp_path: Path) -> None:

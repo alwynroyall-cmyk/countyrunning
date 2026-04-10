@@ -1,5 +1,5 @@
 """
-graphical — GUI and graphical interfaces for WRRL League AI.
+graphical — GUI and graphical interfaces for WRRL Admin Suite.
 """
 
 from .dashboard import launch_dashboard

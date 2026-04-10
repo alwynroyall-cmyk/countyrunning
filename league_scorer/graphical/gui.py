@@ -1,5 +1,5 @@
 """
-gui.py - WRRL League AI scorer window.
+gui.py - WRRL Admin Suite scorer window.
 
 Opens as a Toplevel child of the dashboard.  Input/output paths are taken
 directly from session_config so no folder selection is needed here.
@@ -14,15 +14,15 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import messagebox, scrolledtext
 
-from ..common_files import race_discovery_exclusions
+from league_scorer.input.common_files import race_discovery_exclusions
 from ..exceptions import FatalError
-from ..input_layout import build_input_paths
-from ..main import LeagueScorer
-from ..raceroster_import import (
+from league_scorer.input.input_layout import build_input_paths
+from league_scorer.process.main import LeagueScorer
+from league_scorer.input.raceroster_import import (
     SporthiveRaceNotDirectlyImportableError,
     import_raceroster_results,
 )
-from ..source_loader import discover_race_files
+from league_scorer.input.source_loader import discover_race_files
 from .import_helpers import (
     RaceImportRequest,
     ask_multiline_page_text,
@@ -70,7 +70,7 @@ class _QueueHandler(logging.Handler):
 # ---------------------------------------------------------------------------
 
 class LeagueScorerApp(tk.Frame):
-    """WRRL League AI scorer panel — embeds inside the dashboard."""
+    """WRRL Admin Suite scorer panel — embeds inside the dashboard."""
 
     _SENTINEL_OK    = "done"
     _SENTINEL_FATAL = "fatal"
@@ -169,7 +169,7 @@ class LeagueScorerApp(tk.Frame):
 
         tk.Label(
             bar,
-            text="Run WRRL League AI",
+            text="Run WRRL Admin Suite",
             font=("Segoe UI", 14, "bold"),
             bg=NAVY, fg=WHITE,
         ).pack(side="left", padx=16, pady=10)
@@ -559,7 +559,7 @@ class LeagueScorerApp(tk.Frame):
     def _update_dirty_indicator(self) -> None:
         """Check for autopilot dirty flag and update the header indicator."""
         try:
-            from ..session_config import config as session_config
+            from league_scorer.config.session_config import config as session_config
             out = session_config.output_dir
             is_dirty = False
             if out is not None:
@@ -658,7 +658,7 @@ class LeagueScorerApp(tk.Frame):
 def launch() -> None:
     """Standalone launcher (opens its own root window)."""
     root = tk.Tk()
-    root.title("WRRL League AI — Run Scorer")
+    root.title("WRRL Admin Suite — Run Scorer")
     root.geometry("860x640")
     root.configure(bg=LIGHT)
     app = LeagueScorerApp(root)
