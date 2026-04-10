@@ -1,2 +1,6 @@
-from league_scorer import session_config
-__all__ = ["session_config"]
+from ..session_config import SessionConfig
+
+config = SessionConfig()
+session_config = config
+
+__all__ = ["session_config", "config"]

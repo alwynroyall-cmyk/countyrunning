@@ -1,5 +1,6 @@
 """Compatibility shim for league_scorer.config imports."""
 
-from league_scorer import session_config, settings
+from . import session_config
+from . import settings
 
 __all__ = ["session_config", "settings"]

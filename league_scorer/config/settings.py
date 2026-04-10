@@ -1,2 +1,3 @@
-from league_scorer import settings
+from ..settings import settings
+
 __all__ = ["settings"]
