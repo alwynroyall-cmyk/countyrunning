@@ -21,6 +21,7 @@ from .models import (
 log = logging.getLogger(__name__)
 
 from .rules import get_best_n
+from league_scorer.config.settings import settings
 
 
 # ───────────────────────────────────────────────────────────── individuals ───

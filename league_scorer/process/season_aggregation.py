@@ -1,2 +1,8 @@
 """Compatibility shim for league_scorer.process.season_aggregation."""
-from league_scorer.season_aggregation import *
+from league_scorer import season_aggregation as _source
+
+for _name in dir(_source):
+    if not _name.startswith("_"):
+        globals()[_name] = getattr(_source, _name)
+
+__all__ = getattr(_source, "__all__", [name for name in globals() if not name.startswith("_")])

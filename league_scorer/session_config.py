@@ -196,8 +196,6 @@ class SessionConfig:
         except (OSError, json.JSONDecodeError, ValueError) as exc:
             log.warning("WRRL preferences could not be loaded from %s: %s", _PREFS_FILE, exc)
 
-    # ── available years ───────────────────────────────────────────────────────
-
     @staticmethod
     def available_years() -> list[int]:
         """Return years from 2020 to the current year + 2."""

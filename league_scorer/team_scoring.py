@@ -18,6 +18,7 @@ from .models import ClubInfo, RunnerRaceEntry, TeamRaceResult
 log = logging.getLogger(__name__)
 
 from .rules import get_team_size, get_max_div_pts
+from league_scorer.config.settings import settings
 MIN_DIV_PTS = 1
 
 
