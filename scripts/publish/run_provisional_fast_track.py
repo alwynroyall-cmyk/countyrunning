@@ -17,13 +17,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from league_scorer.main import LeagueScorer
-from league_scorer.output_layout import build_output_paths, ensure_output_subdirs, sort_existing_output_files
-from scripts.run_full_autopilot import (
+from league_scorer.process.main import LeagueScorer
+from league_scorer.output.output_layout import build_output_paths, ensure_output_subdirs, sort_existing_output_files
+from scripts.autopilot.run_full_autopilot import (
     _generate_audited_race_files,
     _race_names_for_progress,
     _resolve_data_root,
@@ -33,7 +33,7 @@ from scripts.run_full_autopilot import (
 
 def _to_markdown(payload: dict[str, Any]) -> str:
     lines = [
-        "# WRRL League AI Provisional Fast Track",
+        "# WRRL Admin Suite Provisional Fast Track",
         "",
         f"Generated: {payload['generated_at']}",
         f"Year: {payload['settings']['year']}",

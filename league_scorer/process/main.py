@@ -17,12 +17,12 @@ import logging
 from pathlib import Path
 from typing import Dict, List
 
-from .common_files import race_discovery_exclusions
-from .club_loader import load_clubs
-from .exceptions import FatalError, RaceProcessingError
-from .input_layout import build_input_paths, ensure_input_subdirs, sort_existing_input_files
-from .individual_scoring import assign_individual_points
-from .models import (
+from league_scorer.input.common_files import race_discovery_exclusions
+from league_scorer.input.club_loader import load_clubs
+from league_scorer.exceptions import FatalError, RaceProcessingError
+from league_scorer.input.input_layout import build_input_paths, ensure_input_subdirs, sort_existing_input_files
+from league_scorer.process.individual_scoring import assign_individual_points
+from league_scorer.process.models import (
     CategoryRecord,
     ClubInfo,
     RaceIssue,
@@ -30,7 +30,7 @@ from .models import (
     TeamRaceResult,
     UnrecognisedClub,
 )
-from .output_layout import (
+from league_scorer.output.output_layout import (
     category_review_filename,
     ensure_output_subdirs,
     league_update_basename,
@@ -39,17 +39,17 @@ from .output_layout import (
     time_query_review_filename,
     sort_existing_output_files,
 )
-from .output_writer import (
+from league_scorer.output.output_writer import (
     write_category_mismatch_todo,
     write_results_workbook,
     write_time_qry_todo,
 )
-from .report_writer import write_combined_report, write_race_report
-from .race_processor import process_race_file
-from .season_aggregation import build_individual_season, build_team_season
-from .source_loader import discover_race_files
-from .structured_logging import log_event
-from .team_scoring import build_team_scores
+from league_scorer.output.report_writer import write_combined_report, write_race_report
+from league_scorer.process.race_processor import process_race_file
+from league_scorer.process.season_aggregation import build_individual_season, build_team_season
+from league_scorer.input.source_loader import discover_race_files
+from league_scorer.output.structured_logging import log_event
+from league_scorer.process.team_scoring import build_team_scores
 
 log = logging.getLogger(__name__)
 
@@ -220,7 +220,7 @@ class LeagueScorer:
             race_label = race_label.rsplit("(audited)", 1)[0].strip(" -")
         card_basename = race_scoring_card_basename(race_num, race_label)
         output_paths = ensure_output_subdirs(self.output_dir)
-        images_dir = Path(__file__).parent / "images"
+        images_dir = Path(__file__).resolve().parents[1] / "images"
         pdf_warning = write_race_report(
             race_num=race_num,
             total_races=total_races,
@@ -290,7 +290,7 @@ class LeagueScorer:
             filepath=output_paths.publish_review_packs_dir / time_query_review_filename(highest, self.year),
         )
 
-        images_dir = Path(__file__).parent / "images"
+        images_dir = Path(__file__).resolve().parents[1] / "images"
 
         pdf_warning = write_combined_report(
             highest_race=highest,

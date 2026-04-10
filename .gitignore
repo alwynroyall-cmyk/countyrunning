@@ -30,6 +30,8 @@ dist/
 
 # Outputs and generated reports (do not track generated files)
 output/
+!league_scorer/output/
+!league_scorer/output/**
 data/*/outputs/
 output/**
 

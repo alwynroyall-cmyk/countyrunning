@@ -12,12 +12,16 @@ import shutil
 class OutputPaths:
     output_dir: Path
     publish_dir: Path
+    publish_docx_dir: Path
     publish_docx_race_cards_dir: Path
     publish_docx_league_updates_dir: Path
+    publish_docx_club_reports_dir: Path
+    publish_pdf_dir: Path
     publish_pdf_race_cards_dir: Path
     publish_pdf_league_updates_dir: Path
-    publish_xlsx_standings_dir: Path
-    publish_xlsx_review_packs_dir: Path
+    publish_standings_dir: Path
+    publish_review_packs_dir: Path
+    publish_package_dir: Path
     audit_workbooks_dir: Path
     audit_manual_changes_dir: Path
     quality_data_dir: Path
@@ -42,12 +46,16 @@ def build_output_paths(output_dir: Path) -> OutputPaths:
     return OutputPaths(
         output_dir=output_dir,
         publish_dir=publish_dir,
-        publish_docx_race_cards_dir=publish_dir / "docx" / "race-cards",
-        publish_docx_league_updates_dir=publish_dir / "docx" / "league-updates",
-        publish_pdf_race_cards_dir=publish_dir / "pdf" / "race-cards",
-        publish_pdf_league_updates_dir=publish_dir / "pdf" / "league-updates",
-        publish_xlsx_standings_dir=publish_dir / "xlsx" / "standings",
-        publish_xlsx_review_packs_dir=publish_dir / "xlsx" / "review-packs",
+        publish_docx_dir=publish_dir / "docx",
+        publish_docx_race_cards_dir=publish_dir / "docx",
+        publish_docx_league_updates_dir=publish_dir / "docx",
+        publish_docx_club_reports_dir=publish_dir / "docx" / "club-reports",
+        publish_pdf_dir=publish_dir / "pdf",
+        publish_pdf_race_cards_dir=publish_dir / "pdf",
+        publish_pdf_league_updates_dir=publish_dir / "pdf",
+        publish_standings_dir=publish_dir / "standings",
+        publish_review_packs_dir=publish_dir / "review-packs",
+        publish_package_dir=publish_dir / "package",
         audit_workbooks_dir=audit_dir / "workbooks",
         audit_manual_changes_dir=audit_dir / "manual-changes",
         quality_data_dir=quality_dir / "data-quality",
@@ -62,12 +70,12 @@ def ensure_output_subdirs(output_dir: Path) -> OutputPaths:
     paths = build_output_paths(output_dir)
     paths.output_dir.mkdir(parents=True, exist_ok=True)
     paths.publish_dir.mkdir(parents=True, exist_ok=True)
-    paths.publish_docx_race_cards_dir.mkdir(parents=True, exist_ok=True)
-    paths.publish_docx_league_updates_dir.mkdir(parents=True, exist_ok=True)
-    paths.publish_pdf_race_cards_dir.mkdir(parents=True, exist_ok=True)
-    paths.publish_pdf_league_updates_dir.mkdir(parents=True, exist_ok=True)
-    paths.publish_xlsx_standings_dir.mkdir(parents=True, exist_ok=True)
-    paths.publish_xlsx_review_packs_dir.mkdir(parents=True, exist_ok=True)
+    paths.publish_docx_dir.mkdir(parents=True, exist_ok=True)
+    paths.publish_docx_club_reports_dir.mkdir(parents=True, exist_ok=True)
+    paths.publish_pdf_dir.mkdir(parents=True, exist_ok=True)
+    paths.publish_standings_dir.mkdir(parents=True, exist_ok=True)
+    paths.publish_review_packs_dir.mkdir(parents=True, exist_ok=True)
+    paths.publish_package_dir.mkdir(parents=True, exist_ok=True)
     paths.audit_workbooks_dir.mkdir(parents=True, exist_ok=True)
     paths.audit_manual_changes_dir.mkdir(parents=True, exist_ok=True)
     paths.quality_data_dir.mkdir(parents=True, exist_ok=True)
@@ -120,11 +128,77 @@ def sort_existing_output_files(output_dir: Path) -> OutputSortResult:
     moved_count += _move_tree_contents(paths.output_dir / "staged-checks", paths.quality_staged_checks_dir, moved_files)
     moved_count += _move_tree_contents(paths.output_dir / "data-quality", paths.quality_data_dir, moved_files)
 
+    # Lift legacy publish/xlsx folders into the new publish layout.
+    legacy_publish_xlsx = paths.publish_dir / "xlsx"
+    moved_count += _move_tree_contents(legacy_publish_xlsx / "standings", paths.publish_standings_dir, moved_files)
+    moved_count += _move_tree_contents(legacy_publish_xlsx / "review-packs", paths.publish_review_packs_dir, moved_files)
+    if legacy_publish_xlsx.exists() and legacy_publish_xlsx.is_dir() and not any(legacy_publish_xlsx.iterdir()):
+        legacy_publish_xlsx.rmdir()
+
     return OutputSortResult(moved_count=moved_count, skipped_count=skipped_count, moved_files=moved_files)
 
 
 def standings_filename(highest_race: int, year: int) -> str:
     return f"Season Standings R{highest_race:02d} {year}.xlsx"
+
+
+def package_publish_artifacts(output_dir: Path, include_club_reports: bool = True, flatten: bool = True) -> Path:
+    paths = build_output_paths(output_dir)
+    paths.publish_package_dir.mkdir(parents=True, exist_ok=True)
+
+    def _copy_tree(source: Path, destination: Path, base_subdir: Path | None = None) -> None:
+        if not source.exists() or not source.is_dir():
+            return
+        for item in sorted(source.rglob("*")):
+            if item.is_dir():
+                continue
+            if source == paths.publish_docx_dir:
+                relative_path = item.relative_to(source)
+                if relative_path.parts and relative_path.parts[0] == "club-reports":
+                    continue
+            if flatten:
+                target = destination / item.name
+                if target.exists():
+                    target = destination / item.relative_to(source)
+            else:
+                relative_path = item.relative_to(source)
+                if base_subdir is not None:
+                    target = destination / base_subdir / relative_path
+                else:
+                    target = destination / relative_path
+            target.parent.mkdir(parents=True, exist_ok=True)
+            try:
+                shutil.copy2(str(item), str(target))
+            except Exception:
+                pass
+
+    _copy_tree(paths.publish_docx_dir, paths.publish_package_dir, Path("docx"))
+    _copy_tree(paths.publish_pdf_dir, paths.publish_package_dir, Path("pdf"))
+    _copy_tree(paths.publish_standings_dir, paths.publish_package_dir, Path("standings"))
+    _copy_tree(paths.publish_review_packs_dir, paths.publish_package_dir, Path("review-packs"))
+
+    if include_club_reports:
+        _copy_tree(paths.publish_docx_club_reports_dir, paths.publish_package_dir, Path("club-reports"))
+
+    readme = paths.publish_package_dir / "README.md"
+    readme.write_text(
+        """# WRRL Publish Package
+
+This folder contains the published files ready for deployment.
+
+Contents:
+- docx/
+- pdf/
+- standings/
+- review-packs/
+- club-reports/
+
+Copy this folder or zip it for upload to your cloud repository.
+""",
+        encoding="utf-8",
+    )
+
+    return paths.publish_package_dir
 
 
 def category_review_filename(highest_race: int, year: int) -> str:
@@ -158,9 +232,9 @@ def _destination_for_output_file(file_path: Path, paths: OutputPaths) -> Path | 
 
     if suffix == ".xlsx":
         if "results" in name or "season standings" in name:
-            return paths.publish_xlsx_standings_dir
+            return paths.publish_standings_dir
         if "category" in name or "time qry" in name or "time query" in name:
-            return paths.publish_xlsx_review_packs_dir
+            return paths.publish_review_packs_dir
         if "audit" in name:
             return paths.audit_workbooks_dir
         return None

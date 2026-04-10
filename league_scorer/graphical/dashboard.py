@@ -1,5 +1,5 @@
 """
-dashboard.py — Main dashboard for WRRL League AI.
+dashboard.py — Main dashboard for WRRL Admin Suite.
 
 Provides a professional console with branded header and execution options.
 """
@@ -17,17 +17,17 @@ from PIL import Image, ImageTk
 
 from .gui import LeagueScorerApp
 from .events_viewer import EventsViewerPanel
-from ..events_loader import load_events
-from ..common_files import race_discovery_exclusions
-from ..raceroster_import import (
+from league_scorer.input.events_loader import load_events
+from league_scorer.input.common_files import race_discovery_exclusions
+from league_scorer.input.raceroster_import import (
     SporthiveRaceNotDirectlyImportableError,
     import_raceroster_results,
 )
-from ..input_layout import sort_existing_input_files
-from ..output_layout import build_output_paths, ensure_output_subdirs, sort_existing_output_files
-from ..session_config import config as session_config
-from ..source_loader import discover_race_files
-from ..structured_logging import log_event
+from league_scorer.input.input_layout import sort_existing_input_files
+from league_scorer.output.output_layout import build_output_paths, ensure_output_subdirs, sort_existing_output_files
+from league_scorer.config.session_config import config as session_config
+from league_scorer.input.source_loader import discover_race_files
+from league_scorer.output.structured_logging import log_event
 from .import_helpers import (
     RaceImportRequest,
     ask_multiline_page_text,
@@ -79,8 +79,8 @@ class _AutopilotProgressDialog(tk.Toplevel):
         parent: tk.Tk,
         year: int,
         *,
-        window_title: str = "Autopilot - WRRL League AI",
-        header_text: str = "WRRL League AI Autopilot",
+        window_title: str = "Autopilot - WRRL Admin Suite",
+        header_text: str = "WRRL Admin Suite Autopilot",
         stage_labels: list[str] | None = None,
         initial_status: str = "Initialising autopilot...",
     ) -> None:
@@ -303,11 +303,11 @@ class _AutopilotProgressDialog(tk.Toplevel):
 # ──────────────────────────────────────────────────────────────────────────────
 
 class LeagueScorerDashboard(tk.Tk):
-    """Professional dashboard for WRRL League AI."""
+    """Professional dashboard for WRRL Admin Suite."""
 
     def __init__(self) -> None:
         super().__init__()
-        self.title("WRRL League AI")
+        self.title("WRRL Admin Suite")
         self.geometry("900x700")
         self.minsize(800, 600)
         self.resizable(True, True)
@@ -405,7 +405,7 @@ class LeagueScorerDashboard(tk.Tk):
 
         title = tk.Label(
             title_frame,
-            text="WRRL League AI",
+            text="WRRL Admin Suite",
             font=("Segoe UI", 32, "bold"),
             bg=WRRL_NAVY,
             fg=WRRL_WHITE,
@@ -414,7 +414,7 @@ class LeagueScorerDashboard(tk.Tk):
 
         subtitle = tk.Label(
             title_frame,
-            text="WRRL League AI for Wiltshire Road and Running League operations",
+            text="WRRL Admin Suite for Wiltshire Road and Running League operations",
             font=("Segoe UI", 11),
             bg=WRRL_NAVY,
             fg="#a0b0c0",
@@ -493,10 +493,25 @@ class LeagueScorerDashboard(tk.Tk):
             button_frame, "Run Autopilot", "Run audit, safe auto-fixes, and staged checks", self._on_run_autopilot, 0, 0, tone="primary"
         )
         self._create_action_button(
-            button_frame, "Publish Results", "Publish final results from audited files (includes PDF packs)", self._on_publish_results, 1, 0, tone="primary"
+            button_frame,
+            "Publish Results",
+            "Publish final results from audited files (includes PDF packs and Club Reports)",
+            self._on_publish_results,
+            1,
+            0,
+            tone="primary",
         )
         self._create_action_button(
-            button_frame, "⬇ Fetch Results", "Download results from Race Roster into this season", self._on_import_raceroster, 2, 0, tone="primary"
+            button_frame,
+            "Export Published PDFs",
+            "Copy all published PDFs into a single export folder.",
+            self._on_export_published_pdfs,
+            2,
+            0,
+            tone="secondary",
+        )
+        self._create_action_button(
+            button_frame, "⬇ Fetch Results", "Download results from Race Roster into this season", self._on_import_raceroster, 3, 0, tone="primary"
         )
 
         # Column 2
@@ -908,7 +923,7 @@ class LeagueScorerDashboard(tk.Tk):
         from .. import __version__
         footer_text = tk.Label(
             footer,
-            text=f"© 2026 Wiltshire Athletics Assoc. | WRRL League AI v{__version__}",
+            text=f"© 2026 Wiltshire Athletics Assoc. | WRRL Admin Suite v{__version__}",
             font=("Segoe UI", 9),
             bg=WRRL_NAVY,
             fg="#707080",
@@ -933,8 +948,8 @@ class LeagueScorerDashboard(tk.Tk):
     # ── action handlers ────────────────────────────────────────────────────
 
     def _on_run_scorer(self) -> None:
-        """Show the WRRL League AI scorer panel inline within the dashboard."""
-        if not self._require_configured("Run WRRL League AI"):
+        """Show the WRRL Admin Suite scorer panel inline within the dashboard."""
+        if not self._require_configured("Run WRRL Admin Suite"):
             return
         log_event("dashboard_open_scorer", year=session_config.year)
         session_config.ensure_dirs()
@@ -989,7 +1004,7 @@ class LeagueScorerDashboard(tk.Tk):
             self._show_autopilot_result_dialog(success=(code == 0), review_path=review_path)
 
         self._run_workflow(
-            script_name="run_full_autopilot.py",
+            script_name="autopilot/run_full_autopilot.py",
             dlg=dlg,
             extra_cmd_args=[
                 "--mode", "apply-safe-fixes",
@@ -1046,7 +1061,7 @@ class LeagueScorerDashboard(tk.Tk):
             )
 
         self._run_workflow(
-            script_name="run_provisional_fast_track.py",
+            script_name="publish/run_provisional_fast_track.py",
             dlg=dlg,
             extra_cmd_args=[],
             error_title="Provisional Fast Track Failed",
@@ -1084,6 +1099,10 @@ class LeagueScorerDashboard(tk.Tk):
             if dlg.winfo_exists():
                 dlg.grab_release()
                 dlg.destroy()
+            publish_dir = (
+                build_output_paths(session_config.output_dir).publish_dir
+                if session_config.output_dir is not None else None
+            )
             review_path = self._resolve_publish_results_report_path()
             self._show_workflow_result_dialog(
                 title="Publish Results Complete",
@@ -1094,15 +1113,89 @@ class LeagueScorerDashboard(tk.Tk):
                 success_body="Published final results from audited files, including PDF outputs.",
                 failure_body="The final publish did not finish cleanly.\nReview the summary for details before retrying.",
                 review_button_text="Review Summary",
+                secondary_path=publish_dir,
+                secondary_button_text="Open Publish Folder",
             )
 
+            # If publish succeeded, run club reporting as a follow-up task.
+            if code == 0:
+                try:
+                    # Prepare progress dialog for club reports
+                    club_dlg = _AutopilotProgressDialog(
+                        self,
+                        year=session_config.year,
+                        window_title="Club Reports",
+                        header_text="WRRL Club Reports",
+                        stage_labels=["Generate Club Reports", "Write Summary"],
+                        initial_status="Initialising club reports...",
+                    )
+
+                    def _show_club_result(code2: int, stdout2: str, stderr2: str) -> None:
+                        if club_dlg.winfo_exists():
+                            club_dlg.grab_release()
+                            club_dlg.destroy()
+                        if code2 == 0:
+                            messagebox.showinfo("Club Reports Complete", "Club reports generated successfully.", parent=self)
+                        else:
+                            messagebox.showwarning("Club Reports", "Club reports did not complete successfully.", parent=self)
+
+                    self._run_workflow(
+                        script_name="publish/run_publish_club_reports.py",
+                        dlg=club_dlg,
+                        extra_cmd_args=[],
+                        error_title="Club Reports Failed",
+                        show_result_fn=_show_club_result,
+                    )
+                except Exception:
+                    # Non-fatal: ignore and continue
+                    pass
+
         self._run_workflow(
-            script_name="run_publish_results.py",
+            script_name="publish/run_publish_results.py",
             dlg=dlg,
             extra_cmd_args=[],
             error_title="Publish Results Failed",
             show_result_fn=_show_result,
         )
+
+    def _on_export_published_pdfs(self) -> None:
+        """Export all published PDF outputs into a single chosen folder."""
+        if not self._require_configured("Export Published PDFs"):
+            return
+        if session_config.output_dir is None:
+            messagebox.showerror("Output Missing", "Output directory is not configured.", parent=self)
+            return
+
+        dest_dir = filedialog.askdirectory(
+            parent=self,
+            title="Select folder to export published PDFs",
+        )
+        if not dest_dir:
+            return
+
+        try:
+            from league_scorer.output.output_layout import export_publish_pdfs
+
+            export_path = export_publish_pdfs(session_config.output_dir, Path(dest_dir), flatten=True)
+            count = sum(1 for _ in export_path.glob("*.pdf"))
+            messagebox.showinfo(
+                "Export Complete",
+                f"Exported {count} published PDF(s) to {export_path}",
+                parent=self,
+            )
+            if messagebox.askyesno(
+                "Open Export Folder",
+                "Would you like to open the export folder now?",
+                parent=self,
+            ):
+                if sys.platform == "win32":
+                    os.startfile(str(export_path))
+                elif sys.platform == "darwin":
+                    subprocess.run(["open", str(export_path)], check=False)
+                else:
+                    subprocess.run(["xdg-open", str(export_path)], check=False)
+        except Exception as exc:
+            messagebox.showerror("Export Failed", f"Failed to export PDFs: {exc}", parent=self)
 
     def _run_workflow(
         self,
@@ -1277,6 +1370,8 @@ class LeagueScorerDashboard(tk.Tk):
         success_body: str,
         failure_body: str,
         review_button_text: str = "Review Messages",
+        secondary_path: Path | None = None,
+        secondary_button_text: str = "Open Folder",
     ) -> None:
         """Show a friendly completion dialog with an optional review action."""
         dialog = tk.Toplevel(self)
@@ -1325,6 +1420,14 @@ class LeagueScorerDashboard(tk.Tk):
             except Exception as exc:
                 messagebox.showerror("Open Failed", str(exc), parent=dialog)
 
+        def _on_open_folder() -> None:
+            if secondary_path is None:
+                return
+            try:
+                self._open_file_in_system(secondary_path)
+            except Exception as exc:
+                messagebox.showerror("Open Failed", str(exc), parent=dialog)
+
         review_btn = tk.Button(
             btn_row,
             text=review_button_text,
@@ -1341,6 +1444,23 @@ class LeagueScorerDashboard(tk.Tk):
             state="normal" if review_path is not None else "disabled",
         )
         review_btn.pack(side="left")
+
+        if secondary_path is not None:
+            open_btn = tk.Button(
+                btn_row,
+                text=secondary_button_text,
+                command=_on_open_folder,
+                font=("Segoe UI", 10, "bold"),
+                bg="#1f566a",
+                fg="#ffffff",
+                relief="flat",
+                padx=12,
+                pady=4,
+                cursor="hand2",
+                activebackground="#133b47",
+                activeforeground="#ffffff",
+            )
+            open_btn.pack(side="left", padx=(8, 0))
 
         close_btn = ttk.Button(btn_row, text="Close", command=dialog.destroy)
         close_btn.pack(side="right")
@@ -1373,7 +1493,7 @@ class LeagueScorerDashboard(tk.Tk):
         if session_config.output_dir:
             sort_existing_output_files(session_config.output_dir)
         self._home_frame.pack_forget()
-        from ..view_autopilot import ViewAutopilotPanel
+        from ..views.autopilot import ViewAutopilotPanel
         panel = ViewAutopilotPanel(self._page_container)
         panel.pack(fill="both", expand=True)
         self._results_panel = panel
@@ -1503,7 +1623,7 @@ class LeagueScorerDashboard(tk.Tk):
         if session_config.output_dir:
             sort_existing_output_files(session_config.output_dir)
         self._home_frame.pack_forget()
-        from ..view_results import ResultsViewerPanel
+        from ..views.results import ResultsViewerPanel
         panel = ResultsViewerPanel(self._page_container)
         panel.pack(fill="both", expand=True)
         self._results_panel = panel
@@ -1691,7 +1811,7 @@ class LeagueScorerDashboard(tk.Tk):
         if not self._require_configured("Runner/Club Enquiry"):
             return
         self._home_frame.pack_forget()
-        from ..view_enquiry.enquiry_panel import RunnerClubEnquiryPanel
+        from ..views.enquiry.enquiry_panel import RunnerClubEnquiryPanel
 
         panel = RunnerClubEnquiryPanel(
             self._page_container,
@@ -1738,7 +1858,7 @@ class LeagueScorerDashboard(tk.Tk):
         if hasattr(self, "_issue_review_panel"):
             self._issue_review_panel.destroy()
             del self._issue_review_panel
-        from ..view_enquiry.enquiry_panel import RunnerClubEnquiryPanel
+        from ..views.enquiry.enquiry_panel import RunnerClubEnquiryPanel
         panel = RunnerClubEnquiryPanel(
             self._page_container,
             back_callback=self._on_view_runner_history_back,
@@ -1757,7 +1877,7 @@ class LeagueScorerDashboard(tk.Tk):
         ops_doc = docs_dir / "operational_dependencies.md"
 
         help_text = (
-            "WRRL League AI Help\n\n"
+            "WRRL Admin Suite Help\n\n"
             "• Settings (⚙️): Configure data paths and league scoring parameters.\n"
             "  Set your Data Root once; folders are created as: {root}/{year}/inputs and {root}/{year}/outputs\n"
             "  Inputs are structured as: raw_data, series, control, audited, raw_data_archive\n\n"
@@ -1770,7 +1890,7 @@ class LeagueScorerDashboard(tk.Tk):
             "  Autopilot suppresses PDF generation to keep turnaround fast.\n"
             "• Publish Results: Build final publish outputs from audited files (includes PDFs).\n"
             "• View Autopilot Report: Open the latest automation summary.\n"
-            "• Run WRRL League AI: Execute the classic scoring pipeline manually.\n"
+            "• Run WRRL Admin Suite: Execute the classic scoring pipeline manually.\n"
             "• View Results: Browse generated results.\n\n"
             "Operational dependencies docs:\n"
             f"• {dependencies_doc}\n"
@@ -2001,3 +2121,25 @@ def launch_dashboard() -> None:
     """Create and run the dashboard application."""
     app = LeagueScorerDashboard()
     app.mainloop()
+
+
+def _create_action_button(
+    parent: tk.Frame,
+    text: str,
+    subtitle: str,
+    command,
+    row: int,
+    col: int,
+    tone: str = "secondary",
+) -> tk.Frame:
+    """Legacy helper used by dashboard unit tests."""
+    return LeagueScorerDashboard._create_action_button(
+        LeagueScorerDashboard,
+        parent,
+        text,
+        subtitle,
+        command,
+        row,
+        col,
+        tone=tone,
+    )
