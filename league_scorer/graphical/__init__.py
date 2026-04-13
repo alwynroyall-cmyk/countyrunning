@@ -1,9 +1,9 @@
 """
-graphical — GUI and graphical interfaces for WRRL Admin Suite.
+graphical — Qt-backed graphical interface for WRRL Admin Suite.
 """
 
-from .dashboard import launch_dashboard
- 
-from .gui import launch
+from .qt import launch_dashboard, launch_qt_dashboard
 
-__all__ = ["launch", "launch_dashboard"]
+launch = launch_dashboard
+
+__all__ = ["launch", "launch_dashboard", "launch_qt_dashboard"]

@@ -1,6 +1,6 @@
 import py_compile
 import traceback
-p = r'd:/wiltshireroadleague/league_scorer/view_enquiry/enquiry_panel.py'
+p = r'd:/wiltshireroadleague/league_scorer/graphical/qt/dashboard.py'
 try:
     py_compile.compile(p, doraise=True)
     print('OK')

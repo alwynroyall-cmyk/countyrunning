@@ -7,7 +7,7 @@ from ..manual_edit_service import resolve_runner_field_across_files
 from ..manual_data_audit import log_manual_data_changes
 from ..normalisation import parse_time_to_seconds  # kept in case other modules rely on it
 from ..race_processor import extract_race_number
-from ..results_workbook import sorted_race_sheet_names
+from .results_workbook import find_latest_results_workbook, sorted_race_sheet_names
 from ..session_config import config as session_config
 
 
@@ -32,8 +32,8 @@ def norm(v):
 # -----------------------------
 def load_workbook_cache():
     output_dir = session_config.output_dir
-    wb_path = Path(output_dir) / "latest_results.xlsx"
-    if not wb_path.exists():
+    wb_path = find_latest_results_workbook(output_dir)
+    if wb_path is None or not wb_path.exists():
         return None
 
     try:

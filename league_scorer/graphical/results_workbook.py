@@ -40,3 +40,20 @@ def sorted_race_sheet_names(xl: pd.ExcelFile) -> list[str]:
         [name for name in xl.sheet_names if name.startswith("Race ")],
         key=lambda sheet_name: extract_race_number(sheet_name) or 0,
     )
+
+
+def display_race_sheet_name(sheet_name: str) -> str:
+    """Return a user-facing race sheet label like 'R1' or 'R1 - Name'."""
+    match = re.match(r"^Race\s+(\d+)(.*)$", sheet_name, flags=re.IGNORECASE)
+    if not match:
+        return sheet_name
+    number = match.group(1)
+    suffix = match.group(2) or ""
+    return f"R{number}{suffix}"
+
+
+def display_race_column_header(header: str) -> str:
+    """Convert race column labels from 'Race N' to 'RN'."""
+    if not isinstance(header, str):
+        return header
+    return re.sub(r"\bRace\s+(\d+)\b", r"R\1", header, flags=re.IGNORECASE)

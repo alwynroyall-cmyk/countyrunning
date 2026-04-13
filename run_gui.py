@@ -1,7 +1,7 @@
 """
 run_gui.py
 ----------
-IDLE-friendly entry point.  Open this file in IDLE and press F5.
+Qt-backed entry point for WRRL Admin Suite.
 
 Expected layout:
     your_project/
@@ -9,8 +9,9 @@ Expected layout:
     └── league_scorer/      <-- your package folder
         ├── __init__.py
         ├── main.py
-        ├── gui.py
-        └── ...
+        └── graphical/
+            ├── qt/
+            └── ...
 """
 
 import sys
@@ -20,7 +21,7 @@ from pathlib import Path
 # sets up sys.path when running a top-level script.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from league_scorer.graphical import launch_dashboard
+from league_scorer.graphical.qt import launch_dashboard
 
 if __name__ == "__main__":
     try:

@@ -1,3 +1,0 @@
-(archived manual_review_panel.txt)
-
-See original at league_scorer/graphical/manual_review_panel.txt
