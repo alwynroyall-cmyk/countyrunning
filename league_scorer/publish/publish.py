@@ -25,6 +25,7 @@ from league_scorer.output.output_layout import (
     package_publish_artifacts,
     sort_existing_output_files,
 )
+from league_scorer.publish import club_report
 from league_scorer.input.source_loader import discover_race_files
 
 # Reuse helper functions from the scripts package
@@ -47,7 +48,7 @@ def _to_markdown(payload: dict[str, Any]) -> str:
         "",
         "## Notes",
         "",
-        "- This path publishes from audited files and includes PDF outputs.",
+        "- This path publishes from audited files and includes PDF outputs and club reports.",
     ]
 
     warnings = payload['summary'].get('warnings', [])
@@ -84,6 +85,8 @@ def publish_results(
 
     If *export_pdf_dir* is provided, all published PDF files are copied into that
     folder after conversion and packaging.
+
+    This workflow now also generates club reports as part of the publish path.
 
     Returns an exit code (0 success, non-zero failure). Prints progress lines
     and summary messages to stdout/stderr to preserve the original CLI behaviour.
@@ -211,6 +214,21 @@ def publish_results(
         print(f"Wrote: {md_path}", flush=True)
         return 1
 
+    club_result = -1
+    try:
+        print("PROGRESS:STAGE:3:Generating club reports", flush=True)
+        club_result = club_report.generate_club_reports(year, data_root_resolved, report_dir)
+        if club_result != 0:
+            warnings.append("Club report generation failed. See club_reports.json for details.")
+        print("PROGRESS:STAGE_DONE:3", flush=True)
+    except Exception as exc:
+        warnings.append(f"Club report generation skipped: {exc}")
+
+    try:
+        package_publish_artifacts(output_dir)
+    except Exception as exc:
+        warnings.append(f"Publish package creation skipped: {exc}")
+
     payload = {
         "generated_at": generated_at,
         "success": True,
@@ -225,16 +243,12 @@ def publish_results(
             "results_workbook": "",
             "converted_pdf_count": converted,
             "skipped_pdf_count": skipped,
+            "club_reports_generated": club_result == 0,
             "warning_count": len(warnings),
             "warnings": warnings,
         },
         "error": None,
     }
-
-    try:
-        package_publish_artifacts(output_dir)
-    except Exception as exc:
-        warnings.append(f"Publish package creation skipped: {exc}")
 
     exported_count = 0
     if export_pdf_dir is not None:

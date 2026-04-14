@@ -161,6 +161,37 @@ def test_publish_results_can_export_pdfs_to_a_single_folder(tmp_path: Path) -> N
     assert (report_path / "publish_results.json").exists()
 
 
+def test_publish_results_generates_club_reports(tmp_path: Path, monkeypatch) -> None:
+    data_root = tmp_path / "data"
+    year = 1999
+    year_root = data_root / str(year)
+    audited_dir = year_root / "inputs" / "audited"
+    audited_dir.mkdir(parents=True, exist_ok=True)
+    (audited_dir / "Race 1 - audited.xlsx").write_text("placeholder", encoding="utf-8")
+
+    output_dir = year_root / "outputs"
+    ensure_output_subdirs(output_dir)
+
+    report_dir = tmp_path / "reports"
+    report_dir.mkdir(parents=True, exist_ok=True)
+
+    called = {"count": 0}
+
+    def fake_generate_club_reports(year_arg, data_root_arg, report_dir_arg):
+        assert year_arg == year
+        assert data_root_arg == data_root
+        assert report_dir_arg == report_dir
+        called["count"] += 1
+        return 0
+
+    monkeypatch.setattr(club_report, "generate_club_reports", fake_generate_club_reports)
+
+    result = publish.publish_results(year=year, data_root=data_root, report_dir=report_dir)
+
+    assert result == 0
+    assert called["count"] == 1
+
+
 def test_publish_package_artifacts_preserves_nested_structure_when_not_flattened(tmp_path: Path) -> None:
     output_dir = tmp_path / "outputs"
     output_paths = ensure_output_subdirs(output_dir)
