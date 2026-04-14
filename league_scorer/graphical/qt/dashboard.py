@@ -46,7 +46,6 @@ from league_scorer.input.common_files import race_discovery_exclusions
 from league_scorer.input.source_loader import discover_race_files
 from league_scorer.output.output_layout import build_output_paths, ensure_output_subdirs, sort_existing_output_files
 from league_scorer.settings import settings, DEFAULT_SETTINGS
-from league_scorer.process.main import LeagueScorer
 from league_scorer.raceroster_import import (
     SporthiveRaceNotDirectlyImportableError,
     import_raceroster_results,
@@ -721,7 +720,7 @@ class QtLeagueScorerDashboard(QMainWindow):
 
         for label, handler in [
             ("⚙️ Settings", self._on_settings),
-            ("▶ Run Scorer", self._on_run_scorer),
+            ("Import Race Roster", self._on_import_raceroster),
             ("Publish Provisional", self._on_run_provisional_fast_track),
         ]:
             btn = QPushButton(label, bottom_actions)
@@ -861,54 +860,6 @@ class QtLeagueScorerDashboard(QMainWindow):
 
     def _open_path_in_system(self, path: Path) -> None:
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
-
-    def _run_scorer(self) -> None:
-        if not self._require_configured("Run WRRL Admin Suite"):
-            return
-        if session_config.input_dir is None or session_config.output_dir is None:
-            QMessageBox.warning(self, "Configuration Incomplete", "Input or output folders are not configured.")
-            return
-
-        session_config.ensure_dirs()
-        if session_config.output_dir:
-            sort_existing_output_files(session_config.output_dir)
-
-        dialog = WorkflowDialog("Run Scorer", "Starting scorer...", self)
-        dialog.show()
-
-        result_queue: queue.Queue = queue.Queue()
-
-        def worker() -> None:
-            try:
-                scorer = LeagueScorer(session_config.input_dir, session_config.output_dir, session_config.year)
-                warnings = scorer.run()
-                result_queue.put(("done", warnings))
-            except Exception as exc:
-                result_queue.put(("error", str(exc)))
-
-        threading.Thread(target=worker, daemon=True).start()
-
-        def poll() -> None:
-            try:
-                msg = result_queue.get_nowait()
-            except queue.Empty:
-                QTimer.singleShot(100, poll)
-                return
-
-            if msg[0] == "done":
-                warnings = msg[1]
-                dialog.set_finished(True)
-                if warnings:
-                    dialog.append_output("Warnings:\n" + "\n".join(warnings))
-                    QMessageBox.information(self, "Run Complete", "Run complete with warnings. See the log for details.")
-                else:
-                    QMessageBox.information(self, "Run Complete", "Run completed successfully.")
-            elif msg[0] == "error":
-                dialog.append_output(str(msg[1]))
-                dialog.set_finished(False)
-                QMessageBox.critical(self, "Run Failed", f"Run failed:\n{msg[1]}")
-
-        QTimer.singleShot(100, poll)
 
     def _run_workflow(
         self,
@@ -1065,10 +1016,6 @@ class QtLeagueScorerDashboard(QMainWindow):
             "Help",
             "Use the dashboard actions to run workflows, publish results, and open reports.",
         )
-
-    @Slot()
-    def _on_run_scorer(self) -> None:
-        self._run_scorer()
 
     @Slot()
     def _on_run_autopilot(self) -> None:
