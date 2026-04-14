@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QSplitter,
+    QStyle,
     QTextEdit,
     QVBoxLayout,
     QWidget,
@@ -66,50 +67,80 @@ class RawArchiveDiffWindow(QMainWindow):
         central.setStyleSheet(f"background: {WRRL_LIGHT};")
         self.setCentralWidget(central)
 
-        layout = QVBoxLayout(central)
-        layout.setContentsMargins(12, 12, 12, 12)
-        layout.setSpacing(10)
+        root_layout = QVBoxLayout(central)
+        root_layout.setContentsMargins(12, 12, 12, 12)
+        root_layout.setSpacing(12)
 
-        header = QLabel("Raw Data vs Archive Diff", central)
-        header.setFont(QFont("Segoe UI", 16, QFont.Bold))
-        header.setStyleSheet(f"color: {WRRL_NAVY};")
-        layout.addWidget(header)
+        header_panel = QWidget(central)
+        header_panel.setStyleSheet("background: #ffffff; border-radius: 12px;")
+        header_layout = QHBoxLayout(header_panel)
+        header_layout.setContentsMargins(16, 16, 16, 16)
+        header_layout.setSpacing(12)
 
-        controls = QWidget(central)
-        controls_layout = QHBoxLayout(controls)
-        controls_layout.setContentsMargins(0, 0, 0, 0)
+        title = QLabel("Raw Data vs Archive Diff", header_panel)
+        title.setFont(QFont("Segoe UI", 16, QFont.Bold))
+        title.setStyleSheet(f"color: {WRRL_GREEN};")
+        header_layout.addWidget(title)
+        header_layout.addStretch(1)
+
+        root_layout.addWidget(header_panel)
+
+        controls_panel = QWidget(central)
+        controls_panel.setStyleSheet("background: #ffffff; border-radius: 12px;")
+        controls_layout = QHBoxLayout(controls_panel)
+        controls_layout.setContentsMargins(16, 12, 16, 12)
         controls_layout.setSpacing(8)
 
-        file_label = QLabel("File:", controls)
+        button_style = (
+            "QPushButton { background: #ffffff; color: #3a4658; border: 1px solid #ccd7e3; border-radius: 8px; padding: 8px 14px; }"
+            "QPushButton:hover { background: #eef2f7; }"
+        )
+
+        refresh_btn = QPushButton("Refresh", controls_panel)
+        refresh_btn.setCursor(Qt.PointingHandCursor)
+        refresh_btn.setStyleSheet(button_style)
+        refresh_btn.setIcon(self.style().standardIcon(QStyle.SP_BrowserReload))
+        refresh_btn.clicked.connect(self._load_file_pairs)
+        controls_layout.addWidget(refresh_btn)
+
+        open_raw_btn = QPushButton("Open Raw", controls_panel)
+        open_raw_btn.setCursor(Qt.PointingHandCursor)
+        open_raw_btn.setStyleSheet(button_style)
+        open_raw_btn.clicked.connect(lambda: self._open_selected_file("raw"))
+        controls_layout.addWidget(open_raw_btn)
+
+        open_archive_btn = QPushButton("Open Archive", controls_panel)
+        open_archive_btn.setCursor(Qt.PointingHandCursor)
+        open_archive_btn.setStyleSheet(button_style)
+        open_archive_btn.clicked.connect(lambda: self._open_selected_file("archive"))
+        controls_layout.addWidget(open_archive_btn)
+
+        close_btn = QPushButton("🏠 Close", controls_panel)
+        close_btn.setCursor(Qt.PointingHandCursor)
+        close_btn.setStyleSheet(button_style)
+        close_btn.clicked.connect(self.close)
+        controls_layout.addWidget(close_btn)
+
+        controls_layout.addStretch(1)
+
+        file_label = QLabel("File:", controls_panel)
         file_label.setFont(QFont("Segoe UI", 10, QFont.Bold))
         controls_layout.addWidget(file_label)
 
-        self._file_combo = QComboBox(controls)
+        self._file_combo = QComboBox(controls_panel)
         self._file_combo.setMinimumWidth(520)
         self._file_combo.currentIndexChanged.connect(self._load_selected_diff)
         controls_layout.addWidget(self._file_combo)
 
-        refresh_btn = QPushButton("Refresh", controls)
-        refresh_btn.clicked.connect(self._load_file_pairs)
-        controls_layout.addWidget(refresh_btn)
+        root_layout.addWidget(controls_panel)
 
-        open_raw_btn = QPushButton("Open Raw", controls)
-        open_raw_btn.clicked.connect(lambda: self._open_selected_file("raw"))
-        controls_layout.addWidget(open_raw_btn)
+        content_panel = QWidget(central)
+        content_panel.setStyleSheet("background: #ffffff; border-radius: 12px;")
+        content_layout = QVBoxLayout(content_panel)
+        content_layout.setContentsMargins(16, 16, 16, 16)
+        content_layout.setSpacing(12)
 
-        open_archive_btn = QPushButton("Open Archive", controls)
-        open_archive_btn.clicked.connect(lambda: self._open_selected_file("archive"))
-        controls_layout.addWidget(open_archive_btn)
-
-        controls_layout.addStretch(1)
-        layout.addWidget(controls)
-
-        self._status_label = QLabel("Select a file to compare.", central)
-        self._status_label.setFont(QFont("Segoe UI", 9))
-        self._status_label.setStyleSheet("color: #5f6d7b;")
-        layout.addWidget(self._status_label)
-
-        splitter = QSplitter(Qt.Horizontal, central)
+        splitter = QSplitter(Qt.Horizontal, content_panel)
         splitter.setHandleWidth(6)
 
         self._left_text = QTextEdit(splitter)
@@ -129,7 +160,26 @@ class RawArchiveDiffWindow(QMainWindow):
         splitter.setStretchFactor(0, 1)
         splitter.setStretchFactor(1, 1)
 
-        layout.addWidget(splitter, 1)
+        content_layout.addWidget(splitter, 1)
+        root_layout.addWidget(content_panel, 1)
+
+        root_layout.addWidget(self._build_footer_panel())
+
+    def _build_footer_panel(self) -> QWidget:
+        footer = QWidget(self)
+        footer.setStyleSheet("background: #1e1e1e; border-radius: 12px;")
+        footer.setFixedHeight(40)
+
+        footer_layout = QHBoxLayout(footer)
+        footer_layout.setContentsMargins(16, 8, 16, 8)
+
+        self._status_label = QLabel("Select a file to compare.", footer)
+        self._status_label.setFont(QFont("Segoe UI", 9))
+        self._status_label.setStyleSheet("color: #d4d4d4;")
+        footer_layout.addWidget(self._status_label)
+        footer_layout.addStretch(1)
+
+        return footer
 
     def _results_paths(self) -> tuple[Path | None, Path | None]:
         if session_config.input_dir is None:

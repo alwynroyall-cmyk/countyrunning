@@ -27,7 +27,7 @@ VALID_STATUSES = {STATUS_CONFIRMED, STATUS_PROVISIONAL, STATUS_TBC}
 SHEET_NAME = "Championship Events"
 
 # Column header -> attribute name mapping
-_COL_MAP = {
+_REQUIRED_COLUMN_MAP = {
     "RaceRef":           "race_ref",
     "EventName":         "event_name",
     "Category":          "category",
@@ -42,6 +42,10 @@ _COL_MAP = {
     "Notes":             "notes",
     "Status":            "status",
 }
+_OPTIONAL_COLUMN_MAP = {
+    "Website":           "website",
+}
+_COL_MAP = {**_REQUIRED_COLUMN_MAP, **_OPTIONAL_COLUMN_MAP}
 
 
 @dataclass
@@ -60,6 +64,7 @@ class EventEntry:
     scoring_basis:      str
     notes:              str
     status:             str
+    website:            str = ""
 
     # ------------------------------------------------------------------
     # Helpers
@@ -153,8 +158,9 @@ def load_events(path: Path | str) -> EventsSchedule:
         # Parse header row
         # ------------------------------------------------------------------ #
         header = [str(h).strip() if h is not None else "" for h in rows[0]]
+        header_lower = [h.lower() for h in header]
         col_index: dict[str, int] = {}
-        for col_name, attr in _COL_MAP.items():
+        for col_name, attr in _REQUIRED_COLUMN_MAP.items():
             try:
                 col_index[attr] = header.index(col_name)
             except ValueError:
@@ -162,6 +168,25 @@ def load_events(path: Path | str) -> EventsSchedule:
                     f"Required column '{col_name}' not found in sheet '{SHEET_NAME}'. "
                     f"Found columns: {header}"
                 )
+
+        website_headers = [
+            "website",
+            "event website",
+            "website url",
+            "url",
+            "event url",
+            "link",
+        ]
+        for col_name, attr in _OPTIONAL_COLUMN_MAP.items():
+            if col_name.lower() == "website":
+                for header_name in website_headers:
+                    if header_name in header_lower:
+                        col_index[attr] = header_lower.index(header_name)
+                        break
+            else:
+                lower_name = col_name.lower()
+                if lower_name in header_lower:
+                    col_index[attr] = header_lower.index(lower_name)
 
         # ------------------------------------------------------------------ #
         # Parse data rows
@@ -174,7 +199,10 @@ def load_events(path: Path | str) -> EventsSchedule:
                 continue
 
             def get(attr: str) -> str:
-                val = row[col_index[attr]]
+                index = col_index.get(attr)
+                if index is None or index >= len(row):
+                    return ""
+                val = row[index]
                 if val is None:
                     return ""
                 if isinstance(val, (datetime.datetime, datetime.date)):
@@ -200,6 +228,7 @@ def load_events(path: Path | str) -> EventsSchedule:
                 scoring_basis      = get("scoring_basis"),
                 notes              = get("notes"),
                 status             = get("status") or STATUS_TBC,
+                website            = get("website"),
             )
             schedule.events.append(entry)
 

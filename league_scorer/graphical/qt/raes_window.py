@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (
     QScrollArea,
     QSizePolicy,
     QSplitter,
+    QStyle,
     QTreeWidget,
     QTreeWidgetItem,
     QVBoxLayout,
@@ -272,30 +273,54 @@ class RAESWindow(QMainWindow):
         layout.setContentsMargins(12, 12, 12, 12)
         layout.setSpacing(12)
 
+        button_style = (
+            "QPushButton { background: #ffffff; color: #3a4658; border: 1px solid #ccd7e3; border-radius: 8px; padding: 8px 14px; }"
+            "QPushButton:hover { background: #eef2f7; }"
+        )
+
         title_row = QWidget(self)
+        title_row.setStyleSheet("background: #ffffff; border-radius: 12px;")
         title_layout = QHBoxLayout(title_row)
-        title_layout.setContentsMargins(0, 0, 0, 0)
-        title_layout.setSpacing(8)
+        title_layout.setContentsMargins(16, 16, 16, 16)
+        title_layout.setSpacing(12)
 
         title = QLabel("RAES Manual Corrections", self)
         title.setFont(QFont("Segoe UI", 16, QFont.Bold))
-        title.setStyleSheet(f"color: {RAES_NAVY};")
+        title.setStyleSheet("color: #2d7a4a;")
         title_layout.addWidget(title)
         title_layout.addStretch(1)
-
-        refresh_btn = QPushButton("Refresh", self)
-        refresh_btn.clicked.connect(self._refresh_list)
-        title_layout.addWidget(refresh_btn)
-
-        self._show_all_cb = QCheckBox("Show all runners (include non-league / zero-point runners)", self)
-        self._show_all_cb.stateChanged.connect(self._refresh_list)
-        title_layout.addWidget(self._show_all_cb)
-
-        self._count_label = QLabel("Anomalies: 0", self)
-        self._count_label.setFont(QFont("Segoe UI", 10, QFont.Bold))
-        title_layout.addWidget(self._count_label)
-
         layout.addWidget(title_row)
+
+        button_bar = QWidget(self)
+        button_bar.setStyleSheet("background: #ffffff; border-radius: 12px;")
+        button_layout = QHBoxLayout(button_bar)
+        button_layout.setContentsMargins(16, 12, 16, 12)
+        button_layout.setSpacing(12)
+
+        refresh_btn = QPushButton("Refresh", button_bar)
+        refresh_btn.setCursor(Qt.PointingHandCursor)
+        refresh_btn.setStyleSheet(button_style)
+        refresh_btn.setIcon(self.style().standardIcon(QStyle.SP_BrowserReload))
+        refresh_btn.clicked.connect(self._refresh_list)
+        button_layout.addWidget(refresh_btn)
+
+        self._show_all_cb = QCheckBox("Show all runners (include non-league / zero-point runners)", button_bar)
+        self._show_all_cb.stateChanged.connect(self._refresh_list)
+        button_layout.addWidget(self._show_all_cb)
+
+        self._count_label = QLabel("Anomalies: 0", button_bar)
+        self._count_label.setFont(QFont("Segoe UI", 10, QFont.Bold))
+        button_layout.addWidget(self._count_label)
+
+        close_btn = QPushButton("🏠 Close", button_bar)
+        close_btn.setCursor(Qt.PointingHandCursor)
+        close_btn.setStyleSheet(button_style)
+        close_btn.clicked.connect(self.close)
+        button_layout.addWidget(close_btn)
+
+        button_layout.addStretch(1)
+
+        layout.addWidget(button_bar)
 
         splitter = QSplitter(Qt.Horizontal, self)
         splitter.setHandleWidth(4)
@@ -362,24 +387,36 @@ class RAESWindow(QMainWindow):
         action_layout.addWidget(self._value_combo)
 
         apply_btn = QPushButton("Apply to selected files", self)
+        apply_btn.setCursor(Qt.PointingHandCursor)
+        apply_btn.setStyleSheet(button_style)
         apply_btn.clicked.connect(self._on_apply)
         action_layout.addWidget(apply_btn)
 
         mark_btn = QPushButton("Mark Reviewed", self)
+        mark_btn.setCursor(Qt.PointingHandCursor)
+        mark_btn.setStyleSheet(button_style)
         mark_btn.clicked.connect(self._on_mark_reviewed)
         action_layout.addWidget(mark_btn)
 
         action_layout.addStretch(1)
         right_layout.addWidget(action_row)
 
-        diag_group = QGroupBox("Diagnostics", self)
-        diag_layout = QVBoxLayout(diag_group)
-        diag_layout.setContentsMargins(8, 8, 8, 8)
-        self._diag_text = QTextEdit(self)
+        diag_panel = QWidget(self)
+        diag_panel.setStyleSheet("background: #1e1e1e; border-radius: 12px;")
+        diag_layout = QVBoxLayout(diag_panel)
+        diag_layout.setContentsMargins(16, 16, 16, 16)
+        diag_layout.setSpacing(8)
+
+        diag_title = QLabel("Diagnostics", diag_panel)
+        diag_title.setFont(QFont("Segoe UI", 12, QFont.Bold))
+        diag_title.setStyleSheet("color: #ffffff;")
+        diag_layout.addWidget(diag_title)
+
+        self._diag_text = QTextEdit(diag_panel)
         self._diag_text.setReadOnly(True)
-        self._diag_text.setStyleSheet("background: #f7f7f9; color: #333333;")
+        self._diag_text.setStyleSheet("background: transparent; color: #ffffff; border: none;")
         diag_layout.addWidget(self._diag_text)
-        right_layout.addWidget(diag_group, 1)
+        right_layout.addWidget(diag_panel, 1)
 
         splitter.addWidget(right)
         splitter.setStretchFactor(0, 1)

@@ -236,10 +236,6 @@ class LeagueAuditor:
                 # series files; suppress them from the report there.
                 if issue.code == "AUD-ROW-008" and is_series:
                     continue
-                # Duplicate-person conflicts are expected in consolidated
-                # series files where the same runner appears across events.
-                if issue.code == "AUD-ROW-010" and is_series:
-                    continue
                 runner = runner_by_row.get(issue.source_row or -1)
                 rows.append(
                     _build_row_entry(
@@ -247,6 +243,7 @@ class LeagueAuditor:
                         race_file=race_file,
                         issue=issue,
                         runner=runner,
+                        is_series=is_series,
                     )
                 )
 
@@ -657,8 +654,8 @@ _EA_CHECKED_COLUMNS = [
 ]
 
 
-def _build_row_entry(race_num: int, race_file: str, issue: RaceIssue, runner: Optional[RunnerRaceEntry]) -> dict:
-    severity, status, depends_on, next_step = _status_for_code(issue.code)
+def _build_row_entry(race_num: int, race_file: str, issue: RaceIssue, runner: Optional[RunnerRaceEntry], is_series: bool = False) -> dict:
+    severity, status, depends_on, next_step = _status_for_code(issue.code, is_series=is_series)
     return {
         "Severity": severity,
         "Race": race_num,
@@ -707,7 +704,14 @@ def _build_runner_entry(
     }
 
 
-def _status_for_code(code: str) -> Tuple[str, str, str, str]:
+def _status_for_code(code: str, is_series: bool = False) -> Tuple[str, str, str, str]:
+    if code == "AUD-ROW-010" and is_series:
+        return (
+            "info",
+            "Manual Review",
+            "Duplicate Conflict Review",
+            "Check conflicting club, sex, or category values in the source rows.",
+        )
     mapping = {
         "AUD-ROW-001": ("warning", "Ready To Fix", "Source Data Correction", "Correct the gender value in the source workbook."),
         "AUD-ROW-002": ("warning", "Ready To Fix", "Source Data Correction", "Correct the time value in the source workbook."),

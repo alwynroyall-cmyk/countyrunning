@@ -1,5 +1,5 @@
-"""Entry point for launching the dashboard."""
+"""Entry point for launching the Qt dashboard."""
 
-from league_scorer.graphical import launch_dashboard
+from league_scorer.graphical.qt import launch_dashboard
 
 launch_dashboard()

@@ -60,11 +60,39 @@ def load_workbook_cache():
                     if club:
                         club_map.setdefault(club.lower(), club)
 
+        male_female_sheets = [
+            sheet for sheet in xl.sheet_names
+            if any(keyword in str(sheet).strip().lower() for keyword in {"male", "female", "women"})
+        ]
+        division_sheets = [
+            sheet for sheet in xl.sheet_names
+            if str(sheet).strip().lower().startswith("div")
+        ]
+        for sheet in male_female_sheets + division_sheets:
+            if sheet not in sheets:
+                df = xl.parse(sheet)
+                sheets[sheet] = df
+
+                if "Name" in df.columns:
+                    for v in df["Name"].dropna():
+                        name = str(v).strip()
+                        if name:
+                            pc = proper_case(name)
+                            name_map.setdefault(name.lower(), pc)
+
+                if "Club" in df.columns:
+                    for v in df["Club"].dropna():
+                        club = str(v).strip()
+                        if club:
+                            club_map.setdefault(club.lower(), club)
+
         xl.close()
 
         return {
             "path": wb_path,
             "race_sheets": race_sheets,
+            "summary_sheets": male_female_sheets,
+            "division_sheets": division_sheets,
             "sheets": sheets,
             "name_map": name_map,
             "club_map": club_map,
@@ -116,6 +144,7 @@ def extract_runner_history(cache, runner_pc):
                 "Club": norm(row.get("Club")),
                 "Gender": norm(row.get("Gender")),
                 "Category": norm(row.get("Category")),
+                "Distance": norm(row.get("Distance")),
                 "Time": norm(row.get("Time")),
                 "Points": str(points_int),
                 "Team": norm(row.get("Team")),

@@ -9,6 +9,7 @@ import sys
 from pathlib import Path
 from PySide6.QtCore import QTimer, QSettings, QUrl, Qt, QByteArray, Slot
 from PySide6.QtGui import QDesktopServices, QFont, QIcon, QPixmap, QTextCursor
+from PySide6.QtNetwork import QLocalServer, QLocalSocket
 from PySide6.QtWidgets import (
     QApplication,
     QDialog,
@@ -59,6 +60,24 @@ def _find_repository_root() -> Path:
         if (parent / "scripts").is_dir() and (parent / "league_scorer").is_dir():
             return parent
     return candidate.parents[3]
+
+
+def _acquire_single_instance_lock(server_name: str) -> QLocalServer | None:
+    server = QLocalServer()
+    if server.listen(server_name):
+        return server
+
+    socket = QLocalSocket()
+    socket.connectToServer(server_name)
+    if socket.waitForConnected(300):
+        return None
+
+    QLocalServer.removeServer(server_name)
+    if server.listen(server_name):
+        return server
+
+    return None
+
 
 WRRL_NAVY = "#3a4658"
 WRRL_GREEN = "#2d7a4a"
@@ -1091,10 +1110,40 @@ class QtLeagueScorerDashboard(QMainWindow):
         try:
             from league_scorer.output.output_layout import export_publish_pdfs
 
-            export_path = export_publish_pdfs(session_config.output_dir, Path(export_dir), flatten=True)
-            count = sum(1 for _ in export_path.glob("*.pdf"))
-            QMessageBox.information(self, "Export Complete", f"Exported {count} published PDF(s) to {export_path}")
-            self._open_path_in_system(export_path)
+            dialog = WorkflowDialog("Export Published PDFs", "Exporting published PDFs...", self)
+            dialog.show()
+
+            result_queue: queue.Queue = queue.Queue()
+
+            def worker() -> None:
+                try:
+                    export_path = export_publish_pdfs(session_config.output_dir, Path(export_dir), flatten=True)
+                    count = sum(1 for _ in export_path.glob("*.pdf"))
+                    result_queue.put(("done", export_path, count))
+                except Exception as exc:
+                    result_queue.put(("error", str(exc)))
+
+            threading.Thread(target=worker, daemon=True).start()
+
+            def poll() -> None:
+                try:
+                    item = result_queue.get_nowait()
+                except queue.Empty:
+                    QTimer.singleShot(100, poll)
+                    return
+
+                if item[0] == "done":
+                    export_path, count = item[1], item[2]
+                    dialog.set_finished(True)
+                    dialog.append_output(f"Exported {count} published PDF(s) to {export_path}")
+                    QMessageBox.information(self, "Export Complete", f"Exported {count} published PDF(s) to {export_path}")
+                    self._open_path_in_system(export_path)
+                elif item[0] == "error":
+                    dialog.append_output(item[1])
+                    dialog.set_finished(False)
+                    QMessageBox.critical(self, "Export Failed", item[1])
+
+            QTimer.singleShot(100, poll)
         except Exception as exc:
             QMessageBox.critical(self, "Export Failed", str(exc))
 
@@ -1408,8 +1457,19 @@ class QtLeagueScorerDashboard(QMainWindow):
         )
 
 
-def launch_dashboard() -> None:
-    app = QApplication(sys.argv)
+def launch_dashboard(app: QApplication | None = None) -> None:
+    if app is None:
+        app = QApplication(sys.argv)
+
+    instance_lock = _acquire_single_instance_lock("wrrl-admin-suite")
+    if instance_lock is None:
+        QMessageBox.warning(
+            None,
+            "Already running",
+            "WRRL Admin Suite is already running.",
+        )
+        return
+
     app.setWindowIcon(
         QIcon(
             str(

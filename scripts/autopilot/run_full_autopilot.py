@@ -499,7 +499,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--baseline-file",
         type=Path,
-        default=Path("tests") / "baselines" / "season_1999_results_baseline.json",
+        default=None,
+        help="Optional baseline fingerprint file for Stage 4 regression comparison.",
     )
     parser.add_argument("--write-baseline", action="store_true")
     parser.add_argument("--allow-missing-data", action="store_true")

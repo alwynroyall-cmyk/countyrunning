@@ -93,16 +93,29 @@ class ResultsViewerWindow(QMainWindow):
         button_layout.setContentsMargins(16, 12, 16, 12)
         button_layout.setSpacing(12)
 
+        button_style = (
+            "QPushButton { background: #ffffff; color: #3a4658; border: 1px solid #ccd7e3; border-radius: 8px; padding: 8px 14px; }"
+            "QPushButton:hover { background: #eef2f7; }"
+        )
+
         refresh_btn = QPushButton("Refresh", button_bar)
         refresh_btn.setIcon(self.style().standardIcon(QStyle.SP_BrowserReload))
-        refresh_btn.clicked.connect(self._refresh_results)
         refresh_btn.setCursor(Qt.PointingHandCursor)
+        refresh_btn.setStyleSheet(button_style)
+        refresh_btn.clicked.connect(self._refresh_results)
         button_layout.addWidget(refresh_btn)
 
         open_btn = QPushButton("Open Workbook", button_bar)
-        open_btn.clicked.connect(self._open_results_workbook)
         open_btn.setCursor(Qt.PointingHandCursor)
+        open_btn.setStyleSheet(button_style)
+        open_btn.clicked.connect(self._open_results_workbook)
         button_layout.addWidget(open_btn)
+
+        close_btn = QPushButton("🏠 Close", button_bar)
+        close_btn.setCursor(Qt.PointingHandCursor)
+        close_btn.setStyleSheet(button_style)
+        close_btn.clicked.connect(self.close)
+        button_layout.addWidget(close_btn)
 
         button_layout.addStretch(1)
         root_layout.addWidget(button_bar)

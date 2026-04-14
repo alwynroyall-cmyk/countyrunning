@@ -12,6 +12,7 @@ from .models import ClubInfo
 log = logging.getLogger(__name__)
 
 _REQUIRED = {"Club", "Preferred name", "Team A", "Team B"}
+_OPTIONAL_ALIAS_COLUMNS = {"ea club name", "ea club", "ea clubname"}
 
 
 def load_clubs(filepath: Path) -> Tuple[Dict[str, str], Dict[str, ClubInfo]]:
@@ -37,6 +38,8 @@ def load_clubs(filepath: Path) -> Tuple[Dict[str, str], Dict[str, ClubInfo]]:
     missing = _REQUIRED - set(df.columns)
     if missing:
         raise FatalError(f"clubs.xlsx missing columns: {missing}")
+
+    alias_columns = [c for c in df.columns if str(c).strip().lower() in _OPTIONAL_ALIAS_COLUMNS]
 
     raw_to_preferred: Dict[str, str] = {}
     club_info: Dict[str, ClubInfo] = {}
@@ -70,6 +73,29 @@ def load_clubs(filepath: Path) -> Tuple[Dict[str, str], Dict[str, ClubInfo]]:
             )
 
         raw_to_preferred[raw.lower()] = preferred
+
+        preferred_lower = preferred.lower()
+        if preferred_lower in raw_to_preferred and raw_to_preferred[preferred_lower] != preferred:
+            log.warning(
+                "clubs.xlsx row %d: preferred name '%s' conflicts with existing club alias mapping",
+                idx + 2,
+                preferred,
+            )
+        raw_to_preferred[preferred_lower] = preferred
+
+        for alias_column in alias_columns:
+            alias = str(row[alias_column]).strip()
+            if not alias or alias.lower() == "nan":
+                continue
+            alias_lower = alias.lower()
+            if alias_lower in raw_to_preferred and raw_to_preferred[alias_lower] != preferred:
+                log.warning(
+                    "clubs.xlsx row %d: alias column '%s' value '%s' conflicts with existing mapping",
+                    idx + 2,
+                    alias_column,
+                    alias,
+                )
+            raw_to_preferred[alias_lower] = preferred
 
         if preferred not in club_info:
             club_info[preferred] = ClubInfo(

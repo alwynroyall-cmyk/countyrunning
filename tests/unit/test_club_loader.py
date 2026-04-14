@@ -11,15 +11,16 @@ def test_load_clubs_reads_mapping_and_club_info(tmp_path: Path):
     path = tmp_path / "clubs.xlsx"
     wb = Workbook()
     ws = wb.active
-    ws.append(["Club", "Preferred name", "Team A", "Team B"])
-    ws.append(["Guest Runners", "Guest Runners", "2", "1"])
-    ws.append(["Club A", "Club A", 1, 2])
+    ws.append(["Club", "Preferred name", "EA Club Name", "Team A", "Team B"])
+    ws.append(["Guest Runners", "Guest Runners", "Guest Runners", "2", "1"])
+    ws.append(["EA A", "Club A", "Club A", 1, 2])
     wb.save(path)
 
     raw_to_preferred, club_info = load_clubs(path)
 
     assert raw_to_preferred["guest runners"] == "Guest Runners"
     assert raw_to_preferred["club a"] == "Club A"
+    assert raw_to_preferred["ea a"] == "Club A"
     assert club_info["Club A"].div_a == 1
     assert club_info["Club A"].div_b == 2
     assert club_info["Guest Runners"].preferred_name == "Guest Runners"

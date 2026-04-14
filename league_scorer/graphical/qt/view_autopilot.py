@@ -73,22 +73,41 @@ class AutopilotReportsWindow(QMainWindow):
         button_layout.setContentsMargins(16, 12, 16, 12)
         button_layout.setSpacing(12)
 
+        button_style = (
+            "QPushButton { background: #ffffff; color: #3a4658; border: 1px solid #ccd7e3; border-radius: 8px; padding: 8px 14px; }"
+            "QPushButton:hover { background: #eef2f7; }"
+        )
+
         self._refresh_btn = QPushButton("Refresh", button_bar)
         self._refresh_btn.setIcon(self.style().standardIcon(QStyle.SP_BrowserReload))
+        self._refresh_btn.setCursor(Qt.PointingHandCursor)
+        self._refresh_btn.setStyleSheet(button_style)
         self._refresh_btn.clicked.connect(self._refresh_reports)
         button_layout.addWidget(self._refresh_btn)
 
         self._manual_btn = QPushButton("Open Manual Audit", button_bar)
+        self._manual_btn.setCursor(Qt.PointingHandCursor)
+        self._manual_btn.setStyleSheet(button_style)
         self._manual_btn.clicked.connect(self._open_manual_audit)
         button_layout.addWidget(self._manual_btn)
 
         self._season_btn = QPushButton("Open Season Audit", button_bar)
+        self._season_btn.setCursor(Qt.PointingHandCursor)
+        self._season_btn.setStyleSheet(button_style)
         self._season_btn.clicked.connect(self._open_season_audit)
         button_layout.addWidget(self._season_btn)
 
         self._folder_btn = QPushButton("Open Reports Folder", button_bar)
+        self._folder_btn.setCursor(Qt.PointingHandCursor)
+        self._folder_btn.setStyleSheet(button_style)
         self._folder_btn.clicked.connect(self._open_reports_folder)
         button_layout.addWidget(self._folder_btn)
+
+        self._close_btn = QPushButton("🏠 Close", button_bar)
+        self._close_btn.setCursor(Qt.PointingHandCursor)
+        self._close_btn.setStyleSheet(button_style)
+        self._close_btn.clicked.connect(self.close)
+        button_layout.addWidget(self._close_btn)
 
         button_layout.addStretch(1)
         root_layout.addWidget(button_bar)
