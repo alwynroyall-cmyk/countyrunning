@@ -86,47 +86,46 @@ class EventsViewerWindow(QMainWindow):
         central.setStyleSheet(f"background: {WRRL_LIGHT};")
         self.setCentralWidget(central)
 
-        layout = QVBoxLayout(central)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(0)
+        root_layout = QVBoxLayout(central)
+        root_layout.setContentsMargins(12, 12, 12, 12)
+        root_layout.setSpacing(12)
 
-        layout.addWidget(self._build_toolbar())
-        layout.addWidget(self._build_summary_bar())
-        layout.addWidget(self._build_table())
-        layout.addWidget(self._build_status_bar())
+        header_panel = QWidget(central)
+        header_panel.setStyleSheet("background: #ffffff; border-radius: 12px;")
+        header_layout = QHBoxLayout(header_panel)
+        header_layout.setContentsMargins(16, 16, 16, 16)
+        header_layout.setSpacing(12)
 
-    def _build_toolbar(self) -> QWidget:
-        toolbar = QWidget(self)
-        toolbar.setStyleSheet(f"background: {WRRL_NAVY};")
-        toolbar.setFixedHeight(52)
-
-        layout = QHBoxLayout(toolbar)
-        layout.setContentsMargins(16, 8, 16, 8)
-        layout.setSpacing(10)
-
-        title = QLabel("Championship Events Schedule", toolbar)
-        title.setStyleSheet(f"color: {WRRL_WHITE};")
-        title.setFont(QFont("Segoe UI", 14, QFont.Bold))
-        layout.addWidget(title)
-
-        layout.addStretch(1)
+        title = QLabel("Championship Events Schedule", header_panel)
+        title.setFont(QFont("Segoe UI", 16, QFont.Bold))
+        title.setStyleSheet(f"color: {WRRL_GREEN};")
+        header_layout.addWidget(title)
+        header_layout.addStretch(1)
 
         if self._schedule.source_path:
-            source_label = QLabel(f"Source: {self._schedule.source_path.name}", toolbar)
-            source_label.setStyleSheet("color: #a0b0c0;")
+            source_label = QLabel(f"Source: {self._schedule.source_path.name}", header_panel)
             source_label.setFont(QFont("Segoe UI", 9))
-            layout.addWidget(source_label)
+            source_label.setStyleSheet("color: #6d7885;")
+            header_layout.addWidget(source_label)
 
-        self._timeline_button = QPushButton("📅 Generate Timeline", toolbar)
+        root_layout.addWidget(header_panel)
+
+        button_panel = QWidget(central)
+        button_panel.setStyleSheet("background: #ffffff; border-radius: 12px;")
+        button_layout = QHBoxLayout(button_panel)
+        button_layout.setContentsMargins(16, 12, 16, 12)
+        button_layout.setSpacing(12)
+
+        self._timeline_button = QPushButton("📅 Generate Timeline", button_panel)
         self._timeline_button.setCursor(Qt.PointingHandCursor)
         self._timeline_button.setStyleSheet(
             "QPushButton { background: #2d7a4a; color: #ffffff; border: none; border-radius: 8px; padding: 8px 14px; }"
             "QPushButton:hover { background: #24653d; }"
         )
         self._timeline_button.clicked.connect(self._on_generate_timeline)
-        layout.addWidget(self._timeline_button)
+        button_layout.addWidget(self._timeline_button)
 
-        self._open_website_button = QPushButton("🌐 Open Website", toolbar)
+        self._open_website_button = QPushButton("🌐 Open Website", button_panel)
         self._open_website_button.setCursor(Qt.PointingHandCursor)
         self._open_website_button.setEnabled(False)
         self._open_website_button.setStyleSheet(
@@ -134,18 +133,44 @@ class EventsViewerWindow(QMainWindow):
             "QPushButton:hover { background: #eef2f7; }"
         )
         self._open_website_button.clicked.connect(self._on_open_website)
-        layout.addWidget(self._open_website_button)
+        button_layout.addWidget(self._open_website_button)
 
-        self._dashboard_button = QPushButton("🏠 Close", toolbar)
+        self._dashboard_button = QPushButton("🏠 Close", button_panel)
         self._dashboard_button.setCursor(Qt.PointingHandCursor)
         self._dashboard_button.setStyleSheet(
             "QPushButton { background: #f5f5f5; color: #3a4658; border: none; border-radius: 8px; padding: 8px 14px; }"
             "QPushButton:hover { background: #e0e6ef; }"
         )
         self._dashboard_button.clicked.connect(self._on_close)
-        layout.addWidget(self._dashboard_button)
+        button_layout.addWidget(self._dashboard_button)
 
+        button_layout.addStretch(1)
+        root_layout.addWidget(button_panel)
+
+        content_panel = QWidget(central)
+        content_panel.setStyleSheet("background: #ffffff; border-radius: 12px;")
+        content_layout = QVBoxLayout(content_panel)
+        content_layout.setContentsMargins(16, 16, 16, 16)
+        content_layout.setSpacing(12)
+        content_layout.addWidget(self._build_table(), 1)
+
+        root_layout.addWidget(content_panel, 1)
+        root_layout.addWidget(self._build_footer_panel())
+
+    def _build_toolbar(self) -> QWidget:
+        toolbar = QWidget(self)
+        toolbar.setVisible(False)
         return toolbar
+
+    def _build_footer_panel(self) -> QWidget:
+        footer = QWidget(self)
+        footer.setStyleSheet("background: #1e1e1e; border-radius: 12px;")
+        footer_layout = QVBoxLayout(footer)
+        footer_layout.setContentsMargins(16, 12, 16, 12)
+        footer_layout.setSpacing(6)
+        footer_layout.addWidget(self._build_summary_bar())
+        footer_layout.addWidget(self._build_status_bar())
+        return footer
 
     def _build_summary_bar(self) -> QWidget:
         schedule = self._schedule
@@ -155,11 +180,10 @@ class EventsViewerWindow(QMainWindow):
         tbc = len(schedule.tbc)
 
         summary = QWidget(self)
-        summary.setStyleSheet("background: #e8eaf0;")
-        summary.setFixedHeight(36)
+        summary.setFixedHeight(30)
 
         layout = QHBoxLayout(summary)
-        layout.setContentsMargins(16, 0, 16, 0)
+        layout.setContentsMargins(0, 0, 0, 0)
 
         summary_text = (
             f"Total: {total}    "
@@ -169,11 +193,26 @@ class EventsViewerWindow(QMainWindow):
         )
         label = QLabel(summary_text, summary)
         label.setFont(QFont("Segoe UI", 9))
-        label.setStyleSheet(f"color: {WRRL_NAVY};")
+        label.setStyleSheet("color: #f5f5f5;")
         layout.addWidget(label)
         layout.addStretch(1)
 
         return summary
+
+    def _build_status_bar(self) -> QWidget:
+        bar = QWidget(self)
+        bar.setFixedHeight(26)
+
+        layout = QHBoxLayout(bar)
+        layout.setContentsMargins(0, 0, 0, 0)
+
+        self._status_label = QLabel("Click a column header to sort.", bar)
+        self._status_label.setFont(QFont("Segoe UI", 8))
+        self._status_label.setStyleSheet("color: #d4d4d4;")
+        layout.addWidget(self._status_label)
+        layout.addStretch(1)
+
+        return bar
 
     def _build_table(self) -> QWidget:
         container = QWidget(self)
@@ -188,6 +227,7 @@ class EventsViewerWindow(QMainWindow):
         self._table.setSelectionMode(QTableWidget.SingleSelection)
         self._table.setAlternatingRowColors(True)
         self._table.setEditTriggers(QTableWidget.NoEditTriggers)
+        self._table.verticalHeader().setVisible(False)
         self._table.horizontalHeader().setStretchLastSection(True)
         self._table.horizontalHeader().setDefaultAlignment(Qt.AlignLeft)
 

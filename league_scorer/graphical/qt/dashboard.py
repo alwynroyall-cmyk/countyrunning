@@ -8,7 +8,7 @@ import threading
 import sys
 from pathlib import Path
 from PySide6.QtCore import QTimer, QSettings, QUrl, Qt, QByteArray, Slot
-from PySide6.QtGui import QDesktopServices, QFont, QPixmap, QTextCursor
+from PySide6.QtGui import QDesktopServices, QFont, QIcon, QPixmap, QTextCursor
 from PySide6.QtWidgets import (
     QApplication,
     QDialog,
@@ -1410,6 +1410,16 @@ class QtLeagueScorerDashboard(QMainWindow):
 
 def launch_dashboard() -> None:
     app = QApplication(sys.argv)
+    app.setWindowIcon(
+        QIcon(
+            str(
+                _find_repository_root()
+                / "league_scorer"
+                / "images"
+                / "WRRL shield concept.png"
+            )
+        )
+    )
     window = QtLeagueScorerDashboard()
     window.show()
     app.exec()
