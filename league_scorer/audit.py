@@ -15,7 +15,7 @@ from .input_layout import build_input_paths, ensure_input_subdirs, sort_existing
 from .output_layout import ensure_output_subdirs, sort_existing_output_files
 from .models import RaceIssue, RunnerRaceEntry, UnrecognisedClub
 from .race_processor import process_race_file
-from .source_loader import discover_race_files
+from .source_loader import discover_race_files, load_race_dataframe
 
 log = logging.getLogger(__name__)
 
@@ -424,7 +424,11 @@ class LeagueAuditor:
                 aggregated[key]["races"].add(race_num)
 
         unrec_rows: List[dict] = []
+        aggregated = self._aggregate_unrecognised_clubs_from_raw_data(aggregated)
+
         for raw_club, stats in sorted(aggregated.items(), key=lambda item: item[0].lower()):
+            if raw_club in {"", "(blank)"}:
+                continue
             best_match, confidence = _best_club_match(raw_club, self.preferred_clubs)
             races_seen = ", ".join(str(r) for r in sorted(stats["races"]))
             if best_match:
@@ -452,6 +456,41 @@ class LeagueAuditor:
             else pd.DataFrame(columns=_UNREC_COLUMNS)
         )
         return club_df, summary_df
+
+    def _aggregate_unrecognised_clubs_from_raw_data(
+        self,
+        aggregated: dict[str, dict],
+    ) -> dict[str, dict]:
+        """Add raw_data unrecognised club names when audited rows have been blanked."""
+        raw_data_dir = self.input_paths.raw_data_dir
+        if not raw_data_dir.exists():
+            return aggregated
+
+        raw_race_files = discover_race_files(raw_data_dir, excluded_names=race_discovery_exclusions())
+        for race_num, filepath in raw_race_files.items():
+            try:
+                df = load_race_dataframe(filepath)
+            except Exception:
+                continue
+
+            club_columns = [c for c in df.columns if "club" in str(c).lower()]
+            if not club_columns:
+                continue
+
+            club_col = club_columns[0]
+            for raw_club in df[club_col].dropna().astype(str).map(str.strip):
+                if not raw_club or raw_club.lower() == "nan":
+                    continue
+                raw_club_key = raw_club
+                if raw_club_key.lower() in self.raw_to_preferred:
+                    continue
+
+                if raw_club_key not in aggregated:
+                    aggregated[raw_club_key] = {"occurrences": 0, "races": set()}
+                aggregated[raw_club_key]["occurrences"] += 1
+                aggregated[raw_club_key]["races"].add(race_num)
+
+        return aggregated
 
     def _build_ea_review_dfs(self, race_meta: Dict[int, dict]) -> Tuple[pd.DataFrame, pd.DataFrame]:
         candidate_rows: List[dict] = []

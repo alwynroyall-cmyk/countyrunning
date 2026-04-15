@@ -1,7 +1,7 @@
 WRRL League AI
 ===============
 
-Release: 8.2.0
+Release: 8.2.1
 
 Overview
 --------
