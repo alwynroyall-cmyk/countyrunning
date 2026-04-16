@@ -8,5 +8,5 @@ Key improvements:
 - Ensured name corrections applied through RAES are recorded in the manual audit register so manual edits are tracked consistently.
 - Persisted name alternate updates into `name_corrections.xlsx` when name changes are accepted through RAES.
 - Fixed autopilot audit refresh so stale `outputs/audit/workbooks/` files are cleared before rebuilding audit reports, ensuring current audit outputs are generated on every run.
-- Reduced Season Audit workbook output to the core review sheets and removed unused diagnostic-only sheets.
+- Reduced Season Audit workbook output to the core review sheets and removed unused diagnostic-only sheets while keeping `Unrecognised Club Summary` for club review.
 - Updated package metadata, installation guidance, and release docs to reflect version `8.2.2`.
