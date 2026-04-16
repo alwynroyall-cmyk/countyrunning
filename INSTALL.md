@@ -64,9 +64,9 @@ This creates:
 1. Build the next release wheel with the updated version.
 2. Install or upgrade on the target machine:
 
-```powershell
-python -m pip install --upgrade dist\league_scorer-<new-version>-py3-none-any.whl
-```
+   ```powershell
+   python -m pip install --upgrade dist\league_scorer-<new-version>-py3-none-any.whl
+   ```
 
 ## Verify installation
 
