@@ -1,11 +1,14 @@
 # Changelog
 
-## 8.2.3
+## 8.3.0
 
+- Added `Compare Workbooks` support in the Qt dashboard for comparing race workbooks and exporting point differences.
+- Added a standalone race workbook comparison utility in `scripts/race_compare.py`.
+- Updated time column selection logic to prefer `Chip Time`, `Time`, or `Net Time` before falling back to `Gun Time`.
 - Expanded `Actionable Issues` to include category, club, gender, name variant, and data-invalid row issues for manual review.
 - Removed the `Candidates To Check` and `EA Checked` audit sheets.
 - Kept `Unrecognised Club Summary` and the core review sheets for auditing.
-- Updated package metadata and documentation to reflect `8.2.3`.
+- Updated package metadata and documentation to reflect `8.3.0`.
 
 ## 8.2.2
 

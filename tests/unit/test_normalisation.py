@@ -56,9 +56,15 @@ def test_time_display_formats_values_consistently():
     assert time_display("raw text") == "raw text"
 
 
-def test_find_time_column_prefers_chip_over_gun_and_time_columns():
+def test_find_time_column_prefers_chip_over_time_net_and_gun():
     columns = ["Name", "Gun Time", "Chip Time", "Finish Time"]
     assert find_time_column(columns) == "Chip Time"
+
+    columns = ["Name", "Gun Time", "Time"]
+    assert find_time_column(columns) == "Time"
+
+    columns = ["Name", "Gun Time", "Net Time"]
+    assert find_time_column(columns) == "Net Time"
 
     columns = ["Name", "Gun Time", "Finish Time"]
     assert find_time_column(columns) == "Gun Time"

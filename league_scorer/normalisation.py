@@ -212,7 +212,11 @@ def time_display(value) -> str:
 def find_time_column(columns) -> Optional[str]:
     """
     Return the best time column name using priority:
-      1. Chip Time  2. Gun Time  3. First column whose name contains 'time'
+      1. Chip Time
+      2. Time
+      3. Net Time
+      4. Gun Time
+      5. First column whose name contains 'time'
     """
     lower_map = {c.lower().strip(): c for c in columns}
 
@@ -220,7 +224,15 @@ def find_time_column(columns) -> Optional[str]:
         if key in lower_map:
             return lower_map[key]
 
-    for key in ("gun time", "guntime", "gun", "net time", "nettime", "nett time"):
+    for key in ("time", "finish time", "finish_time", "finish"):
+        if key in lower_map:
+            return lower_map[key]
+
+    for key in ("net time", "nettime", "nett time"):
+        if key in lower_map:
+            return lower_map[key]
+
+    for key in ("gun time", "guntime", "gun"):
         if key in lower_map:
             return lower_map[key]
 

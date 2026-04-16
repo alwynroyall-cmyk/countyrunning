@@ -1,15 +1,18 @@
 WRRL League AI
 ===============
 
-Release: 8.2.3
+Release: 8.3.0
 
 Overview
 --------
 WRRL League AI is a desktop scoring and audit workflow for Wiltshire Road Running League seasons.
 It supports race ingestion, audit cleansing, issue review, scoring, staged checks, and report output.
 
-Key Changes In 8.2.3
+Key Changes In 8.3.0
 --------------------
+- Added `Compare Workbooks` support in the Qt dashboard for comparing two race workbooks and exporting point differences.
+- Added a standalone race workbook compare utility in `scripts/race_compare.py` with an optional GUI and diagnostics output.
+- Updated time column selection logic to prefer `Chip Time`, `Time`, or `Net Time` before falling back to `Gun Time`.
 - Broadened `Actionable Issues` to capture category, club, gender, name variant, and data-invalid row issues that require manual review.
 - Removed `Candidates To Check` and `EA Checked` from Season Audit workbooks to reduce audit noise.
 - Kept `Unrecognised Club Summary` for club review and retained the core audit review sheets.

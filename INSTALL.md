@@ -21,7 +21,7 @@ If you already have a built distribution artifact, install it with:
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
-python -m pip install dist\league_scorer-8.2.3-py3-none-any.whl
+python -m pip install dist\league_scorer-8.3.0-py3-none-any.whl
 ```
 
 After installation, launch the GUI with:
@@ -56,8 +56,8 @@ python -m build
 
 This creates:
 
-- `dist\league_scorer-8.2.3-py3-none-any.whl`
-- `dist\league_scorer-8.2.3.tar.gz`
+- `dist\league_scorer-8.3.0-py3-none-any.whl`
+- `dist\league_scorer-8.3.0.tar.gz`
 
 ## Update to a new release
 
@@ -79,7 +79,7 @@ python -c "import league_scorer; print(league_scorer.__version__)"
 Expected output:
 
 ```text
-8.2.3
+8.3.0
 ```
 
 ## Notes

@@ -49,6 +49,7 @@ from league_scorer.raceroster_import import (
     import_raceroster_results,
     import_sporthive_manual_pages,
 )
+from scripts.race_compare import run_comparison
 
 
 def _find_repository_root() -> Path:
@@ -393,6 +394,121 @@ class ManualPageDialog(QDialog):
         return self.text_box.toPlainText().strip()
 
 
+class RaceWorkbookCompareDialog(QDialog):
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Compare Race Workbooks")
+        self.setModal(True)
+        self.resize(760, 520)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(14, 14, 14, 14)
+        layout.setSpacing(10)
+
+        self.file1_edit = QLineEdit(self)
+        self.file2_edit = QLineEdit(self)
+        self.output_edit = QLineEdit(self)
+        self.output_edit.setText(str(Path.home() / "Race_Compare.xlsx"))
+
+        file1_btn = QPushButton("Browse…", self)
+        file1_btn.clicked.connect(self._choose_file1)
+        file2_btn = QPushButton("Browse…", self)
+        file2_btn.clicked.connect(self._choose_file2)
+        output_btn = QPushButton("Browse…", self)
+        output_btn.clicked.connect(self._choose_output)
+
+        form = QFormLayout()
+        form.setLabelAlignment(Qt.AlignRight)
+        form.setFormAlignment(Qt.AlignLeft)
+        form.setHorizontalSpacing(16)
+        form.setVerticalSpacing(10)
+
+        file1_row = QWidget(self)
+        file1_layout = QHBoxLayout(file1_row)
+        file1_layout.setContentsMargins(0, 0, 0, 0)
+        file1_layout.addWidget(self.file1_edit, 1)
+        file1_layout.addWidget(file1_btn)
+        form.addRow("Workbook 1:", file1_row)
+
+        file2_row = QWidget(self)
+        file2_layout = QHBoxLayout(file2_row)
+        file2_layout.setContentsMargins(0, 0, 0, 0)
+        file2_layout.addWidget(self.file2_edit, 1)
+        file2_layout.addWidget(file2_btn)
+        form.addRow("Workbook 2:", file2_row)
+
+        output_row = QWidget(self)
+        output_layout = QHBoxLayout(output_row)
+        output_layout.setContentsMargins(0, 0, 0, 0)
+        output_layout.addWidget(self.output_edit, 1)
+        output_layout.addWidget(output_btn)
+        form.addRow("Output file:", output_row)
+
+        layout.addLayout(form)
+
+        self.result_view = QTextEdit(self)
+        self.result_view.setReadOnly(True)
+        self.result_view.setMinimumHeight(180)
+        self.result_view.setStyleSheet("background: #f5f5f5; color: #212121;")
+        layout.addWidget(self.result_view, 1)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Close)
+        self.compare_button = QPushButton("Compare")
+        self.compare_button.clicked.connect(self._on_compare)
+        buttons.addButton(self.compare_button, QDialogButtonBox.ActionRole)
+        buttons.button(QDialogButtonBox.Close).clicked.connect(self.reject)
+        layout.addWidget(buttons)
+
+    def _choose_file1(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(self, "Choose first workbook", str(Path.home()), "Excel Files (*.xlsx *.xls)")
+        if path:
+            self.file1_edit.setText(path)
+
+    def _choose_file2(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(self, "Choose second workbook", str(Path.home()), "Excel Files (*.xlsx *.xls)")
+        if path:
+            self.file2_edit.setText(path)
+
+    def _choose_output(self) -> None:
+        path, _ = QFileDialog.getSaveFileName(self, "Choose output workbook", str(Path.home() / "Race_Compare.xlsx"), "Excel Files (*.xlsx)")
+        if path:
+            self.output_edit.setText(path)
+
+    def _on_compare(self) -> None:
+        file1 = Path(self.file1_edit.text())
+        file2 = Path(self.file2_edit.text())
+        output_file = Path(self.output_edit.text())
+
+        if not file1.exists() or not file2.exists():
+            QMessageBox.warning(self, "Missing files", "Please select both workbooks before comparing.")
+            return
+        if output_file.parent and not output_file.parent.exists():
+            output_file.parent.mkdir(parents=True, exist_ok=True)
+
+        self.result_view.clear()
+        try:
+            diagnostics = run_comparison(file1, file2, output_file)
+            self.result_view.append(f"Wrote comparison workbook: {output_file}")
+            self.result_view.append("---")
+            self.result_view.append(f"Matched sheet pairs: {len(diagnostics.get('pairs', []))}")
+            for detail in diagnostics.get("diagnostics", []):
+                if detail.get("skipped"):
+                    self.result_view.append(
+                        f"Skipped {detail['sheet1']} vs {detail['sheet2']}: {detail['reason']}"
+                    )
+                else:
+                    self.result_view.append(
+                        f"{detail['sheet1']} vs {detail['sheet2']}: "
+                        f"runner1={detail['runner_col1'] or 'UNKNOWN'}, club1={detail['club_col1'] or 'UNKNOWN'}, "
+                        f"runner2={detail['runner_col2'] or 'UNKNOWN'}, club2={detail['club_col2'] or 'UNKNOWN'}, "
+                        f"scored1={detail['scored1']}, scored2={detail['scored2']}, diffs={detail['diff_rows']}"
+                    )
+            self.result_view.append(f"Output workbook: {diagnostics.get('output')}")
+        except Exception as exc:
+            self.result_view.append(f"Comparison failed: {exc}")
+            QMessageBox.critical(self, "Comparison Failed", str(exc))
+
+
 class RaceRosterDialog(QDialog):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -718,6 +834,7 @@ class QtLeagueScorerDashboard(QMainWindow):
 
         for label, handler in [
             ("⚙️ Settings", self._on_settings),
+            ("Compare Workbooks", self._on_compare_race_workbooks),
             ("Import Race Roster", self._on_import_raceroster),
             ("Publish Provisional", self._on_run_provisional_fast_track),
         ]:
@@ -1355,6 +1472,11 @@ class QtLeagueScorerDashboard(QMainWindow):
         viewer = RawArchiveDiffWindow()
         viewer.show()
         self._raw_archive_diff_viewer = viewer
+
+    @Slot()
+    def _on_compare_race_workbooks(self) -> None:
+        dialog = RaceWorkbookCompareDialog(self)
+        dialog.exec()
 
     @Slot()
     def _on_view_runner_history(self) -> None:
