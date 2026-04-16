@@ -41,18 +41,18 @@ python -m league_scorer.graphical.qt
 If you want to build a release package from the repository source:
 
 1. Create and activate a virtual environment.
-1. Install build tooling:
+2. Install build tooling:
 
-```powershell
-python -m pip install --upgrade pip
-python -m pip install build
-```
+   ```powershell
+   python -m pip install --upgrade pip
+   python -m pip install build
+   ```
 
 3. Run the build command from the repository root:
 
-```powershell
-python -m build
-```
+   ```powershell
+   python -m build
+   ```
 
 This creates:
 
@@ -62,7 +62,7 @@ This creates:
 ## Update to a new release
 
 1. Build the next release wheel with the updated version.
-1. Install or upgrade on the target machine:
+2. Install or upgrade on the target machine:
 
 ```powershell
 python -m pip install --upgrade dist\league_scorer-<new-version>-py3-none-any.whl
