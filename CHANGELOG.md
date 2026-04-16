@@ -5,6 +5,7 @@
 - Added RAES `Name Review` panel mode for audited runner name suggestions.
 - Ensured RAES name corrections are written to the manual audit register and persisted to `name_corrections.xlsx`.
 - Fixed autopilot audit refresh by clearing stale `outputs/audit/workbooks/` before rebuilding audit reports.
+- Reduced Season Audit workbook output to the core review sheets and removed unused diagnostic-only sheets.
 - Updated package metadata and documentation to reflect `8.2.2`.
 
 ## 8.2.0

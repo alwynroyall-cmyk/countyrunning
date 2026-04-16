@@ -106,8 +106,7 @@ class LeagueAuditor:
         race_meta = self._build_race_metadata()
         row_df = self._build_row_audit_df(race_meta)
         runner_df = self._build_runner_audit_df(race_meta)
-        club_df, unrec_df = self._build_club_audit_dfs()
-        ea_candidates_df, ea_checked_df = self._build_ea_review_dfs(race_meta)
+        club_df, _ = self._build_club_audit_dfs()
         actionable_df = self._build_actionable_issues_df(row_df, runner_df, club_df)
         self.latest_actionable_issue_count = len(actionable_df)
         race_df = self._build_race_summary_df(race_meta, row_df, runner_df, club_df)
@@ -117,9 +116,6 @@ class LeagueAuditor:
             "Row Audit": row_df,
             "Runner Audit": runner_df,
             "Club Audit": club_df,
-            "Unrecognised Club Summary": unrec_df,
-            "Candidates To Check": ea_candidates_df,
-            "EA Checked": ea_checked_df,
         }
 
     def _build_actionable_issues_df(
