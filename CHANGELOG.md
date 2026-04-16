@@ -1,14 +1,19 @@
 # Changelog
 
+## 8.2.3
+
+- Expanded `Actionable Issues` to include category, club, gender, name variant, and data-invalid row issues for manual review.
+- Removed the `Candidates To Check` and `EA Checked` audit sheets.
+- Kept `Unrecognised Club Summary` and the core review sheets for auditing.
+- Updated package metadata and documentation to reflect `8.2.3`.
+
 ## 8.2.2
 
 - Added RAES `Name Review` panel mode for audited runner name suggestions.
 - Ensured RAES name corrections are written to the manual audit register and persisted to `name_corrections.xlsx`.
 - Fixed autopilot audit refresh by clearing stale `outputs/audit/workbooks/` before rebuilding audit reports.
-- Reduced Season Audit workbook output to the core review sheets and removed unused diagnostic-only sheets while retaining `Unrecognised Club Summary` for club review.
+- Reduced Season Audit workbook output to the core review sheets and removed unused diagnostic-only sheets while keeping `Unrecognised Club Summary` for club review.
 - Updated package metadata and documentation to reflect `8.2.2`.
-
-## 8.2.0
 
 - Updated UI consistency across Qt windows with matching button styling and refresh iconography.
 - Added the Runner / Club Enquiry single-instance guard to prevent duplicate dashboard launches.

@@ -126,8 +126,22 @@ class LeagueAuditor:
         club_df: pd.DataFrame,
     ) -> pd.DataFrame:
         """Return a compact list of high-signal issues that need manual correction."""
-        row_codes = {"AUD-ROW-001", "AUD-ROW-002", "AUD-ROW-005", "AUD-ROW-010"}
-        runner_codes = {"AUD-RUNNER-007", "AUD-RUNNER-008"}
+        row_codes = {
+            "AUD-ROW-001",
+            "AUD-ROW-002",
+            "AUD-ROW-003",
+            "AUD-ROW-004",
+            "AUD-ROW-005",
+            "AUD-ROW-006",
+            "AUD-ROW-010",
+            "AUD-ROW-011",
+        }
+        runner_codes = {
+            "AUD-RUNNER-002",
+            "AUD-RUNNER-005",
+            "AUD-RUNNER-007",
+            "AUD-RUNNER-008",
+        }
         club_codes = {"AUD-CLUB-002", "AUD-CLUB-003"}
 
         rows: List[dict] = []

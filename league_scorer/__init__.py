@@ -1,7 +1,7 @@
-"""WRRL Admin Suite v8.2.2"""
+"""WRRL Admin Suite v8.2.3"""
 
 # Central version constant for all modules
-__version__ = "8.2.2"
+__version__ = "8.2.3"
 
 # Backward-compatible root imports for legacy consumers.
 from .config import session_config
