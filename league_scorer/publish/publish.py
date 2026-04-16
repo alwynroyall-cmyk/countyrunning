@@ -15,7 +15,6 @@ from pathlib import Path
 from typing import Any
 import traceback
 
-from league_scorer.process.main import LeagueScorer
 from league_scorer.input.common_files import race_discovery_exclusions
 from league_scorer.input.input_layout import build_input_paths
 from league_scorer.output.output_layout import (

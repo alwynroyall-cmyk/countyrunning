@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import re
+import urllib.parse
+import webbrowser
 from pathlib import Path
 
 import pandas as pd
@@ -116,6 +118,13 @@ class RunnerHistoryWindow(QMainWindow):
         self._copy_btn.setStyleSheet(button_style)
         self._copy_btn.clicked.connect(self._on_top_copy)
         button_layout.addWidget(self._copy_btn)
+
+        self._power10_btn = QPushButton("Power of 10", button_panel)
+        self._power10_btn.setCursor(Qt.PointingHandCursor)
+        self._power10_btn.setStyleSheet(button_style)
+        self._power10_btn.clicked.connect(self._on_power10_search)
+        self._power10_btn.setToolTip("Open Power of 10 athlete search and copy the selected runner details.")
+        button_layout.addWidget(self._power10_btn)
 
         self._close_btn = QPushButton("🏠 Close", button_panel)
         self._close_btn.setCursor(Qt.PointingHandCursor)
@@ -476,6 +485,7 @@ class RunnerHistoryWindow(QMainWindow):
         self._load_btn.setEnabled(True)
         self._refresh_btn.setEnabled(True)
         self._copy_btn.setEnabled(name in {"runner_tab", "club_tab", "club_races_tab"})
+        self._power10_btn.setEnabled(name == "runner_tab")
 
     def _update_runner_info(self, df) -> None:
         club_vals = sorted({str(v).strip() for v in df.get("Club", []) if str(v).strip()}, key=str.lower)
@@ -1558,6 +1568,52 @@ class RunnerHistoryWindow(QMainWindow):
 
         self._table.resizeColumnsToContents()
         self._table.resizeRowsToContents()
+
+    def _on_power10_search(self) -> None:
+        runner_name = self._runner_combo.currentText().strip()
+        if not runner_name:
+            QMessageBox.information(self, "Power of 10", "Enter or select a runner first.")
+            return
+
+        club_name = ""
+        if self._current_df is not None:
+            club_vals = [str(v).strip() for v in self._current_df.get("Club", []) if str(v).strip()]
+            if club_vals:
+                club_name = club_vals[0]
+
+        url = self._build_power10_url(runner_name, club_name)
+        webbrowser.open(url)
+
+        clipboard_text = self._build_power10_clipboard_text(runner_name, club_name)
+        QGuiApplication.clipboard().setText(clipboard_text)
+        QMessageBox.information(
+            self,
+            "Power of 10",
+            "Opened Power of 10 athlete search. Runner details have been copied to the clipboard.\nPaste them into the search form if needed.",
+        )
+
+    def _build_power10_url(self, runner_name: str, club_name: str) -> str:
+        last_name, first_name = self._split_runner_name(runner_name)
+        params = {
+            "searchLastName": last_name,
+            "searchFirstName": first_name,
+            "searchClubName": club_name,
+        }
+        query = urllib.parse.urlencode({k: v for k, v in params.items() if v})
+        return f"https://www.powerof10.uk/Home/AthleteSearch?{query}"
+
+    def _build_power10_clipboard_text(self, runner_name: str, club_name: str) -> str:
+        last_name, first_name = self._split_runner_name(runner_name)
+        lines = [f"Last Name: {last_name}", f"First Name: {first_name}"]
+        if club_name:
+            lines.append(f"Club Name: {club_name}")
+        return "\n".join(lines)
+
+    def _split_runner_name(self, runner_name: str) -> tuple[str, str]:
+        parts = runner_name.split()
+        if len(parts) <= 1:
+            return runner_name, ""
+        return parts[-1], " ".join(parts[:-1])
 
     def _copy_results(self) -> None:
         if self._current_df is None or self._current_df.empty:

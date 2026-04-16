@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "league-scorer"
-version = "8.2.1"
+version = "8.2.2"
 description = "WRRL Admin Suite"
 readme = "ReadMe.txt"
 requires-python = ">=3.11"

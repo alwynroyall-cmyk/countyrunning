@@ -32,7 +32,7 @@ from league_scorer.archive_service import ensure_archived_in_inputs
 from league_scorer.club_loader import load_clubs
 from league_scorer.common_files import race_discovery_exclusions
 from league_scorer.input.input_layout import build_input_paths, ensure_input_subdirs, sort_existing_input_files
-from league_scorer.output.output_layout import ensure_output_subdirs
+from league_scorer.output.output_layout import build_output_paths, ensure_output_subdirs
 from league_scorer.issue_resolution_service import (
     apply_quick_fix_for_issue,
     quick_fix_requires_input,
@@ -146,6 +146,19 @@ def _season_paths(data_root: Path, year: int) -> tuple[Path, Path]:
     return year_root / "inputs", year_root / "outputs"
 
 
+def _clear_existing_audit_workbooks(output_dir: Path) -> None:
+    paths = build_output_paths(output_dir)
+    audit_dir = paths.audit_workbooks_dir
+    if not audit_dir.exists():
+        return
+    for candidate in sorted(audit_dir.iterdir()):
+        if candidate.is_file() and candidate.suffix.lower() in {".xlsx", ".xlsm", ".xls"}:
+            try:
+                candidate.unlink()
+            except Exception:
+                pass
+
+
 def _run_audit_snapshot(
     *, input_dir: Path, output_dir: Path, year: int,
     race_files: list | None = None,
@@ -158,6 +171,7 @@ def _run_audit_snapshot(
             f"No audited race files available for audit snapshot in '{input_dir}'. "
             "Generate audited files from raw_data first."
         )
+    _clear_existing_audit_workbooks(output_dir)
     auditor = LeagueAuditor(input_dir=input_dir, output_dir=output_dir, year=year)
     workbook = auditor.run(race_files=race_files)
 

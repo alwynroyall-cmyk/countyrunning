@@ -4,14 +4,17 @@ import datetime
 import json
 import os
 import queue
+import re
 import threading
+import urllib.parse
+import webbrowser
 from pathlib import Path
 from typing import Dict, List, Optional
 
 import openpyxl
 import pandas as pd
 from PySide6.QtCore import QTimer, Qt, Slot
-from PySide6.QtGui import QFont
+from PySide6.QtGui import QFont, QGuiApplication
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -33,8 +36,11 @@ from PySide6.QtWidgets import (
     QTextEdit,
 )
 
-from ...manual_edit_service import _find_columns, _row_name_value
+from ...manual_edit_service import _atomic_save, _find_columns, _row_name_value
 from ...raes.raes_write_service import apply_field_to_files, find_candidate_source_files
+from ...audit_data_service import find_latest_audit_workbook
+from ...manual_data_audit import log_manual_data_changes
+from ...name_lookup import append_name_corrections
 from ..results_workbook import find_latest_results_workbook, sorted_race_sheet_names
 from ...session_config import config as session_config
 from ...structured_logging import log_event
@@ -261,6 +267,7 @@ class RAESWindow(QMainWindow):
         self._source_value_cache: Dict[tuple[str, str, str], str] = {}
         self._scan_queue: Optional[queue.Queue] = None
         self._source_value_queue: Optional[queue.Queue] = None
+        self._value_option_queue: Optional[queue.Queue] = None
 
         self._build_ui()
         self._refresh_list()
@@ -297,12 +304,18 @@ class RAESWindow(QMainWindow):
         button_layout.setContentsMargins(16, 12, 16, 12)
         button_layout.setSpacing(12)
 
-        refresh_btn = QPushButton("Refresh", button_bar)
-        refresh_btn.setCursor(Qt.PointingHandCursor)
-        refresh_btn.setStyleSheet(button_style)
-        refresh_btn.setIcon(self.style().standardIcon(QStyle.SP_BrowserReload))
-        refresh_btn.clicked.connect(self._refresh_list)
-        button_layout.addWidget(refresh_btn)
+        self._refresh_btn = QPushButton("Refresh", button_bar)
+        self._refresh_btn.setCursor(Qt.PointingHandCursor)
+        self._refresh_btn.setStyleSheet(button_style)
+        self._refresh_btn.setIcon(self.style().standardIcon(QStyle.SP_BrowserReload))
+        self._refresh_btn.clicked.connect(self._refresh_list)
+        button_layout.addWidget(self._refresh_btn)
+
+        button_layout.addWidget(QLabel("Mode:", button_bar))
+        self._mode_combo = QComboBox(button_bar)
+        self._mode_combo.addItems(["Anomalies", "Name Review"])
+        self._mode_combo.currentTextChanged.connect(self._on_mode_changed)
+        button_layout.addWidget(self._mode_combo)
 
         self._show_all_cb = QCheckBox("Show all runners (include non-league / zero-point runners)", button_bar)
         self._show_all_cb.stateChanged.connect(self._refresh_list)
@@ -376,27 +389,48 @@ class RAESWindow(QMainWindow):
         action_layout.setContentsMargins(0, 0, 0, 0)
         action_layout.setSpacing(10)
 
-        action_layout.addWidget(QLabel("Field:", self))
+        self._field_label = QLabel("Field:", self)
+        action_layout.addWidget(self._field_label)
         self._field_combo = QComboBox(self)
         self._field_combo.addItems(["category", "club", "gender"])
         self._field_combo.currentTextChanged.connect(self._on_field_changed)
         action_layout.addWidget(self._field_combo)
 
-        action_layout.addWidget(QLabel("Value:", self))
+        self._value_label = QLabel("Value:", self)
+        action_layout.addWidget(self._value_label)
         self._value_combo = QComboBox(self)
         action_layout.addWidget(self._value_combo)
 
-        apply_btn = QPushButton("Apply to selected files", self)
-        apply_btn.setCursor(Qt.PointingHandCursor)
-        apply_btn.setStyleSheet(button_style)
-        apply_btn.clicked.connect(self._on_apply)
-        action_layout.addWidget(apply_btn)
+        self._name_label = QLabel("New name:", self)
+        self._name_label.setVisible(False)
+        action_layout.addWidget(self._name_label)
+        self._name_line = QLineEdit(self)
+        self._name_line.setPlaceholderText("Enter corrected runner name")
+        self._name_line.setVisible(False)
+        action_layout.addWidget(self._name_line)
+
+        self._value_status = QLabel("", self)
+        self._value_status.setStyleSheet("color: #888888; font-size: 10px;")
+        action_layout.addWidget(self._value_status)
+
+        self._apply_btn = QPushButton("Apply to selected files", self)
+        self._apply_btn.setCursor(Qt.PointingHandCursor)
+        self._apply_btn.setStyleSheet(button_style)
+        self._apply_btn.clicked.connect(self._on_apply)
+        action_layout.addWidget(self._apply_btn)
 
         mark_btn = QPushButton("Mark Reviewed", self)
         mark_btn.setCursor(Qt.PointingHandCursor)
         mark_btn.setStyleSheet(button_style)
         mark_btn.clicked.connect(self._on_mark_reviewed)
         action_layout.addWidget(mark_btn)
+
+        self._power10_btn = QPushButton("Power of 10", self)
+        self._power10_btn.setCursor(Qt.PointingHandCursor)
+        self._power10_btn.setStyleSheet(button_style)
+        self._power10_btn.setToolTip("Open Power of 10 athlete search for the selected runner and copy their details.")
+        self._power10_btn.clicked.connect(self._on_power10_search)
+        action_layout.addWidget(self._power10_btn)
 
         action_layout.addStretch(1)
         right_layout.addWidget(action_row)
@@ -443,19 +477,27 @@ class RAESWindow(QMainWindow):
         self._populate_value_options("category")
 
     def _refresh_list(self) -> None:
+        if self._scan_queue is not None:
+            return
+
         self._runner_tree.clear()
         self._count_label.setText("Scanning…")
         self._selected_runner = None
-        self._summary_label.setText("Select a runner from the left to review anomalies.")
+        if self._mode_combo.currentText() == "Name Review":
+            self._summary_label.setText("Select a variant from the left to review name correction candidates.")
+        else:
+            self._summary_label.setText("Select a runner from the left to review anomalies.")
         self._clear_source_checkboxes()
         self._diag_text.clear()
+        self._refresh_btn.setEnabled(False)
+        self._refresh_btn.setText("Refreshing…")
 
         q: queue.Queue = queue.Queue()
         self._scan_queue = q
 
         def worker() -> None:
             try:
-                rows = build_raes_runner_rows(self._show_all_cb.isChecked())
+                rows = self._load_current_mode_rows(self._show_all_cb.isChecked())
                 workbook = find_latest_results_workbook(session_config.output_dir)
                 q.put((rows, workbook))
             except Exception as exc:
@@ -463,6 +505,61 @@ class RAESWindow(QMainWindow):
 
         threading.Thread(target=worker, daemon=True).start()
         QTimer.singleShot(100, self._poll_scan)
+
+    def _on_mode_changed(self, mode: str) -> None:
+        self._field_label.setVisible(mode == "Anomalies")
+        self._field_combo.setVisible(mode == "Anomalies")
+        self._value_label.setVisible(mode == "Anomalies")
+        self._value_combo.setVisible(mode == "Anomalies")
+        self._value_status.setVisible(mode == "Anomalies")
+        self._name_label.setVisible(mode == "Name Review")
+        self._name_line.setVisible(mode == "Name Review")
+        self._show_all_cb.setEnabled(mode == "Anomalies")
+        self._apply_btn.setText("Apply name change to selected files" if mode == "Name Review" else "Apply to selected files")
+        if mode == "Name Review":
+            self._name_line.setText("")
+        self._refresh_list()
+
+    def _load_current_mode_rows(self, show_all: bool) -> List[Dict[str, object]]:
+        if self._mode_combo.currentText() == "Name Review":
+            return self._load_name_review_rows()
+        return build_raes_runner_rows(show_all)
+
+    def _load_name_review_rows(self) -> List[Dict[str, object]]:
+        workbook = find_latest_audit_workbook()
+        if workbook is None:
+            return []
+
+        try:
+            with pd.ExcelFile(workbook) as xl:
+                if "Runner Audit" not in xl.sheet_names:
+                    return []
+                df = xl.parse("Runner Audit", dtype=str).fillna("")
+        except Exception:
+            return []
+
+        rows: List[Dict[str, object]] = []
+        processed_map = load_processed_state()
+        for _, item in df.iterrows():
+            if str(item.get("Issue Code", "")).strip() != "AUD-RUNNER-005":
+                continue
+            display_name = str(item.get("Display Name", "")).strip()
+            if not display_name:
+                continue
+            variant_names = [name.strip() for name in re.split(r"\s*/\s*", display_name) if name.strip()]
+            rows.append(
+                {
+                    "runner": display_name,
+                    "variant_names": variant_names,
+                    "clubs_seen": str(item.get("Clubs Seen", "")).strip(),
+                    "categories_seen": str(item.get("Categories Seen", "")).strip(),
+                    "races_seen": str(item.get("Races Seen", "")).strip(),
+                    "message": str(item.get("Message", "")).strip(),
+                    "next_step": str(item.get("Next Step", "")).strip(),
+                    "processed": bool(processed_map.get(display_name)),
+                }
+            )
+        return rows
 
     def _poll_scan(self) -> None:
         if self._scan_queue is None:
@@ -474,6 +571,8 @@ class RAESWindow(QMainWindow):
             return
 
         self._scan_queue = None
+        self._refresh_btn.setEnabled(True)
+        self._refresh_btn.setText("Refresh")
         if payload is None or payload[0] is None and isinstance(payload[1], Exception):
             QMessageBox.critical(self, "RAES Error", str(payload[1] if payload else "Unknown scan error."))
             self._count_label.setText("Anomalies: 0")
@@ -485,7 +584,10 @@ class RAESWindow(QMainWindow):
             item = QTreeWidgetItem([str(row.get("runner", "")), "✓" if row.get("processed") else ""])
             self._runner_tree.addTopLevelItem(item)
 
-        self._count_label.setText(f"Anomalies: {len(self._rows)}")
+        if self._mode_combo.currentText() == "Name Review":
+            self._count_label.setText(f"Name review items: {len(self._rows)}")
+        else:
+            self._count_label.setText(f"Anomalies: {len(self._rows)}")
         if workbook is not None:
             age = int((datetime.datetime.now() - datetime.datetime.fromtimestamp(Path(workbook).stat().st_mtime)).total_seconds() // 60)
             self._last_updated_label.setText(f"Last updated: {age} minute(s) ago")
@@ -493,6 +595,8 @@ class RAESWindow(QMainWindow):
         else:
             self._last_updated_label.setText("Last updated: -")
             self._workbook_label.setText("Workbook: -")
+        self._refresh_btn.setEnabled(True)
+        self._refresh_btn.setText("Refresh")
 
     def _on_runner_selected(self) -> None:
         items = self._runner_tree.selectedItems()
@@ -507,22 +611,43 @@ class RAESWindow(QMainWindow):
         if row is None:
             return
 
-        self._summary_label.setText(
-            f"<b>{runner}</b><br><br>"
-            f"Anomalies: {row.get('anomalies', '')}<br>"
-            f"Details: {row.get('details', '')}<br>"
-            f"Processed: {'Yes' if row.get('processed') else 'No'}"
-        )
+        if self._mode_combo.currentText() == "Name Review":
+            clubs_seen = row.get("clubs_seen", "")
+            categories_seen = row.get("categories_seen", "")
+            races_seen = row.get("races_seen", "")
+            self._summary_label.setText(
+                f"<b>{runner}</b><br><br>"
+                f"Possible name variant pair: {', '.join(row.get('variant_names', []))}<br>"
+                f"Clubs seen: {clubs_seen or 'none'}<br>"
+                f"Categories seen: {categories_seen or 'none'}<br>"
+                f"Races seen: {races_seen or 'none'}<br>"
+                f"Message: {row.get('message', '')}<br>"
+                f"Next Step: {row.get('next_step', '')}<br>"
+                f"Processed: {'Yes' if row.get('processed') else 'No'}"
+            )
+        else:
+            self._summary_label.setText(
+                f"<b>{runner}</b><br><br>"
+                f"Anomalies: {row.get('anomalies', '')}<br>"
+                f"Details: {row.get('details', '')}<br>"
+                f"Processed: {'Yes' if row.get('processed') else 'No'}"
+            )
         self._summary_label.setTextFormat(Qt.RichText)
 
         self._populate_source_files(runner)
-        self._on_field_changed(self._field_combo.currentText())
+        if self._mode_combo.currentText() != "Name Review":
+            self._on_field_changed(self._field_combo.currentText())
         self._refresh_diagnostics(runner)
 
     def _populate_source_files(self, runner: str) -> None:
         self._clear_source_checkboxes()
         try:
-            candidates = find_candidate_source_files(runner)
+            if self._mode_combo.currentText() == "Name Review":
+                row = next((r for r in self._rows if r.get("runner") == runner), None)
+                candidate_names = row.get("variant_names", []) if row else []
+                candidates = self._find_name_review_candidates(candidate_names)
+            else:
+                candidates = find_candidate_source_files(runner)
             if not candidates.get("series") and not candidates.get("raw"):
                 label = QLabel("No candidate source files found for this runner.", self._source_widget)
                 self._source_widget.layout().addWidget(label)
@@ -561,6 +686,20 @@ class RAESWindow(QMainWindow):
             label = QLabel("Failed to load candidate source files.", self._source_widget)
             self._source_widget.layout().addWidget(label)
 
+    def _find_name_review_candidates(self, names: List[str]) -> dict:
+        candidates = {"series": [], "raw": []}
+        seen: set[Path] = set()
+        for name in names:
+            if not name:
+                continue
+            result = find_candidate_source_files(name)
+            for kind in ("series", "raw"):
+                for path in result.get(kind, []):
+                    if path not in seen:
+                        candidates[kind].append(path)
+                        seen.add(path)
+        return candidates
+
     def _clear_source_checkboxes(self) -> None:
         self._candidate_checkboxes.clear()
         self._file_value_labels.clear()
@@ -571,10 +710,55 @@ class RAESWindow(QMainWindow):
             if widget is not None:
                 widget.deleteLater()
 
-    def _populate_value_options(self, field: str) -> None:
-        self._value_combo.clear()
-        if self._selected_runner is None:
+    def _ensure_raes_output_dir(self) -> Path | None:
+        out = session_config.output_dir
+        if out is None:
+            return None
+        d = Path(out) / "raes"
+        d.mkdir(parents=True, exist_ok=True)
+        return d
+
+    def _write_raes_changes_json(self, audit: List[Dict[str, object]]) -> None:
+        outdir = self._ensure_raes_output_dir()
+        if outdir is None:
             return
+        changes_file = outdir / "changes.json"
+        existing = []
+        try:
+            if changes_file.exists():
+                existing = json.loads(changes_file.read_text(encoding="utf-8"))
+        except Exception:
+            existing = []
+        existing.extend(audit)
+        try:
+            changes_file.write_text(json.dumps(existing, indent=2), encoding="utf-8")
+        except Exception:
+            pass
+
+    def _append_name_corrections(self, variants: List[str], target_name: str) -> None:
+        if session_config.control_dir is None:
+            return
+        name_lookup_path = Path(session_config.control_dir) / "name_corrections.xlsx"
+        selected = [
+            {"current_name": variant, "proposed_name": target_name}
+            for variant in variants
+            if variant and variant.strip().lower() != target_name.strip().lower()
+        ]
+        if not selected:
+            return
+        try:
+            append_name_corrections(name_lookup_path, selected)
+        except Exception:
+            pass
+
+    def _populate_value_options(self, field: str) -> bool:
+        if self._mode_combo.currentText() == "Name Review":
+            return False
+        self._value_combo.clear()
+        self._set_value_status("")
+        self._value_combo.setEnabled(True)
+        if self._selected_runner is None:
+            return False
 
         if field == "category":
             opts = ["Jun", "Sen", "V40", "V50", "V60", "V70"]
@@ -582,8 +766,84 @@ class RAESWindow(QMainWindow):
         elif field == "gender":
             self._value_combo.addItems(["Male", "Female"])
         else:
+            self._load_club_value_options_async()
+            return False
+
+        if self._value_combo.count() > 0:
+            self._value_combo.setCurrentIndex(0)
+        return True
+
+    def _on_field_changed(self, field: str) -> None:
+        if self._mode_combo.currentText() == "Name Review":
+            return
+        if self._populate_value_options(field) and self._selected_runner:
+            self._refresh_source_file_values_async()
+
+    def _on_power10_search(self) -> None:
+        if self._selected_runner is None:
+            QMessageBox.information(self, "Power of 10", "Select a runner before opening Power of 10.")
+            return
+
+        runner_name = self._selected_runner.strip()
+        club_name = self._find_runner_club()
+        url = self._build_power10_url(runner_name, club_name)
+        webbrowser.open(url)
+
+        clipboard_text = self._build_power10_clipboard_text(runner_name, club_name)
+        QGuiApplication.clipboard().setText(clipboard_text)
+        QMessageBox.information(
+            self,
+            "Power of 10",
+            "Opened Power of 10 athlete search. Runner details have been copied to the clipboard.\nPaste them into the search form if needed.",
+        )
+
+    def _find_runner_club(self) -> str:
+        if self._selected_runner is None:
+            return ""
+        try:
+            state = _scan_workbook_for_runner_state().get(self._selected_runner.lower(), {})
+            clubs = sorted(state.get("club", []))
+            return clubs[0] if clubs else ""
+        except Exception:
+            return ""
+
+    def _build_power10_url(self, runner_name: str, club_name: str) -> str:
+        last_name, first_name = self._split_runner_name(runner_name)
+        params = {
+            "searchLastName": last_name,
+            "searchFirstName": first_name,
+            "searchClubName": club_name,
+        }
+        query = urllib.parse.urlencode({k: v for k, v in params.items() if v})
+        return f"https://www.powerof10.uk/Home/AthleteSearch?{query}"
+
+    def _build_power10_clipboard_text(self, runner_name: str, club_name: str) -> str:
+        last_name, first_name = self._split_runner_name(runner_name)
+        lines = [f"Last Name: {last_name}", f"First Name: {first_name}"]
+        if club_name:
+            lines.append(f"Club Name: {club_name}")
+        return "\n".join(lines)
+
+    def _split_runner_name(self, runner_name: str) -> tuple[str, str]:
+        parts = runner_name.split()
+        if len(parts) <= 1:
+            return runner_name, ""
+        return parts[-1], " ".join(parts[:-1])
+
+    def _load_club_value_options_async(self) -> None:
+        self._value_combo.clear()
+        self._value_combo.addItem("Loading…")
+        self._value_combo.setEnabled(False)
+        self._set_value_status("Scanning candidate files for club values…")
+
+        runner = self._selected_runner
+        paths = list(self._candidate_paths)
+        q = queue.Queue()
+        self._value_option_queue = q
+
+        def worker() -> None:
             opts_set: set[str] = set()
-            for p in self._candidate_paths:
+            for p in paths:
                 try:
                     wb = openpyxl.load_workbook(p, read_only=True, data_only=True)
                 except Exception:
@@ -609,24 +869,44 @@ class RAESWindow(QMainWindow):
                         wb.close()
                     except Exception:
                         pass
-            opts = sorted(opts_set)
-            if not opts:
-                opts = [""]
+            q.put((runner, sorted(opts_set)))
+
+        threading.Thread(target=worker, daemon=True).start()
+        QTimer.singleShot(100, self._poll_value_option_results)
+
+    def _poll_value_option_results(self) -> None:
+        if self._value_option_queue is None:
+            return
+        try:
+            runner, opts = self._value_option_queue.get_nowait()
+        except queue.Empty:
+            QTimer.singleShot(100, self._poll_value_option_results)
+            return
+
+        self._value_option_queue = None
+        if self._selected_runner != runner or self._field_combo.currentText() != "club":
+            return
+
+        self._value_combo.clear()
+        if opts:
             self._value_combo.addItems(opts)
-        if self._value_combo.count() > 0:
-            self._value_combo.setCurrentIndex(0)
+        else:
+            self._value_combo.addItem("")
+        self._value_combo.setCurrentIndex(0)
+        self._value_combo.setEnabled(True)
+        self._set_value_status("")
+
         if self._selected_runner:
             self._refresh_source_file_values_async()
 
-    def _on_field_changed(self, field: str) -> None:
-        self._populate_value_options(field)
-        if self._selected_runner:
-            self._refresh_source_file_values_async()
+    def _set_value_status(self, text: str) -> None:
+        self._value_status.setText(text)
 
     def _refresh_source_file_values_async(self) -> None:
         if not self._selected_runner:
             return
         runner = self._selected_runner
+        mode = self._mode_combo.currentText()
         field = self._field_combo.currentText()
         for label in self._file_value_labels.values():
             label.setText("[loading]")
@@ -639,11 +919,14 @@ class RAESWindow(QMainWindow):
             results: Dict[str, str] = {}
             for path_str in paths:
                 try:
-                    value = self._read_runner_value_for_file(Path(path_str), runner, field)
+                    if mode == "Name Review":
+                        value = self._read_name_review_value_for_file(Path(path_str), runner)
+                    else:
+                        value = self._read_runner_value_for_file(Path(path_str), runner, field)
                 except Exception:
                     value = "[error]"
                 results[path_str] = value
-            q.put((runner, field, results))
+            q.put((runner, mode, results))
 
         threading.Thread(target=worker, daemon=True).start()
         QTimer.singleShot(100, self._poll_source_value_results)
@@ -652,12 +935,12 @@ class RAESWindow(QMainWindow):
         if self._source_value_queue is None:
             return
         try:
-            runner, field, results = self._source_value_queue.get_nowait()
+            runner, mode, results = self._source_value_queue.get_nowait()
         except queue.Empty:
             QTimer.singleShot(100, self._poll_source_value_results)
             return
 
-        if runner != self._selected_runner or field != self._field_combo.currentText():
+        if runner != self._selected_runner or mode != self._mode_combo.currentText():
             return
 
         for path_str, label in self._file_value_labels.items():
@@ -704,6 +987,132 @@ class RAESWindow(QMainWindow):
         self._source_value_cache[cache_key] = ""
         return ""
 
+    def _read_name_review_value_for_file(self, path: Path, runner: str) -> str:
+        cache_key = (runner, "name_review", str(path))
+        if cache_key in self._source_value_cache:
+            return self._source_value_cache[cache_key]
+
+        row = next((r for r in self._rows if r.get("runner") == runner), None)
+        variants = [name.lower() for name in row.get("variant_names", [])] if row else [runner.lower()]
+        try:
+            wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
+        except Exception:
+            self._source_value_cache[cache_key] = ""
+            return ""
+
+        try:
+            for sname in wb.sheetnames:
+                ws = wb[sname]
+                name_col = self._find_name_columns(ws)
+                if name_col is None:
+                    continue
+                for ri in range(2, ws.max_row + 1):
+                    nm = _row_name_value(ws, ri, name_col)
+                    if nm is None or nm.strip().lower() not in variants:
+                        continue
+                    result = nm.strip()
+                    self._source_value_cache[cache_key] = result
+                    return result
+        finally:
+            try:
+                wb.close()
+            except Exception:
+                pass
+
+        self._source_value_cache[cache_key] = ""
+        return ""
+
+    def _find_name_columns(self, ws) -> int | tuple[int, int] | None:
+        headers = [
+            str(c.value).strip().lower() if c.value is not None else ""
+            for c in next(ws.iter_rows(min_row=1, max_row=1))
+        ]
+        name_col = next(
+            (i + 1 for i, h in enumerate(headers) if "name" in h and "first" not in h and "last" not in h),
+            None,
+        )
+        if name_col is not None:
+            return name_col
+
+        first_col = next((i + 1 for i, h in enumerate(headers) if "first" in h), None)
+        last_col = next((i + 1 for i, h in enumerate(headers) if "last" in h), None)
+        if first_col is not None and last_col is not None:
+            return (first_col, last_col)
+        return None
+
+    def _set_name_value(self, ws, row_idx: int, name_col: int | tuple[int, int], target_name: str) -> None:
+        if isinstance(name_col, tuple):
+            parts = target_name.split()
+            first_value = parts[0] if parts else ""
+            last_value = " ".join(parts[1:]) if len(parts) > 1 else ""
+            ws.cell(row=row_idx, column=name_col[0]).value = first_value
+            ws.cell(row=row_idx, column=name_col[1]).value = last_value
+        else:
+            ws.cell(row=row_idx, column=name_col).value = target_name
+
+    def _apply_name_to_files(self, files: List[Path], runner: str, target_name: str) -> List[Dict[str, object]]:
+        audit: List[Dict[str, object]] = []
+        row = next((r for r in self._rows if r.get("runner") == runner), None)
+        variants = [name.lower() for name in row.get("variant_names", [])] if row else [runner.lower()]
+
+        for path in files:
+            try:
+                wb = openpyxl.load_workbook(path)
+            except Exception as exc:
+                audit.append({"file": str(path), "error": str(exc)})
+                continue
+
+            try:
+                changed = False
+                for sname in wb.sheetnames:
+                    ws = wb[sname]
+                    name_col = self._find_name_columns(ws)
+                    if name_col is None:
+                        continue
+                    for ri in range(2, ws.max_row + 1):
+                        current = _row_name_value(ws, ri, name_col)
+                        if current is None or current.strip().lower() not in variants:
+                            continue
+                        old = str(current).strip()
+                        self._set_name_value(ws, ri, name_col, target_name)
+                        changed = True
+                        audit.append(
+                            {
+                                "timestamp": datetime.datetime.utcnow().isoformat() + "Z",
+                                "file": str(path),
+                                "file_path": str(path),
+                                "sheet": sname,
+                                "runner": runner,
+                                "field": "name",
+                                "old_value": old,
+                                "new_value": target_name,
+                                "row_idx": ri,
+                            }
+                        )
+                if changed:
+                    _atomic_save(wb, path)
+            except Exception as exc:
+                audit.append({"file": str(path), "error": str(exc)})
+            finally:
+                try:
+                    wb.close()
+                except Exception:
+                    pass
+
+        if audit:
+            self._write_raes_changes_json(audit)
+            try:
+                err = log_manual_data_changes(audit, source="RAES", action="raes_applied_name")
+                if err:
+                    log_event("raes_manual_audit_error", year=session_config.year, error=err)
+                else:
+                    log_event("raes_manual_audit_logged", year=session_config.year, file_changes=len(audit))
+            except Exception:
+                pass
+            self._append_name_corrections(variants, target_name)
+
+        return audit
+
     def _on_apply(self) -> None:
         if self._selected_runner is None:
             QMessageBox.warning(self, "Apply", "Select a runner before applying changes.")
@@ -712,6 +1121,32 @@ class RAESWindow(QMainWindow):
         if not files:
             QMessageBox.warning(self, "Apply", "No source files selected. Please check at least one source file.")
             return
+
+        if self._mode_combo.currentText() == "Name Review":
+            value = self._name_line.text().strip()
+            if not value:
+                QMessageBox.warning(self, "Apply", "Enter a corrected runner name before applying.")
+                return
+            if not QMessageBox.question(
+                self,
+                "Apply Name Change",
+                f"Apply name change: set selected variants to '{value}' in {len(files)} file(s)?",
+                QMessageBox.Yes | QMessageBox.No,
+            ) == QMessageBox.Yes:
+                return
+            audit = self._apply_name_to_files(files, self._selected_runner, value)
+            self._source_value_cache.clear()
+            changed = [a for a in audit if a.get("runner")]
+            errors = [a for a in audit if a.get("error")]
+            msg = f"Applied edits: {len(changed)} change(s)."
+            if errors:
+                msg += f" {len(errors)} error(s) occurred. See RAES changes file for details."
+            QMessageBox.information(self, "Apply Results", msg)
+            set_runner_processed(self._selected_runner, True)
+            self._mark_runner_processed(self._selected_runner)
+            self._refresh_diagnostics(self._selected_runner)
+            return
+
         field = self._field_combo.currentText()
         value = self._value_combo.currentText()
         if not field or not value:

@@ -1,5 +1,12 @@
 # Changelog
 
+## 8.2.2
+
+- Added RAES `Name Review` panel mode for audited runner name suggestions.
+- Ensured RAES name corrections are written to the manual audit register and persisted to `name_corrections.xlsx`.
+- Fixed autopilot audit refresh by clearing stale `outputs/audit/workbooks/` before rebuilding audit reports.
+- Updated package metadata and documentation to reflect `8.2.2`.
+
 ## 8.2.0
 
 - Updated UI consistency across Qt windows with matching button styling and refresh iconography.

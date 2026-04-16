@@ -24,8 +24,6 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QMessageBox,
     QPushButton,
-    QScrollArea,
-    QSpacerItem,
     QSizePolicy,
     QSpinBox,
     QTextEdit,
@@ -44,7 +42,7 @@ from league_scorer.graphical.qt.results_viewer import ResultsViewerWindow
 from league_scorer.graphical.qt.view_autopilot import AutopilotReportsWindow
 from league_scorer.input.common_files import race_discovery_exclusions
 from league_scorer.input.source_loader import discover_race_files
-from league_scorer.output.output_layout import build_output_paths, ensure_output_subdirs, sort_existing_output_files
+from league_scorer.output.output_layout import ensure_output_subdirs, sort_existing_output_files
 from league_scorer.settings import settings, DEFAULT_SETTINGS
 from league_scorer.raceroster_import import (
     SporthiveRaceNotDirectlyImportableError,
