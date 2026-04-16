@@ -10,19 +10,11 @@ It supports race ingestion, audit cleansing, issue review, scoring, staged check
 
 Key Changes In 8.2.3
 --------------------
-- Club report generation is now supported as DOCX output for all clubs.
-- Simplified publish output layout:
-	- outputs/publish/docx/  # all DOCX publish outputs
-	- outputs/publish/docx/club-reports/  # club report DOCX output
-	- outputs/publish/pdf/  # all generated PDF publish outputs
-	- outputs/publish/standings/
-	- outputs/publish/review-packs/
-	- outputs/publish/package/  # packaged publishable files for deployment (flattened into a single folder by default)
-- Audit and quality execution artifacts remain under outputs/audit/ and outputs/quality/.
-- Legacy publish/xlsx layout is now migrated into the new publish structure.
-- Autopilot now uses a cleaner completion flow when club reports are generated after final publish.
-- Publish and club report generation now record structured failure reports on unexpected errors, improving stability and diagnosability.
-- Regression tests were added for publish failure handling and club report error reporting.
+- Broadened `Actionable Issues` to capture category, club, gender, name variant, and data-invalid row issues that require manual review.
+- Removed `Candidates To Check` and `EA Checked` from Season Audit workbooks to reduce audit noise.
+- Kept `Unrecognised Club Summary` for club review and retained the core audit review sheets.
+- Added `Name Review` support for RAES and manual audit logging through `name_corrections.xlsx`.
+- Updated autopilot to clear stale audit workbook files before rebuilding reports.
 - Code is organized by functional package areas within `league_scorer/` and workflow wrappers are grouped under `scripts/publish/` and `scripts/autopilot/`.
 
 Package Layout
