@@ -52,6 +52,7 @@
 ### A. Normalize category labels
 
 Implement a rule-based category mapper to convert legacy labels into canonical codes.
+
 - Possible mappings:
   - `FV45`, `Vet 50`, `F55`, `Ages 45 - 54` → `V50`
   - `LV40`, `Vet 40`, `FV35`, `Ages 35 - 44`, `Ages 40 - 49` → `V40`
