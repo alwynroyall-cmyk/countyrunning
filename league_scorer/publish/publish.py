@@ -75,14 +75,10 @@ def publish_results(
     year: int,
     data_root: Path | None,
     report_dir: Path,
-    export_pdf_dir: Path | None = None,
 ) -> int:
     """Publish final results for `year` using `data_root` and write reports to `report_dir`.
 
-    If *export_pdf_dir* is provided, all published PDF files are copied into that
-    folder after conversion and packaging.
-
-    This workflow now also generates club reports as part of the publish path.
+    This workflow also generates club reports as part of the publish path.
 
     Returns an exit code (0 success, non-zero failure). Prints progress lines
     and summary messages to stdout/stderr to preserve the original CLI behaviour.
@@ -187,8 +183,6 @@ def publish_results(
         "summary": {
             "audited_race_count": len(race_files),
             "results_workbook": "",
-            "converted_pdf_count": converted,
-            "skipped_pdf_count": skipped,
             "club_reports_generated": club_result == 0,
             "warning_count": len(warnings),
             "warnings": warnings,
@@ -196,22 +190,11 @@ def publish_results(
         "error": None,
     }
 
-    exported_count = 0
-    if export_pdf_dir is not None:
-        try:
-            export_path = export_publish_pdfs(output_dir, export_pdf_dir, flatten=True)
-            exported_count = sum(1 for _ in export_path.glob("**/*.pdf"))
-        except Exception as exc:
-            warnings.append(f"Publish PDF export skipped: {exc}")
 
-    payload["summary"]["exported_pdf_count"] = exported_count
+    exported_count = 0
 
     json_path, md_path = _write_report(report_dir, year, payload)
     print("PROGRESS:STAGE_DONE:2", flush=True)
-    print(f"Converted PDFs: {converted}", flush=True)
-    print(f"Skipped PDFs: {skipped}", flush=True)
-    if export_pdf_dir is not None:
-        print(f"Exported PDFs: {exported_count}", flush=True)
     if warnings:
         print(f"Warnings: {len(warnings)}", flush=True)
     print(f"Wrote: {json_path}", flush=True)
