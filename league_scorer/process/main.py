@@ -225,7 +225,6 @@ class LeagueScorer:
             images_dir=images_dir,
             year=self.year,
             filepath=output_paths.publish_docx_race_cards_dir / card_basename,
-            pdf_output_dir=output_paths.publish_pdf_race_cards_dir,
             source_file=filepath,
         )
         if pdf_warning:
@@ -288,7 +287,6 @@ class LeagueScorer:
             unrec_all=all_unrec,
             images_dir=images_dir,
             filepath=output_paths.publish_docx_league_updates_dir / league_update_basename(highest, self.year),
-            pdf_output_dir=output_paths.publish_pdf_league_updates_dir,
         )
         if pdf_warning:
             self.run_warnings.append(pdf_warning)

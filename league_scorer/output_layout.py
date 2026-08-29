@@ -246,13 +246,6 @@ def _destination_for_output_file(file_path: Path, paths: OutputPaths) -> Path | 
             return paths.publish_docx_league_updates_dir
         return None
 
-    if suffix == ".pdf":
-        if "race report" in name or "scoring card" in name:
-            return paths.publish_pdf_race_cards_dir
-        if "league update" in name:
-            return paths.publish_pdf_league_updates_dir
-        return None
-
     return None
 
 
