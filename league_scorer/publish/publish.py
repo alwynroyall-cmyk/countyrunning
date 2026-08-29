@@ -189,9 +189,6 @@ def publish_results(
         "error": None,
     }
 
-
-    exported_count = 0
-
     json_path, md_path = _write_report(report_dir, year, payload)
     print("PROGRESS:STAGE_DONE:2", flush=True)
     if warnings:
