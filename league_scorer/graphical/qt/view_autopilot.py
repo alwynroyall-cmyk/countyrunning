@@ -184,8 +184,6 @@ class AutopilotReportsWindow(QMainWindow):
         base = build_output_paths(self._output_dir)
         paths = [
             base.autopilot_runs_dir / f"year-{self._year}",
-            base.quality_data_dir / f"year-{self._year}",
-            base.quality_staged_checks_dir,
         ]
         return [p for p in paths if p.exists()]
 

@@ -31,18 +31,14 @@ from .models import (
     UnrecognisedClub,
 )
 from .output_layout import (
-    category_review_filename,
     ensure_output_subdirs,
     league_update_basename,
     race_scoring_card_basename,
     standings_filename,
-    time_query_review_filename,
     sort_existing_output_files,
 )
 from .output_writer import (
-    write_category_mismatch_todo,
     write_results_workbook,
-    write_time_qry_todo,
 )
 from .report_writer import write_combined_report, write_race_report
 from .race_processor import process_race_file
@@ -278,16 +274,6 @@ class LeagueScorer:
             all_unrec_clubs=self.all_unrec_clubs,
             race_issues=self.all_race_issues,
             filepath=output_paths.publish_standings_dir / standings_filename(highest, self.year),
-        )
-
-        write_category_mismatch_todo(
-            all_race_runners=self.all_race_runners,
-            filepath=output_paths.publish_review_packs_dir / category_review_filename(highest, self.year),
-        )
-
-        write_time_qry_todo(
-            all_race_runners=self.all_race_runners,
-            filepath=output_paths.publish_review_packs_dir / time_query_review_filename(highest, self.year),
         )
 
         images_dir = Path(__file__).parent / "images"

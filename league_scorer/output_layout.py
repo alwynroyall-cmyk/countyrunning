@@ -211,14 +211,6 @@ Copy this folder or zip it for upload to your cloud repository.
     return paths.publish_package_dir
 
 
-def category_review_filename(highest_race: int, year: int) -> str:
-    return f"Season {year} - Category Review Through Race {highest_race}.xlsx"
-
-
-def time_query_review_filename(highest_race: int, year: int) -> str:
-    return f"Season {year} - Time Query Review Through Race {highest_race}.xlsx"
-
-
 def league_update_basename(highest_race: int, year: int) -> str:
     return f"Season {year} - League Update Through Race {highest_race}"
 
