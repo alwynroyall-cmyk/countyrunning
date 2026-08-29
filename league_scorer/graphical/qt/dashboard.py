@@ -1193,15 +1193,49 @@ class QtLeagueScorerDashboard(QMainWindow):
             )
             return
         
-        # Check if required setup files exist
+        # Check if required setup files exist and are accessible
         clubs_file = Path(session_config.raw_data_dir) / "control" / "clubs.xlsx"
+        
+        # Try to verify the file is accessible (not just that it exists)
         if not clubs_file.exists():
+            error_msg = f"Cannot find clubs.xlsx.\n\n"
+            error_msg += f"Expected location:\n{clubs_file}\n\n"
+            
+            # Check if the control directory exists but file doesn't
+            control_dir = clubs_file.parent
+            if control_dir.exists():
+                files_in_control = list(control_dir.glob("*"))
+                if files_in_control:
+                    error_msg += f"Files found in control folder:\n" + "\n".join(f.name for f in files_in_control[:5])
+                else:
+                    error_msg += "Control folder exists but is empty."
+            else:
+                error_msg += f"Control folder not found: {control_dir}"
+            
+            error_msg += "\n\nPlease ensure the clubs.xlsx file is in your raw data control folder."
+            
             QMessageBox.critical(
                 self,
                 "Missing Configuration File",
-                f"Cannot find clubs.xlsx.\n\n"
-                f"Expected location:\n{clubs_file}\n\n"
-                f"Please ensure the clubs.xlsx file is in your raw data control folder."
+                error_msg
+            )
+            return
+        
+        # Try to actually access the file (catches OneDrive sync issues)
+        try:
+            clubs_file.stat()
+        except (OSError, PermissionError) as e:
+            QMessageBox.critical(
+                self,
+                "Cannot Access Configuration File",
+                f"Found clubs.xlsx but cannot access it.\n\n"
+                f"Location: {clubs_file}\n\n"
+                f"Error: {str(e)}\n\n"
+                f"This often happens when OneDrive hasn't fully synced the file to disk.\n"
+                f"Try:\n"
+                f"1. Wait for OneDrive to finish syncing\n"
+                f"2. Check that the file isn't marked for online-only access\n"
+                f"3. Right-click the file and select 'Always keep on this device'"
             )
             return
         
