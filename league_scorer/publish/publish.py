@@ -125,35 +125,8 @@ def publish_results(
         print(f"Wrote: {md_path}", flush=True)
         return 1
 
-    try:
-        # PDF generation has been removed in v9.0 - only DOCX files are now generated
-        print("PROGRESS:STAGE:2:Publishing results (DOCX only)", flush=True)
-    except Exception as exc:
-        error_message = f"Publish failed: {exc}"
-        tb = traceback.format_exc()
-        print(error_message, flush=True)
-        print(tb, flush=True)
-        payload = {
-            "generated_at": generated_at,
-            "success": False,
-            "settings": {
-                "year": year,
-                "data_root": str(data_root_resolved),
-                "input_dir": str(input_dir),
-                "output_dir": str(output_dir),
-            },
-            "summary": {
-                "audited_race_count": len(race_files),
-                "results_workbook": "",
-                "warning_count": 0,
-                "warnings": [],
-            },
-            "error": {"message": error_message, "traceback": tb},
-        }
-        json_path, md_path = _write_report(report_dir, year, payload)
-        print(f"Wrote: {json_path}", flush=True)
-        print(f"Wrote: {md_path}", flush=True)
-        return 1
+    # PDF generation has been removed in v9.0 - only DOCX files are now generated
+    print("PROGRESS:STAGE:2:Publishing results (DOCX only)", flush=True)
 
     club_result = -1
     try:

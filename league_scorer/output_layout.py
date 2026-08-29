@@ -118,43 +118,6 @@ def standings_filename(highest_race: int, year: int) -> str:
     return f"Season Standings R{highest_race:02d} {year}.xlsx"
 
 
-def export_publish_pdfs(output_dir: Path, export_dir: Path, flatten: bool = True) -> Path:
-    """Legacy function - PDFs are no longer generated. Exports DOCX and standings instead."""
-    paths = build_output_paths(output_dir)
-    export_dir = Path(export_dir)
-    export_dir.mkdir(parents=True, exist_ok=True)
-
-    def _copy_files(source: Path, subfolder: Path | None = None, extensions: set[str] | None = None) -> None:
-        if not source.exists() or not source.is_dir():
-            return
-        for item in sorted(source.rglob("*")):
-            if item.is_dir():
-                continue
-            if extensions is not None and item.suffix.lower() not in extensions:
-                continue
-            if flatten:
-                target = export_dir / item.name
-                if target.exists():
-                    target = export_dir / (subfolder or Path("")) / item.relative_to(source)
-            else:
-                relative_path = item.relative_to(source)
-                if subfolder is not None:
-                    target = export_dir / subfolder / relative_path
-                else:
-                    target = export_dir / relative_path
-            target.parent.mkdir(parents=True, exist_ok=True)
-            try:
-                shutil.copy2(str(item), str(target))
-            except Exception:
-                pass
-
-    # Export DOCX reports and standings (no PDFs)
-    _copy_files(paths.publish_docx_dir, Path("docx"))
-    _copy_files(paths.publish_standings_dir, Path("standings"))
-
-    return export_dir
-
-
 def package_publish_artifacts(output_dir: Path, include_club_reports: bool = True, flatten: bool = True) -> Path:
     paths = build_output_paths(output_dir)
     paths.publish_package_dir.mkdir(parents=True, exist_ok=True)
