@@ -42,8 +42,7 @@ def test_analyse_season_supports_xls_and_csv_raw_files(monkeypatch, tmp_path: Pa
         ),
     )
 
-    payload, json_path, md_path = quality.analyse_season(1999, data_root, tmp_path / "output")
+    payload, md_path, _ = quality.analyse_season(1999, data_root, tmp_path / "output")
 
     assert payload["raw_summary"]["rows"] >= 1
-    assert json_path.exists()
     assert md_path.exists()

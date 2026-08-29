@@ -299,13 +299,11 @@ def analyse_season(year: int, data_root: Path, output_dir: Path) -> tuple[dict[s
     report_root = output_dir / f"year-{year}"
     report_root.mkdir(parents=True, exist_ok=True)
 
-    json_path = report_root / "data_quality_report.json"
     md_path = report_root / "data_quality_report.md"
 
-    json_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     md_path.write_text(_build_markdown(payload), encoding="utf-8")
 
-    return payload, json_path, md_path
+    return payload, md_path, md_path
 
 
 def parse_args() -> argparse.Namespace:
@@ -324,12 +322,11 @@ def main() -> int:
         return 1
 
     try:
-        payload, json_path, md_path = analyse_season(args.year, data_root, args.output_dir)
+        payload, md_path, _ = analyse_season(args.year, data_root, args.output_dir)
     except FileNotFoundError as exc:
         print(str(exc))
         return 1
 
-    print(f"Wrote: {json_path}")
     print(f"Wrote: {md_path}")
     audited_summary = payload["audited_summary"]
     print(f"Audited blank category %: {audited_summary['blank_category_pct']}")

@@ -12,7 +12,6 @@ Autopilot flow:
 from __future__ import annotations
 
 import argparse
-import json
 import os
 import sys
 from dataclasses import asdict, dataclass
@@ -129,11 +128,9 @@ def _write_failure_report(
         },
     }
 
-    json_path = report_root / "autopilot_report.json"
     md_path = report_root / "autopilot_report.md"
-    json_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     md_path.write_text(_to_markdown(payload), encoding="utf-8")
-    return json_path, md_path
+    return md_path, md_path
 
 
 def _resolve_data_root(explicit: Path | None) -> Path | None:
@@ -693,15 +690,12 @@ def main() -> int:
         },
     }
 
-    json_path = report_root / "autopilot_report.json"
     md_path = report_root / "autopilot_report.md"
-    json_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     md_path.write_text(_to_markdown(payload), encoding="utf-8")
 
     print(f"Autopilot success: {success}")
     print(f"Audit actionable issues before/after: {audit_before.actionable_count} -> {audit_after.actionable_count}")
     print(f"Safe fixes applied: {fix_summary.applied}")
-    print(f"Wrote: {json_path}")
     print(f"Wrote: {md_path}")
 
     # Clear dirty flag so UI knows data are aligned

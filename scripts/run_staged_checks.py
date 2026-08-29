@@ -208,13 +208,12 @@ def run_checks(
     quality_threshold = float(getattr(args, "quality_gate_threshold", 80.0))
     quality_gate_passed = True
     try:
-        quality_payload, quality_json, quality_md = analyse_season(args.year, data_root, quality_output_dir)
+        quality_payload, quality_md, _ = analyse_season(args.year, data_root, quality_output_dir)
         audited_summary = quality_payload.get("audited_summary", {})
         hotspots = quality_payload.get("hotspots", {}).get("audited_blank_category", [])
         quality_success_pct = _quality_success_pct(audited_summary)
         quality_gate_passed = quality_success_pct >= quality_threshold
         stage2_details["data_quality"] = {
-            "report_json": str(quality_json),
             "report_markdown": str(quality_md),
             "quality_gate_threshold_pct": quality_threshold,
             "quality_success_pct": quality_success_pct,
@@ -308,7 +307,6 @@ def write_report(results: list[StageResult], report_dir: Path, success: bool) ->
         "success": success,
         "stages": [asdict(item) for item in results],
     }
-    (report_dir / "staged_checks_report.json").write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
     lines = [
         "# WRRL Staged Checks Report",
