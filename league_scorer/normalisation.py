@@ -176,7 +176,7 @@ def time_display(value) -> str:
     """
     Return a human-readable display string for a time cell value.
     String values are returned as-is (spec: no reformatting).
-    Native time objects and Excel floats are converted to hh:mm:ss[.d] (1 decimal place).
+    Native time objects and Excel floats are converted to hh:mm:ss.d (1 decimal place, always shown).
     """
     if isinstance(value, datetime.time):
         base = f"{value.hour:02d}:{value.minute:02d}:{value.second:02d}"
@@ -185,8 +185,8 @@ def time_display(value) -> str:
             tenths = (value.microsecond + 50000) // 100000
             if tenths >= 10:  # Handle rounding up to next second
                 tenths = 0
-            return f"{base}.{tenths}" if tenths > 0 else base
-        return base
+            return f"{base}.{tenths}"
+        return f"{base}.0"  # Always show .0 for consistency
 
     if isinstance(value, datetime.timedelta):
         ts = int(value.total_seconds())
@@ -201,8 +201,8 @@ def time_display(value) -> str:
             tenths = (v.microsecond + 50000) // 100000
             if tenths >= 10:  # Handle rounding up to next second
                 tenths = 0
-            return f"{base}.{tenths}" if tenths > 0 else base
-        return base
+            return f"{base}.{tenths}"
+        return f"{base}.0"  # Always show .0 for consistency
 
     if isinstance(value, (int, float)):
         try:

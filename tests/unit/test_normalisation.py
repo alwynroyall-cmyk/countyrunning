@@ -49,7 +49,7 @@ def test_parse_time_to_seconds_accepts_multiple_formats():
 
 
 def test_time_display_formats_values_consistently():
-    assert time_display(datetime.time(2, 3, 4)) == "02:03:04"
+    assert time_display(datetime.time(2, 3, 4)) == "02:03:04.0"
     assert time_display(datetime.time(2, 3, 4, 56000)) == "02:03:04.1"
     assert time_display(datetime.timedelta(hours=1, minutes=1, seconds=1)) == "01:01:01"
     assert time_display(0.25) == "06:00:00"
