@@ -1194,7 +1194,10 @@ class QtLeagueScorerDashboard(QMainWindow):
             return
         
         # Check if required setup files exist and are accessible
-        clubs_file = Path(session_config.raw_data_dir) / "control" / "clubs.xlsx"
+        # Note: control folder is at the inputs level, not under raw_data
+        # raw_data_dir = inputs/raw_data, so we need inputs/control
+        raw_data_parent = Path(session_config.raw_data_dir).parent
+        clubs_file = raw_data_parent / "control" / "clubs.xlsx"
         
         # Try to verify the file is accessible (not just that it exists)
         if not clubs_file.exists():
