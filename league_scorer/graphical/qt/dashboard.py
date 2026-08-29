@@ -1,6 +1,7 @@
 """Qt dashboard implementation for WRRL Admin Suite."""
 
 import json
+import logging
 import os
 import queue
 import re
@@ -20,6 +21,7 @@ from PySide6.QtWidgets import (
     QFormLayout,
     QGridLayout,
     QHBoxLayout,
+    QInputDialog,
     QLabel,
     QLineEdit,
     QMainWindow,
@@ -84,6 +86,8 @@ WRRL_LIGHT = "#f5f5f5"
 WRRL_WHITE = "#ffffff"
 WRRL_AMBER = "#e6a817"
 WRRL_AMBER_LIGHT = "#f7e082"
+
+log = logging.getLogger(__name__)
 
 
 class ActionCard(QFrame):
@@ -836,6 +840,7 @@ class QtLeagueScorerDashboard(QMainWindow):
             ("⚙️ Settings", self._on_settings),
             ("Compare Workbooks", self._on_compare_race_workbooks),
             ("Import Race Roster", self._on_import_raceroster),
+            ("Generate Monthly Report", self._on_generate_monthly_report),
             ("Publish Provisional", self._on_run_provisional_fast_track),
         ]:
             btn = QPushButton(label, bottom_actions)
@@ -1164,6 +1169,70 @@ class QtLeagueScorerDashboard(QMainWindow):
             initial_status="Initialising publish...",
             extra_cmd_args=[],
         )
+
+    @Slot()
+    def _on_generate_monthly_report(self) -> None:
+        """Generate a consolidated monthly report for all races processed to date."""
+        if not self._require_configured("Generate Monthly Report"):
+            return
+
+        # Get current month
+        from datetime import datetime
+        current_month = datetime.now().month
+        current_year = datetime.now().year
+
+        # Prompt user for month
+        month, ok = QInputDialog.getInt(
+            self,
+            "Generate Monthly Report",
+            "Select month (1-12):",
+            value=current_month,
+            minValue=1,
+            maxValue=12,
+            step=1
+        )
+
+        if not ok:
+            return
+
+        # Load the scoring data from session
+        try:
+            from league_scorer.main import LeagueScorer
+            scorer = LeagueScorer(
+                input_dir=session_config.raw_data_dir,
+                output_dir=session_config.output_dir,
+                year=session_config.year,
+            )
+
+            # Load all club info and discover races
+            scorer._load_clubs()
+            race_files = scorer._discover_races()
+
+            # Process all races to populate data
+            for race_num in sorted(race_files.keys()):
+                scorer._process_race(race_num, race_files[race_num], len(race_files))
+
+            # Generate the monthly report
+            scorer.generate_monthly_report(month)
+
+            # Show success message with output path
+            from league_scorer.output_layout import ensure_output_subdirs, monthly_report_basename
+            output_paths = ensure_output_subdirs(session_config.output_dir)
+            report_file = output_paths.publish_docx_monthly_reports_dir / (monthly_report_basename(session_config.year, month) + ".docx")
+
+            QMessageBox.information(
+                self,
+                "Monthly Report Generated",
+                f"Monthly report has been successfully generated.\n\nLocation:\n{report_file}"
+            )
+
+        except Exception as exc:
+            QMessageBox.critical(
+                self,
+                "Error Generating Monthly Report",
+                f"Failed to generate monthly report:\n\n{str(exc)}"
+            )
+            log.exception("Monthly report generation error:")
 
     @Slot()
     def _on_import_raceroster(self) -> None:
