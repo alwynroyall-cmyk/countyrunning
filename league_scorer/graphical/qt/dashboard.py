@@ -1144,7 +1144,7 @@ class QtLeagueScorerDashboard(QMainWindow):
     @Slot()
     def _on_run_autopilot(self) -> None:
         output_paths = ensure_output_subdirs(session_config.output_dir)
-        report_path = output_paths.autopilot_runs_dir / f"year-{session_config.year}" / "autopilot_report.json"
+        report_path = output_paths.autopilot_runs_dir / f"year-{session_config.year}" / "autopilot_report.md"
         self._run_workflow(
             script_name="autopilot/run_full_autopilot.py",
             title="Autopilot",
@@ -1152,10 +1152,6 @@ class QtLeagueScorerDashboard(QMainWindow):
             extra_cmd_args=[
                 "--mode",
                 "apply-safe-fixes",
-                "--staged-report-dir",
-                str(output_paths.quality_staged_checks_dir),
-                "--data-quality-output-dir",
-                str(output_paths.quality_data_dir),
             ],
             report_path=report_path,
         )

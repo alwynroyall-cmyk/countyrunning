@@ -478,13 +478,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--staged-report-dir",
         type=Path,
-        default=Path("output") / "quality" / "staged-checks",
+        default=Path("output") / "autopilot" / "runs" / "staged-checks",
         help="Folder for staged-check output generated during autopilot.",
     )
     parser.add_argument(
         "--data-quality-output-dir",
         type=Path,
-        default=Path("output") / "quality" / "data-quality",
+        default=Path("output") / "autopilot" / "runs" / "data-quality",
     )
     parser.add_argument(
         "--quality-gate-threshold",
