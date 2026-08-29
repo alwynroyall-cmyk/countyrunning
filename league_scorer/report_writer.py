@@ -39,11 +39,6 @@ from .models import (
 log = logging.getLogger(__name__)
 
 
-def _pdf_conversion_enabled() -> bool:
-    """Allow disabling PDF export via env var to avoid Word/printer hangs."""
-    value = os.getenv("WRRL_DISABLE_PDF", "").strip().lower()
-    return value not in {"1", "true", "yes", "on"}
-
 # ── Brand colours ──────────────────────────────────────────────────────────────
 _NAVY_HEX    = "3a4658"
 _GREEN_HEX   = "2d7a4a"
@@ -1135,23 +1130,7 @@ def write_race_report(
     filepath.parent.mkdir(parents=True, exist_ok=True)
     doc.save(str(filepath))
     log.info("Race %d report written: %s", race_num, filepath.name)
-
-    if not _pdf_conversion_enabled():
-        log.info("Race %d PDF conversion skipped — WRRL_DISABLE_PDF is enabled", race_num)
-        return None
-
-    try:
-        from docx2pdf import convert  # type: ignore
-        pdf_path = filepath.with_suffix(".pdf")
-        if pdf_output_dir is not None:
-            pdf_output_dir.mkdir(parents=True, exist_ok=True)
-            pdf_path = Path(pdf_output_dir) / pdf_path.name
-        convert(str(filepath), str(pdf_path))
-        log.info("Race %d PDF written: %s", race_num, pdf_path.name)
-        return None
-    except Exception as exc:
-        log.warning("Race %d PDF conversion skipped — %s", race_num, exc)
-        return f"{filepath.stem}: PDF conversion skipped ({exc})"
+    return None
 
 
 # ── Document header (branding) ─────────────────────────────────────────────────
@@ -1328,21 +1307,4 @@ def write_combined_report(
     filepath.parent.mkdir(parents=True, exist_ok=True)
     doc.save(str(filepath))
     log.info("Report written: %s", filepath.name)
-
-    if not _pdf_conversion_enabled():
-        log.info("PDF conversion skipped — WRRL_DISABLE_PDF is enabled")
-        return None
-
-    # ── PDF conversion (requires Microsoft Word on Windows) ───────────────────
-    try:
-        from docx2pdf import convert  # type: ignore
-        pdf_path = filepath.with_suffix(".pdf")
-        if pdf_output_dir is not None:
-            pdf_output_dir.mkdir(parents=True, exist_ok=True)
-            pdf_path = Path(pdf_output_dir) / pdf_path.name
-        convert(str(filepath), str(pdf_path))
-        log.info("PDF written: %s", pdf_path.name)
-        return None
-    except Exception as exc:
-        log.warning("PDF conversion skipped — %s", exc)
-        return f"{filepath.stem}: PDF conversion skipped ({exc})"
+    return None

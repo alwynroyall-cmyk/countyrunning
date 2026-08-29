@@ -7,7 +7,6 @@ process.
 """
 from __future__ import annotations
 
-import json
 import os
 import sys
 from datetime import datetime, timezone
@@ -67,11 +66,9 @@ def _to_markdown(payload: dict[str, Any]) -> str:
 def _write_report(report_dir: Path, year: int, payload: dict[str, Any]) -> tuple[Path, Path]:
     report_root = report_dir / f"year-{year}"
     report_root.mkdir(parents=True, exist_ok=True)
-    json_path = report_root / "publish_results.json"
     md_path = report_root / "publish_results.md"
-    json_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     md_path.write_text(_to_markdown(payload), encoding="utf-8")
-    return json_path, md_path
+    return md_path, md_path
 
 
 def publish_results(
@@ -132,60 +129,8 @@ def publish_results(
         return 1
 
     try:
-        # Publish for GUI should *not* re-run the scorer — it should only
-        # ensure DOCX publish artefacts are converted to PDF. This routine
-        # scans the publish DOCX folders and converts any missing/stale PDFs.
-        print("PROGRESS:STAGE:2:Converting DOCX -> PDF", flush=True)
-
-        output_paths = build_output_paths(output_dir)
-
-        conversion_pairs = [
-            (output_paths.publish_docx_league_updates_dir, output_paths.publish_pdf_league_updates_dir),
-            (output_paths.publish_docx_race_cards_dir, output_paths.publish_pdf_race_cards_dir),
-        ]
-
-        converted = 0
-        skipped = 0
-        warnings: list[str] = []
-
-        # Ensure PDF conversion runs even if WRRL_DISABLE_PDF is set in the
-        # environment elsewhere — temporarily clear it for this conversion
-        # process and restore the previous value afterwards.
-        previous_disable_pdf = os.environ.get("WRRL_DISABLE_PDF")
-        if previous_disable_pdf is not None:
-            os.environ.pop("WRRL_DISABLE_PDF", None)
-
-        try:
-            from docx2pdf import convert  # type: ignore
-        except Exception:
-            convert = None  # type: ignore
-
-        for docx_dir, pdf_dir in conversion_pairs:
-            try:
-                if not docx_dir.exists():
-                    continue
-                pdf_dir.mkdir(parents=True, exist_ok=True)
-                for docx in sorted(docx_dir.glob("*.docx")):
-                    target_pdf = pdf_dir / docx.with_suffix(".pdf").name
-                    try:
-                        # Skip conversion if PDF is up-to-date
-                        if target_pdf.exists() and target_pdf.stat().st_mtime >= docx.stat().st_mtime:
-                            skipped += 1
-                            continue
-                        if convert is None:
-                            warnings.append(f"docx2pdf not available: {docx.name}")
-                            continue
-                        convert(str(docx), str(target_pdf))
-                        converted += 1
-                    except Exception as exc:
-                        warnings.append(f"{docx.name}: PDF conversion skipped ({exc})")
-            except Exception:
-                # Non-fatal: continue to next folder
-                continue
-        if previous_disable_pdf is None:
-            os.environ.pop("WRRL_DISABLE_PDF", None)
-        else:
-            os.environ["WRRL_DISABLE_PDF"] = previous_disable_pdf
+        # PDF generation has been removed in v9.0 - only DOCX files are now generated
+        print("PROGRESS:STAGE:2:Publishing results (DOCX only)", flush=True)
     except Exception as exc:
         error_message = f"Publish failed: {exc}"
         tb = traceback.format_exc()

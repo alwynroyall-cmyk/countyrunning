@@ -10,7 +10,6 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from pathlib import Path
-import json
 import logging
 import traceback
 
@@ -486,17 +485,6 @@ def generate_club_reports(year: int, data_root: Path | None, report_dir: Path) -
     doc.save(str(docx_path))
     log.info("Club report written: %s", docx_path)
 
-    try:
-        from docx2pdf import convert  # type: ignore
-        pdf_path = docx_path.with_suffix(".pdf")
-        try:
-            convert(str(docx_path), str(pdf_path))
-            log.info("Club report PDF written: %s", pdf_path)
-        except Exception as exc:
-            log.warning("Club report PDF conversion skipped — %s", exc)
-    except Exception:
-        log.info("docx2pdf not available; PDF conversion skipped for club reports")
-
     report_root = Path(report_dir) / f"year-{year}"
     report_root.mkdir(parents=True, exist_ok=True)
     payload = {
@@ -508,9 +496,7 @@ def generate_club_reports(year: int, data_root: Path | None, report_dir: Path) -
         "success": True,
         "error": None,
     }
-    json_path = report_root / "club_reports.json"
     md_path = report_root / "club_reports.md"
-    json_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     md_path.write_text("""# Club Reports
 
 Generated: %s
@@ -539,9 +525,7 @@ def _write_club_report_error(report_dir: Path, year: int, data_root_resolved: st
         "success": False,
         "error": {"message": error_message},
     }
-    json_path = report_root / "club_reports.json"
     md_path = report_root / "club_reports.md"
-    json_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     md_path.write_text(
         f"# Club Reports\n\nGenerated: {generated_at}\n\nError: {error_message}\n",
         encoding="utf-8",

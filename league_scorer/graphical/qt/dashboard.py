@@ -813,10 +813,9 @@ class QtLeagueScorerDashboard(QMainWindow):
             ("Run Autopilot", "Run audit, safe auto-fixes, and staged checks", self._on_run_autopilot, "primary", "▶️"),
             ("View Autopilot Report", "Open latest autopilot summary report", self._on_view_autopilot_report, "secondary", "📄"),
             ("Data Corrections (RAES)", "Review and apply runner-level corrections using the RAES editor.", self._on_review_raes, "secondary", "🛠️"),
-            ("Publish Results", "Publish final results from audited files, PDFs and club reports.", self._on_publish_results, "primary", "📤"),
+            ("Publish Results", "Publish final results from audited files and club reports.", self._on_publish_results, "primary", "📤"),
             ("View Results", "Open generated standings and published reports.", self._on_view_results, "secondary", "📊"),
             ("Compare Raw vs Archive", "Inspect line-by-line changes against raw archive data.", self._on_compare_raw_archive, "secondary", "🧾"),
-            ("Export Published PDFs", "Copy all published PDFs into a single export folder.", self._on_export_published_pdfs, "secondary", "📁"),
             ("View Events", "Browse loaded events schedule.", self._on_view_events, "secondary", "📅"),
             ("Runner/Club Enquiry", "Search published results by runner or club.", self._on_view_runner_history, "secondary", "🔍"),
         ]
@@ -1169,58 +1168,6 @@ class QtLeagueScorerDashboard(QMainWindow):
             initial_status="Initialising publish...",
             extra_cmd_args=[],
         )
-
-    @Slot()
-    def _on_export_published_pdfs(self) -> None:
-        if not self._require_configured("Export Published PDFs"):
-            return
-        if session_config.output_dir is None:
-            QMessageBox.critical(self, "Output Missing", "Output directory is not configured.")
-            return
-
-        export_dir = QFileDialog.getExistingDirectory(self, "Select folder to export published PDFs", str(Path.home()))
-        if not export_dir:
-            return
-
-        try:
-            from league_scorer.output.output_layout import export_publish_pdfs
-
-            dialog = WorkflowDialog("Export Published PDFs", "Exporting published PDFs...", self)
-            dialog.show()
-
-            result_queue: queue.Queue = queue.Queue()
-
-            def worker() -> None:
-                try:
-                    export_path = export_publish_pdfs(session_config.output_dir, Path(export_dir), flatten=True)
-                    count = sum(1 for _ in export_path.glob("*.pdf"))
-                    result_queue.put(("done", export_path, count))
-                except Exception as exc:
-                    result_queue.put(("error", str(exc)))
-
-            threading.Thread(target=worker, daemon=True).start()
-
-            def poll() -> None:
-                try:
-                    item = result_queue.get_nowait()
-                except queue.Empty:
-                    QTimer.singleShot(100, poll)
-                    return
-
-                if item[0] == "done":
-                    export_path, count = item[1], item[2]
-                    dialog.set_finished(True)
-                    dialog.append_output(f"Exported {count} published PDF(s) to {export_path}")
-                    QMessageBox.information(self, "Export Complete", f"Exported {count} published PDF(s) to {export_path}")
-                    self._open_path_in_system(export_path)
-                elif item[0] == "error":
-                    dialog.append_output(item[1])
-                    dialog.set_finished(False)
-                    QMessageBox.critical(self, "Export Failed", item[1])
-
-            QTimer.singleShot(100, poll)
-        except Exception as exc:
-            QMessageBox.critical(self, "Export Failed", str(exc))
 
     @Slot()
     def _on_import_raceroster(self) -> None:
