@@ -1176,12 +1176,37 @@ class QtLeagueScorerDashboard(QMainWindow):
         if not self._require_configured("Generate Monthly Report"):
             return
 
-        # Get current month
         from datetime import datetime
-        current_month = datetime.now().month
-        current_year = datetime.now().year
-
+        from pathlib import Path
+        from league_scorer.output_layout import ensure_output_subdirs, monthly_report_basename
+        
+        # Check if races have been processed
+        output_paths = ensure_output_subdirs(session_config.output_dir)
+        race_cards_dir = output_paths.publish_docx_race_cards_dir
+        
+        if not race_cards_dir.exists() or not list(race_cards_dir.glob("*.docx")):
+            QMessageBox.warning(
+                self,
+                "No Races Processed",
+                "Please run the scoring workflow to process races first.\n\n"
+                "Once races have been processed, you can generate a monthly report."
+            )
+            return
+        
+        # Check if required setup files exist
+        clubs_file = Path(session_config.raw_data_dir) / "control" / "clubs.xlsx"
+        if not clubs_file.exists():
+            QMessageBox.critical(
+                self,
+                "Missing Configuration File",
+                f"Cannot find clubs.xlsx.\n\n"
+                f"Expected location:\n{clubs_file}\n\n"
+                f"Please ensure the clubs.xlsx file is in your raw data control folder."
+            )
+            return
+        
         # Prompt user for month
+        current_month = datetime.now().month
         month, ok = QInputDialog.getInt(
             self,
             "Generate Monthly Report",
@@ -1195,9 +1220,14 @@ class QtLeagueScorerDashboard(QMainWindow):
         if not ok:
             return
 
-        # Load the scoring data from session
+        # Generate the report
         try:
             from league_scorer.main import LeagueScorer
+            
+            progress = WorkflowDialog("Monthly Report", "Loading races and generating report...", self)
+            progress.show()
+            QApplication.processEvents()
+            
             scorer = LeagueScorer(
                 input_dir=session_config.raw_data_dir,
                 output_dir=session_config.output_dir,
@@ -1205,33 +1235,31 @@ class QtLeagueScorerDashboard(QMainWindow):
             )
 
             # Load all club info and discover races
+            progress.append_output("Loading clubs data...")
             scorer._load_clubs()
+            
+            progress.append_output("Discovering race files...")
             race_files = scorer._discover_races()
 
             # Process all races to populate data
+            progress.append_output(f"Processing {len(race_files)} race(s)...")
             for race_num in sorted(race_files.keys()):
                 scorer._process_race(race_num, race_files[race_num], len(race_files))
 
             # Generate the monthly report
+            progress.append_output("Generating monthly report...")
             scorer.generate_monthly_report(month)
 
-            # Show success message with output path
-            from league_scorer.output_layout import ensure_output_subdirs, monthly_report_basename
-            output_paths = ensure_output_subdirs(session_config.output_dir)
-            report_file = output_paths.publish_docx_monthly_reports_dir / (monthly_report_basename(session_config.year, month) + ".docx")
+            progress.set_finished(True)
+            progress.append_output(f"✓ Monthly report generated successfully.")
 
-            QMessageBox.information(
-                self,
-                "Monthly Report Generated",
-                f"Monthly report has been successfully generated.\n\nLocation:\n{report_file}"
-            )
+            # Show the output path
+            report_file = output_paths.publish_docx_monthly_reports_dir / (monthly_report_basename(session_config.year, month) + ".docx")
+            progress.append_output(f"\nLocation:\n{report_file}")
 
         except Exception as exc:
-            QMessageBox.critical(
-                self,
-                "Error Generating Monthly Report",
-                f"Failed to generate monthly report:\n\n{str(exc)}"
-            )
+            progress.set_finished(False)
+            progress.append_output(f"\n✗ Error: {str(exc)}")
             log.exception("Monthly report generation error:")
 
     @Slot()
