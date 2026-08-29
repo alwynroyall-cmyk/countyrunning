@@ -16,6 +16,7 @@ class OutputPaths:
     publish_docx_race_cards_dir: Path
     publish_docx_league_updates_dir: Path
     publish_docx_club_reports_dir: Path
+    publish_docx_monthly_reports_dir: Path
     publish_standings_dir: Path
     publish_package_dir: Path
     audit_workbooks_dir: Path
@@ -43,6 +44,7 @@ def build_output_paths(output_dir: Path) -> OutputPaths:
         publish_docx_race_cards_dir=publish_dir / "docx",
         publish_docx_league_updates_dir=publish_dir / "docx",
         publish_docx_club_reports_dir=publish_dir / "docx" / "club-reports",
+        publish_docx_monthly_reports_dir=publish_dir / "docx" / "monthly-reports",
         publish_standings_dir=publish_dir / "standings",
         publish_package_dir=publish_dir / "package",
         audit_workbooks_dir=audit_dir / "workbooks",
@@ -183,6 +185,13 @@ def race_scoring_card_basename(race_num: int, race_name: str) -> str:
     race_name = re.sub(r"^race\s*#?\s*\d+\s*[-–—]*\s*", "", race_name, flags=re.IGNORECASE).strip()
     clean_name = _sanitise_filename_part(race_name) or f"Race {race_num}"
     return f"Race {race_num:02d} - {clean_name} - Scoring Card"
+
+
+def monthly_report_basename(year: int, month: int) -> str:
+    """Generate basename for monthly report (e.g., '2024-01-Monthly-Report')."""
+    month_name = ["January", "February", "March", "April", "May", "June",
+                  "July", "August", "September", "October", "November", "December"][month - 1]
+    return f"{year}-{month:02d} - {month_name} - Monthly Report"
 
 
 def _sanitise_filename_part(value: str) -> str:

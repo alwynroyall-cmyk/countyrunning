@@ -33,6 +33,7 @@ from .models import (
 from .output_layout import (
     ensure_output_subdirs,
     league_update_basename,
+    monthly_report_basename,
     race_scoring_card_basename,
     standings_filename,
     sort_existing_output_files,
@@ -40,7 +41,7 @@ from .output_layout import (
 from .output_writer import (
     write_results_workbook,
 )
-from .report_writer import write_combined_report, write_race_report
+from .report_writer import write_combined_report, write_monthly_report, write_race_report
 from .race_processor import process_race_file
 from .season_aggregation import build_individual_season, build_team_season
 from .source_loader import discover_race_files
@@ -300,3 +301,63 @@ class LeagueScorer:
 
         log.info("Cumulative outputs written successfully.")
         log_event("cumulative_write_completed", logger=log, year=self.year, highest_race=highest)
+
+    def generate_monthly_report(self, month: int) -> None:
+        """Generate a consolidated monthly report for all races processed to date.
+
+        Parameters
+        ----------
+        month:
+            Month number (1-12) for the report title and naming.
+            Combines all races processed so far in the season.
+        """
+        if not self.all_race_runners:
+            log.warning("No races processed yet; cannot generate monthly report.")
+            return
+
+        log.info("Generating monthly report for %d/%d…", month, self.year)
+        log_event("monthly_report_started", logger=log, year=self.year, month=month)
+
+        self._write_monthly_report(month)
+
+        log.info("Monthly report generation complete.")
+        log_event("monthly_report_completed", logger=log, year=self.year, month=month)
+
+    def _write_monthly_report(self, month: int) -> None:
+        """Write the monthly consolidation report."""
+        output_paths = ensure_output_subdirs(self.output_dir)
+        images_dir = Path(__file__).parent / "images"
+
+        # Gather all races processed to date
+        race_data = []
+        for race_num in sorted(self.all_race_runners.keys()):
+            runners = self.all_race_runners[race_num]
+            team_results = self.all_race_teams[race_num]
+            race_label = self.selected_race_files.get(race_num, Path()).stem
+            if "(audited)" in race_label.lower():
+                race_label = race_label.rsplit("(audited)", 1)[0].strip(" -")
+            if not race_label or race_label.startswith("race"):
+                race_label = f"Race {race_num}"
+            race_data.append((race_num, runners, team_results, race_label))
+
+        # Write the monthly report
+        pdf_warning = write_monthly_report(
+            year=self.year,
+            month=month,
+            race_data=race_data,
+            images_dir=images_dir,
+            filepath=output_paths.publish_docx_monthly_reports_dir / monthly_report_basename(self.year, month),
+        )
+
+        if pdf_warning:
+            self.run_warnings.append(pdf_warning)
+            log_event(
+                "monthly_report_pdf_warning",
+                level="WARNING",
+                logger=log,
+                year=self.year,
+                month=month,
+                warning=pdf_warning,
+            )
+
+        log.info("Monthly report written: %s", monthly_report_basename(self.year, month))

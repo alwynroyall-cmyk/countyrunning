@@ -1308,3 +1308,167 @@ def write_combined_report(
     doc.save(str(filepath))
     log.info("Report written: %s", filepath.name)
     return None
+
+
+# ── Monthly Report ────────────────────────────────────────────────────────────
+
+
+def write_monthly_report(
+    year: int,
+    month: int,
+    race_data: List[tuple],
+    images_dir: Optional[Path],
+    filepath: Path,
+) -> Optional[str]:
+    """Write a monthly consolidation report combining all races from that month to date.
+
+    Parameters
+    ----------
+    year:          season year (for title and footer).
+    month:         month number (1-12) for naming and title.
+    race_data:     list of tuples: (race_num, runners, team_results, race_name)
+    images_dir:    folder containing ``WRRL shield concept.png``.
+    filepath:      output path; .docx extension used automatically.
+
+    Returns
+    -------
+    Optional[str]: None on success, error message if PDF conversion failed.
+    """
+    filepath = Path(filepath).with_suffix(".docx")
+
+    doc = Document()
+    _apply_document_font_defaults(doc)
+
+    # ── A4 Portrait ───────────────────────────────────────────────────────────
+    section = doc.sections[0]
+    section.orientation   = WD_ORIENT.PORTRAIT
+    section.page_width    = Cm(21.0)
+    section.page_height   = Cm(29.7)
+    section.left_margin   = Cm(1.5)
+    section.right_margin  = Cm(1.5)
+    section.top_margin    = Cm(1.5)
+    section.bottom_margin = Cm(1.5)
+
+    # ── Monthly header ─────────────────────────────────────────────────────────
+    _build_monthly_header(doc, year, month, images_dir)
+    _spacer(doc, height_pt=12)
+
+    # ── Monthly summary stats ──────────────────────────────────────────────────
+    if race_data:
+        all_runners = []
+        all_teams = []
+        for race_num, runners, team_results, race_name in race_data:
+            all_runners.extend(runners)
+            all_teams.extend(team_results)
+
+        _write_monthly_summary(doc, month, year, len(race_data), len(all_runners))
+        _page_break(doc)
+
+    # ── Individual race cards ──────────────────────────────────────────────────
+    for i, (race_num, runners, team_results, race_name) in enumerate(race_data):
+        if i > 0:
+            _page_break(doc)
+        _build_race_header(doc, race_name, race_num, len(race_data), images_dir)
+        _spacer(doc, height_pt=8)
+        _write_race_individual(doc, runners, top_n=10)
+        _write_race_category_strip(doc, runners)
+        _page_break(doc)
+        _write_race_teams(doc, team_results)
+
+    _build_footer(doc, year, include_page_numbers=True)
+
+    # ── Save DOCX ──────────────────────────────────────────────────────────────
+    filepath.parent.mkdir(parents=True, exist_ok=True)
+    doc.save(str(filepath))
+    log.info("Monthly report written: %s", filepath.name)
+    return None
+
+
+def _build_monthly_header(
+    doc: Document,
+    year: int,
+    month: int,
+    images_dir: Optional[Path],
+) -> None:
+    """Two-cell table: shield logo left | monthly title right, both on navy."""
+    tbl = doc.add_table(rows=1, cols=2)
+    logo_cell  = tbl.rows[0].cells[0]
+    title_cell = tbl.rows[0].cells[1]
+
+    logo_cell.width  = Cm(3.0)
+    title_cell.width = Cm(15.0)
+
+    _set_cell_bg(logo_cell, _NAVY_HEX)
+    _set_cell_bg(title_cell, _NAVY_HEX)
+
+    # Logo
+    shield_path = (images_dir / "WRRL shield concept.png") if images_dir else None
+    if shield_path and shield_path.exists():
+        p = logo_cell.paragraphs[0]
+        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        run = p.add_run()
+        run.add_picture(str(shield_path), width=Cm(2.8))
+
+    # Title
+    title_cell.paragraphs[0].clear()
+    month_name = ["January", "February", "March", "April", "May", "June",
+                  "July", "August", "September", "October", "November", "December"][month - 1]
+    p1 = title_cell.paragraphs[0]
+    p1.alignment = WD_ALIGN_PARAGRAPH.LEFT
+    p1.paragraph_format.left_indent  = Cm(0.4)
+    p1.paragraph_format.space_before = Pt(8)
+    r = p1.add_run(f"WRRL League AI Report  |  Season {year}")
+    r.bold = True
+    r.font.size = Pt(22)
+    r.font.color.rgb = _WHITE_RGB
+
+    p2 = title_cell.add_paragraph()
+    p2.paragraph_format.left_indent = Cm(0.4)
+    r2 = p2.add_run(f"WRRL League AI  —  {month_name} {year} Monthly Report")
+    r2.font.size = Pt(10)
+    r2.font.color.rgb = _SUBHDR_RGB
+
+    # Green accent rule below header
+    accent = doc.add_paragraph()
+    accent.paragraph_format.space_before = Pt(0)
+    accent.paragraph_format.space_after  = Pt(6)
+    _set_para_bg(accent, _GREEN_HEX)
+
+
+def _write_monthly_summary(
+    doc: Document,
+    month: int,
+    year: int,
+    race_count: int,
+    runner_count: int,
+) -> None:
+    """Write a brief summary section for the monthly report."""
+    month_name = ["January", "February", "March", "April", "May", "June",
+                  "July", "August", "September", "October", "November", "December"][month - 1]
+
+    _section_heading(doc, f"{month_name} {year} — Monthly Summary", space_before_pt=4)
+
+    # Summary table
+    tbl = doc.add_table(rows=1, cols=2)
+    tbl.style = "Light Grid Accent 1"
+    for cell in tbl.rows[0].cells:
+        cell.text = ""
+
+    # Header row
+    tbl.rows[0].cells[0].text = "Metric"
+    tbl.rows[0].cells[1].text = "Value"
+    for cell in tbl.rows[0].cells:
+        cell.paragraphs[0].runs[0].bold = True
+
+    # Data rows
+    rows_data = [
+        ("Races included", str(race_count)),
+        ("Total finishers to date", str(runner_count)),
+    ]
+
+    for metric, value in rows_data:
+        row = tbl.add_row()
+        row.cells[0].text = metric
+        row.cells[1].text = value
+
+    _spacer(doc, height_pt=8)
