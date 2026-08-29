@@ -19,7 +19,6 @@ from league_scorer.input.input_layout import build_input_paths
 from league_scorer.output.output_layout import (
     build_output_paths,
     ensure_output_subdirs,
-    export_publish_pdfs,
     package_publish_artifacts,
     sort_existing_output_files,
 )
