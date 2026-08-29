@@ -531,3 +531,148 @@ No fundamental blockers exist. Implementation strategy:
 **Risk Level:** **LOW** - Downsides are minor, mitigations straightforward, benefits substantial.
 
 **Go/No-Go:** **GO** - Recommended for implementation with mitigations in place.
+
+---
+
+## Implementation Plan - Phase 1: Output Structure Cleanup
+
+### Critical Files to Modify (Priority Order)
+
+**Priority 1 - Configuration (MASTER):**
+- [league_scorer/output_layout.py](league_scorer/output_layout.py) - Lines 10-31, 46-68
+  - Remove: `quality_data_dir`, `quality_staged_checks_dir`, `logs_dir`, `manifests_dir`, `publish_review_packs_dir`, `publish_pdf_dir`
+  - Keep: `audit_dir`, `publish_docx_dir`, `publish_xlsx_dir`, `autopilot_runs_dir`, `raes_dir`
+  - Function: `ensure_output_subdirs()` - remove creation of deleted folders
+  - Function: `sort_existing_output_files()` - update logic for removed folders
+
+**Priority 2 - PDF Generation (Remove):**
+- [league_scorer/report_writer.py](league_scorer/report_writer.py) - Lines 1144-1150, 1338-1344
+  - Remove: `_pdf_conversion_enabled()` method
+  - Remove: PDF export code (keep DOCX only)
+- [league_scorer/publish/publish.py](league_scorer/publish/publish.py) - Lines 159-176
+  - Remove: PDF conversion section in `publish_results()`
+  - Keep: DOCX generation
+- [league_scorer/publish/club_report.py](league_scorer/publish/club_report.py) - Lines 490-498
+  - Remove: PDF conversion logic
+  - Keep: DOCX generation
+- [league_scorer/graphical/qt/dashboard.py](league_scorer/graphical/qt/dashboard.py) - Lines 1174-1214
+  - Remove: `_on_export_published_pdfs()` method
+  - Remove: Export PDFs button/menu item
+
+**Priority 3 - JSON Generation (Remove):**
+- [scripts/run_full_autopilot.py](scripts/run_full_autopilot.py) - Lines 132-134
+  - Remove: JSON report writing (keep Markdown only)
+  - Update: `_write_report()` to skip JSON
+- [scripts/autopilot/run_full_autopilot.py](scripts/autopilot/run_full_autopilot.py) - Lines 132-134
+  - Same changes as above (duplicate file)
+- [scripts/run_staged_checks.py](scripts/run_staged_checks.py) - Lines 304-311
+  - Remove: JSON report writing
+  - Keep: Markdown report
+- [scripts/analyse_data_quality.py](scripts/analyse_data_quality.py) - Lines 299-305
+  - Remove: JSON report generation
+  - Keep: Markdown report
+- [league_scorer/publish/publish.py](league_scorer/publish/publish.py) - Lines 70-72
+  - Remove: `publish_results.json` generation
+  - Keep: `publish_results.md`
+- [league_scorer/publish/club_report.py](league_scorer/publish/club_report.py) - Lines 511-513, 542-544
+  - Remove: Club report JSON summary
+  - Keep: DOCX generation
+
+**Priority 4 - Review-Packs Removal (Remove):**
+- [league_scorer/output_layout.py](league_scorer/output_layout.py) - Lines 23, 57, 77, 134
+  - Remove: `publish_review_packs_dir` definition
+  - Remove: Legacy migration logic for review-packs
+- [league_scorer/main.py](league_scorer/main.py) - Lines 285, 290
+  - Remove: Review-packs generation calls
+- [league_scorer/process/main.py](league_scorer/process/main.py) - Lines 285, 290
+  - Remove: Review-packs generation calls
+- [league_scorer/output_writer.py](league_scorer/output_writer.py)
+  - Remove: Functions that write category/time query review files
+
+**Priority 5 - Quality Folder Cleanup (Remove):**
+- [league_scorer/output_layout.py](league_scorer/output_layout.py) - Lines 28, 62, 82
+  - Remove: `quality_data_dir`, `quality_staged_checks_dir` definitions
+- [league_scorer/graphical/qt/dashboard.py](league_scorer/graphical/qt/dashboard.py) - Lines 1157
+  - Remove: View staged checks button/reference
+- [league_scorer/graphical/qt/view_autopilot.py](league_scorer/graphical/qt/view_autopilot.py) - Line 188
+  - Remove: Staged checks folder display
+
+**Priority 6 - Manifests & Logs Cleanup (Remove):**
+- [league_scorer/output_layout.py](league_scorer/output_layout.py) - Lines 31, 65, 85
+  - Remove: `manifests_dir`, `logs_dir` definitions
+  - Remove: Creation of these folders in `ensure_output_subdirs()`
+
+**Priority 7 - Keep These (NO CHANGES):**
+- [league_scorer/raes/raes_service.py](league_scorer/raes/raes_service.py) - RAES JSON output
+- [league_scorer/raes/raes_write_service.py](league_scorer/raes/raes_write_service.py) - RAES JSON changes
+- [league_scorer/graphical/qt/raes_window.py](league_scorer/graphical/qt/raes_window.py) - RAES GUI
+- [league_scorer/series_consolidation.py](league_scorer/series_consolidation.py) - Series consolidation (output path update only)
+
+---
+
+## Implementation Steps
+
+### Step 1: Update output_layout.py (MASTER CONFIG)
+1. Remove folder definitions: quality, logs, manifests, review_packs, pdf
+2. Remove folder creation logic in `ensure_output_subdirs()`
+3. Remove `sort_existing_output_files()` logic for removed folders
+4. Remove legacy migration code for moved folders
+
+### Step 2: Remove PDF Generation
+1. Remove PDF conversion from report_writer.py
+2. Remove PDF conversion from publish.py
+3. Remove PDF conversion from club_report.py
+4. Remove PDF export GUI button from dashboard.py
+
+### Step 3: Remove JSON Generation
+1. Remove JSON from autopilot report generation (keep Markdown)
+2. Remove JSON from staged checks (keep Markdown)
+3. Remove JSON from data quality (keep Markdown)
+4. Remove JSON from publish results (keep Markdown)
+5. Keep RAES JSON (still needed)
+6. Keep user settings/logs JSON (in home directory, not output)
+
+### Step 4: Remove Review-Packs
+1. Remove review-packs folder definition
+2. Remove review-packs generation in main.py/process/main.py
+3. Remove category/time query review file generation
+
+### Step 5: Remove Quality Folder References
+1. Remove quality folder definition
+2. Remove GUI references to staged checks viewing
+
+### Step 6: Clean Up Manifests & Logs
+1. Remove manifests folder definition
+2. Remove logs folder definition
+
+### Step 7: Update All Remaining References
+1. Search for all references to removed paths
+2. Update import/reference statements
+3. Update GUI references
+4. Update documentation
+
+### Step 8: Test & Validate
+1. Run autopilot process - verify only essential files generated
+2. Verify output folder structure matches design
+3. Verify Season Standings workbook is created correctly
+4. Verify RAES files still work
+5. Verify DOCX reports still generated
+
+---
+
+## File Statistics
+
+**Total Files to Modify:** ~25 Python files
+**Lines of Code to Remove:** ~800-1000 lines
+**New Folder Structure:** 4 top-level folders (audit, publish, autopilot, raes)
+**Removed Output Types:** PDF files, JSON reports, quality folder, manifests, logs
+
+---
+
+## Rollback Plan
+
+If issues arise:
+1. Revert changes from git (`git reset --hard HEAD~N`)
+2. Previous version remains on main branch
+3. No production data affected (all in output folder)
+4. Input files unchanged (still in inputs/ directory)
