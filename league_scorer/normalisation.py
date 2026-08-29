@@ -176,12 +176,16 @@ def time_display(value) -> str:
     """
     Return a human-readable display string for a time cell value.
     String values are returned as-is (spec: no reformatting).
-    Native time objects and Excel floats are converted to hh:mm:ss[.mmm].
+    Native time objects and Excel floats are converted to hh:mm:ss[.d] (1 decimal place).
     """
     if isinstance(value, datetime.time):
         base = f"{value.hour:02d}:{value.minute:02d}:{value.second:02d}"
         if value.microsecond:
-            return f"{base}.{value.microsecond // 1000:03d}"
+            # Use 1 decimal place (tenths of a second), with round-half-up
+            tenths = (value.microsecond + 50000) // 100000
+            if tenths >= 10:  # Handle rounding up to next second
+                tenths = 0
+            return f"{base}.{tenths}" if tenths > 0 else base
         return base
 
     if isinstance(value, datetime.timedelta):
@@ -192,7 +196,13 @@ def time_display(value) -> str:
     if isinstance(value, datetime.datetime):
         v = value
         base = f"{v.hour:02d}:{v.minute:02d}:{v.second:02d}"
-        return f"{base}.{v.microsecond // 1000:03d}" if v.microsecond else base
+        if v.microsecond:
+            # Use 1 decimal place (tenths of a second), with round-half-up
+            tenths = (v.microsecond + 50000) // 100000
+            if tenths >= 10:  # Handle rounding up to next second
+                tenths = 0
+            return f"{base}.{tenths}" if tenths > 0 else base
+        return base
 
     if isinstance(value, (int, float)):
         try:
