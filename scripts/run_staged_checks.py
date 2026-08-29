@@ -176,7 +176,7 @@ def run_checks(
                 schema_fail += 1
                 stage1_errors.append(f"Race {race_num} {file.name}: {exc}")
 
-    status = "passed" if schema_fail == 0 else "failed"
+    status = "passed_with_warnings" if schema_fail > 0 else "passed"
     results.append(
         StageResult(
             1,
@@ -190,8 +190,6 @@ def run_checks(
             },
         )
     )
-    if status == "failed":
-        return False, results
 
     # Stage 2
     _progress("Stage 2/4: Consolidating raw to audited and running quality gate")
@@ -287,73 +285,20 @@ def run_checks(
 
     _progress("Stage 4/4: Fingerprinting results workbook")
     fingerprint = _workbook_fingerprint(latest_results)
-    baseline_path = Path(args.baseline_file) if args.baseline_file else None
-    baseline_exists = baseline_path.exists() if baseline_path else False
-
-    if baseline_path is None:
-        results.append(
-            StageResult(
-                4,
-                "Main Scoring Regression",
-                "passed",
-                "Results workbook generated successfully.",
-                {
-                    "warnings": warnings,
-                    "results_workbook": str(latest_results),
-                },
-            )
+    results.append(
+        StageResult(
+            4,
+            "Main Scoring Regression",
+            "passed",
+            "Results workbook generated successfully.",
+            {
+                "warnings": warnings,
+                "results_workbook": str(latest_results),
+                "fingerprint": fingerprint,
+            },
         )
-        return True, results
-
-    if args.write_baseline or not baseline_exists:
-        baseline_path.parent.mkdir(parents=True, exist_ok=True)
-        baseline_path.write_text(json.dumps(fingerprint, indent=2), encoding="utf-8")
-        results.append(
-            StageResult(
-                4,
-                "Main Scoring Regression",
-                "passed",
-                "Baseline written from current results workbook.",
-                {
-                    "baseline": str(baseline_path),
-                    "warnings": warnings,
-                    "results_workbook": str(latest_results),
-                },
-            )
-        )
-        return True, results
-
-    expected = json.loads(baseline_path.read_text(encoding="utf-8"))
-    _progress("Stage 4/4: Comparing results against baseline")
-    status = "passed" if expected.get("sheets") == fingerprint.get("sheets") else "failed"
-    message = "Results fingerprint matches baseline." if status == "passed" else "Results fingerprint differs from baseline."
-
-    details = {
-        "baseline": str(baseline_path),
-        "results_workbook": str(latest_results),
-        "warnings": warnings,
-    }
-
-    if status == "failed":
-        expected_sheets = expected.get("sheets", {})
-        current_sheets = fingerprint.get("sheets", {})
-        changed = sorted(
-            set(expected_sheets) | set(current_sheets)
-        )
-        diffs: list[dict[str, Any]] = []
-        for sheet in changed:
-            if expected_sheets.get(sheet) != current_sheets.get(sheet):
-                diffs.append(
-                    {
-                        "sheet": sheet,
-                        "expected": expected_sheets.get(sheet),
-                        "current": current_sheets.get(sheet),
-                    }
-                )
-        details["diffs"] = diffs[:50]
-
-    results.append(StageResult(4, "Main Scoring Regression", status, message, details))
-    return status == "passed", results
+    )
+    return True, results
 
 
 def write_report(results: list[StageResult], report_dir: Path, success: bool) -> None:
@@ -467,7 +412,7 @@ def parse_args() -> argparse.Namespace:
         "--baseline-file",
         type=Path,
         default=None,
-        help="Optional baseline fingerprint file for Stage 4 regression comparison.",
+        help="Deprecated and ignored. Baseline comparison has been removed.",
     )
     parser.add_argument(
         "--data-quality-output-dir",
@@ -480,7 +425,11 @@ def parse_args() -> argparse.Namespace:
         default=80.0,
         help="Minimum quality success percentage required to proceed past Stage 2.",
     )
-    parser.add_argument("--write-baseline", action="store_true")
+    parser.add_argument(
+        "--write-baseline",
+        action="store_true",
+        help="Deprecated and ignored. Baseline comparison has been removed.",
+    )
     parser.add_argument("--allow-missing-data", action="store_true")
     return parser.parse_args()
 

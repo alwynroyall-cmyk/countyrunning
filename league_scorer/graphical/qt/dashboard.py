@@ -1,5 +1,6 @@
 """Qt dashboard implementation for WRRL Admin Suite."""
 
+import json
 import os
 import queue
 import re
@@ -983,6 +984,7 @@ class QtLeagueScorerDashboard(QMainWindow):
         title: str,
         initial_status: str,
         extra_cmd_args: list[str],
+        report_path: Path | None = None,
     ) -> None:
         if not self._require_configured(title):
             return
@@ -1060,7 +1062,15 @@ class QtLeagueScorerDashboard(QMainWindow):
 
                 proc.wait()
                 stderr_text = "\n".join(stderr_lines)
-                result_queue.put(("done", proc.returncode, stderr_text))
+                resolved_code = proc.returncode
+                if report_path is not None and report_path.exists():
+                    try:
+                        payload = json.loads(report_path.read_text(encoding="utf-8"))
+                        if isinstance(payload.get("success"), bool):
+                            resolved_code = 0 if payload["success"] else 1
+                    except Exception:
+                        pass
+                result_queue.put(("done", resolved_code, stderr_text))
             except Exception as exc:
                 result_queue.put(("error", str(exc)))
 
@@ -1134,6 +1144,8 @@ class QtLeagueScorerDashboard(QMainWindow):
 
     @Slot()
     def _on_run_autopilot(self) -> None:
+        output_paths = ensure_output_subdirs(session_config.output_dir)
+        report_path = output_paths.autopilot_runs_dir / f"year-{session_config.year}" / "autopilot_report.json"
         self._run_workflow(
             script_name="autopilot/run_full_autopilot.py",
             title="Autopilot",
@@ -1142,10 +1154,11 @@ class QtLeagueScorerDashboard(QMainWindow):
                 "--mode",
                 "apply-safe-fixes",
                 "--staged-report-dir",
-                str(ensure_output_subdirs(session_config.output_dir).quality_staged_checks_dir),
+                str(output_paths.quality_staged_checks_dir),
                 "--data-quality-output-dir",
-                str(ensure_output_subdirs(session_config.output_dir).quality_data_dir),
+                str(output_paths.quality_data_dir),
             ],
+            report_path=report_path,
         )
 
     @Slot()

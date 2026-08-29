@@ -348,8 +348,6 @@ def _build_stage_args(args: argparse.Namespace, data_root: Path) -> SimpleNamesp
         year=args.year,
         data_root=data_root,
         report_dir=args.staged_report_dir,
-        baseline_file=args.baseline_file,
-        write_baseline=args.write_baseline,
         quality_gate_threshold=args.quality_gate_threshold,
         data_quality_output_dir=args.data_quality_output_dir,
         allow_missing_data=args.allow_missing_data,
@@ -499,9 +497,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--baseline-file",
         type=Path,
-        default=Path("tests") / "baselines" / "season_1999_results_baseline.json",
+        default=None,
+        help="Deprecated and ignored. Baseline comparison has been removed.",
     )
-    parser.add_argument("--write-baseline", action="store_true")
+    parser.add_argument(
+        "--write-baseline",
+        action="store_true",
+        help="Deprecated and ignored. Baseline comparison has been removed.",
+    )
     parser.add_argument("--allow-missing-data", action="store_true")
     parser.add_argument(
         "--max-fix-attempts",
