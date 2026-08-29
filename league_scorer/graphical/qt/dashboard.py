@@ -1265,8 +1265,10 @@ class QtLeagueScorerDashboard(QMainWindow):
             progress.show()
             QApplication.processEvents()
             
+            # LeagueScorer expects the inputs directory, not raw_data
+            inputs_dir = Path(session_config.raw_data_dir).parent
             scorer = LeagueScorer(
-                input_dir=session_config.raw_data_dir,
+                input_dir=inputs_dir,
                 output_dir=session_config.output_dir,
                 year=session_config.year,
             )
