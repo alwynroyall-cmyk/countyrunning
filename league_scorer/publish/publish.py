@@ -108,6 +108,8 @@ def publish_results(
     ensure_output_subdirs(output_dir)
     sort_existing_output_files(output_dir)
 
+    warnings = []
+
     print("PROGRESS:STAGE:1:Loading audited race files", flush=True)
     audited_dir = build_input_paths(input_dir).audited_dir
     race_files = discover_race_files(audited_dir, excluded_names=race_discovery_exclusions())

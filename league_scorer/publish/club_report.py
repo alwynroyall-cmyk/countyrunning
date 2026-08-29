@@ -159,11 +159,17 @@ def _shade_cell(cell, color: str) -> None:
 
 
 def _make_pie_chart(path: Path, data: dict[str, int], title: str, size: int = 240) -> None:
-    labels = [k for k, v in data.items() if v > 0]
-    values = [v for v in data.values() if v > 0]
-    if not values:
+    # Filter out None keys which represent missing/unknown categories
+    filtered_data = {k: v for k, v in data.items() if k is not None and v > 0}
+    if not filtered_data:
+        # No data to display, show a default "None" entry
         labels = ["None"]
         values = [1]
+        chart_data = {"None": 1}
+    else:
+        labels = list(filtered_data.keys())
+        values = list(filtered_data.values())
+        chart_data = filtered_data
 
     colors = [
         (51, 102, 204),
@@ -199,8 +205,8 @@ def _make_pie_chart(path: Path, data: dict[str, int], title: str, size: int = 24
     legend_x = size + 10
     legend_y = 40
     for idx, label in enumerate(labels):
-        pct = int(round(data[label] / total * 100)) if total else 0
-        text = f"{label}: {data[label]} ({pct}%)"
+        pct = int(round(chart_data[label] / total * 100)) if total else 0
+        text = f"{label}: {chart_data[label]} ({pct}%)"
         draw.rectangle([legend_x, legend_y, legend_x + 14, legend_y + 14], fill=colors[idx % len(colors)])
         draw.text((legend_x + 18, legend_y), text, fill="black", font=font)
         legend_y += 22
